@@ -8,8 +8,8 @@ Build-Depends-Indep: python-sphinx (>= 1.0.7)
 Build-Conflicts: autoconf2.13
 XS-Python-Version: @VER@
 Standards-Version: 3.9.3
-Vcs-Browser: https://code.launchpad.net/~doko/python/pkg@VER@-debian
-Vcs-Bzr: http://bazaar.launchpad.net/~doko/python/pkg@VER@-debian
+Vcs-Browser: https://bitbucket.org/fk/deadsnakes-python@VER@
+Vcs-Hg: https://bitbucket.org/fk/deadsnakes-python@VER@
 
 Package: @PVER@
 Architecture: any
