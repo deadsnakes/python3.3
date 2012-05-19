@@ -3,7 +3,7 @@ deb-locations.diff
 site-locations.diff
 distutils-install-layout.diff
 locale-module.diff
-distutils-link.diff
+distutils-packaging-link.diff
 tkinter-import.diff
 link-opt.diff
 webbrowser.diff

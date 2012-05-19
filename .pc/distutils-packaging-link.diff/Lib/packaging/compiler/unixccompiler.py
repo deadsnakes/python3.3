@@ -213,13 +213,6 @@ class UnixCCompiler(CCompiler):
         libraries, library_dirs, runtime_library_dirs = \
             self._fix_lib_args(libraries, library_dirs, runtime_library_dirs)
 
-        # filter out standard library paths, which are not explicitely needed
-        # for linking
-        library_dirs = [dir for dir in library_dirs
-                        if not dir in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')]
-        runtime_library_dirs = [dir for dir in runtime_library_dirs
-                                if not dir in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')]
-
         lib_opts = gen_lib_options(self, library_dirs, runtime_library_dirs,
                                    libraries)
         if type(output_dir) not in (str, type(None)):
