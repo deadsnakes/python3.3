@@ -722,7 +722,8 @@ endif
 		usr/lib/libpython$(VER)mu.so \
 		usr/lib/pkgconfig/python-$(VER)*.pc \
 		usr/bin/python$(VER)*-config \
-		usr/lib/python$(VER)/distutils/command/wininst-*.exe
+		usr/lib/python$(VER)/distutils/command/wininst-*.exe \
+		usr/lib/python$(VER)/packaging/command/wininst-*.exe
 
 	rm $(d)/usr/lib/libpython$(VER)mu.a
 	dh_link -p$(p_dev) usr/lib/python$(VER)/config-$(VER)mu/libpython$(VER)mu.a \
