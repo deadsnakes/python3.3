@@ -2,7 +2,7 @@
 
 --- a/Lib/platform.py
 +++ b/Lib/platform.py
-@@ -284,6 +284,10 @@
+@@ -289,6 +289,10 @@
              id = l[1]
      return '', version, id
  
@@ -13,7 +13,7 @@
  def linux_distribution(distname='', version='', id='',
  
                         supported_dists=_supported_dists,
-@@ -308,6 +312,25 @@
+@@ -313,6 +317,25 @@
          args given as parameters.
  
      """

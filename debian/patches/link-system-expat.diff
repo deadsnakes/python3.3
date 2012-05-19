@@ -2,7 +2,7 @@
 
 --- a/Modules/Setup.dist
 +++ b/Modules/Setup.dist
-@@ -168,7 +168,7 @@
+@@ -171,7 +171,7 @@
  #_testcapi _testcapimodule.c    # Python C API test module
  #_random _randommodule.c	# Random number generator
  #atexit atexitmodule.c      # Register functions to be run at interpreter-shutdown
@@ -11,7 +11,7 @@
  #_pickle _pickle.c	# pickle accelerator
  #_datetime _datetimemodule.c	# datetime accelerator
  #_bisect _bisectmodule.c	# Bisection algorithms
-@@ -364,7 +364,7 @@
+@@ -367,7 +367,7 @@
  #
  # More information on Expat can be found at www.libexpat.org.
  #

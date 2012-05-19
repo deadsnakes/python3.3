@@ -9,9 +9,9 @@ Subject: [PATCH] Add flags for statvfs.f_flag to constant list.
 
 --- a/Modules/posixmodule.c
 +++ b/Modules/posixmodule.c
-@@ -8354,6 +8354,43 @@
-     if (ins(d, "ST_NOSUID", (long)ST_NOSUID)) return -1;
- #endif /* ST_NOSUID */
+@@ -11421,6 +11421,43 @@
+     if (ins(d, "UTIME_OMIT", (long)UTIME_OMIT)) return -1;
+ #endif
  
 +	/* These came from statvfs.h */
 +#ifdef ST_RDONLY

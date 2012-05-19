@@ -2,69 +2,6 @@
 # DP: - installs into $prefix/dist-packages instead of $prefix/site-packages.
 # DP: - doesn't encode the python version into the egg name.
 
---- a/Doc/install/index.rst
-+++ b/Doc/install/index.rst
-@@ -240,6 +240,8 @@
- +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
- | Platform        | Standard installation location                      | Default value                                    | Notes |
- +=================+=====================================================+==================================================+=======+
-+| Debian/Ubuntu   | :file:`{prefix}/lib/python3/dist-packages`          | :file:`/usr/local/lib/python{X.Y}/dist-packages` | \(0)  |
-++-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
- | Unix (pure)     | :file:`{prefix}/lib/python{X.Y}/site-packages`      | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
- +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
- | Unix (non-pure) | :file:`{exec-prefix}/lib/python{X.Y}/site-packages` | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
-@@ -249,6 +251,17 @@
- 
- Notes:
- 
-+(0)
-+   Starting with Python-2.6 Debian/Ubuntu uses for the Python which comes within
-+   the Linux distribution a non-default name for the installation directory. This
-+   is to avoid overwriting of the python modules which come with the distribution,
-+   which unfortunately is the upstream behaviour of the installation tools. The
-+   non-default name in :file:`/usr/local` is used not to overwrite a local python
-+   installation (defaulting to :file:`/usr/local`).
-+
-+   Starting with Python3, Debian/Ubuntu use a common installation directory for
-+   all Python3 versions.
-+
- (1)
-    Most Linux distributions include Python as a standard part of the system, so
-    :file:`{prefix}` and :file:`{exec-prefix}` are usually both :file:`/usr` on
-@@ -432,6 +445,15 @@
- 
-    /usr/bin/python setup.py install --prefix=/usr/local
- 
-+Starting with Python3 Debian/Ubuntu does use
-+:file:`/usr/lib/python3/dist-packages` and
-+:file:`/usr/local/lib/python{X.Y}/dist-packages` for the installation
-+of python modules included in the Linux distribution.  To overwrite
-+the name of the site directory, explicitely use the :option:`--prefix`
-+option, however make sure that the installation path is included in
-+``sys.path``.  For packaging of python modules for Debian/Ubuntu, use
-+the new ``setup.py install`` option :option:`--install-layout=deb`.
-+
- Another possibility is a network filesystem where the name used to write to a
- remote directory is different from the name used to read it: for example, the
- Python interpreter accessed as :file:`/usr/local/bin/python` might search for
-@@ -683,6 +705,17 @@
- import them, this directory must be added to ``sys.path``.  There are several
- different ways to add the directory.
- 
-+On Debian/Ubuntu, starting with Python3 the convention for system
-+installed packages is to put then in the
-+:file:`/usr/lib/python3/dist-packages/` directory, and for locally
-+installed packages is to put them in the
-+:file:`/usr/local/lib/python{X.Y}/dist-packages/` directory.  To share the
-+locally installed packages for the system provided Python with the
-+locally installed packages of a local python installation, make
-+:file:`/usr/local/lib/python{X.Y}/dist-packages/` a symbolic link to the
-+:file:`{...}/site-packages/` directory of your local python
-+installation.
-+
- The most convenient way is to add a path configuration file to a directory
- that's already on Python's path, usually to the :file:`.../site-packages/`
- directory.  Path configuration files have an extension of :file:`.pth`, and each
 --- a/Lib/distutils/command/install_egg_info.py
 +++ b/Lib/distutils/command/install_egg_info.py
 @@ -14,18 +14,38 @@
@@ -230,32 +167,61 @@
      return known_paths
  
  def getsitepackages():
---- a/Lib/sysconfig.py
-+++ b/Lib/sysconfig.py
-@@ -32,6 +32,26 @@
-         'scripts': '{base}/bin',
-         'data': '{base}',
-         },
-+    'posix_local': {
-+        'stdlib': '{base}/local/lib/python{py_version_short}',
-+        'platstdlib': '{platbase}/local/lib/python{py_version_short}',
-+        'purelib': '{base}/local/lib/python{py_version_short}/dist-packages',
-+        'platlib': '{platbase}/local/lib/python{py_version_short}/dist-packages',
-+        'include': '{base}/local/include/python{py_version_short}',
-+        'platinclude': '{platbase}/local/include/python{py_version_short}',
-+        'scripts': '{base}/local/bin',
-+        'data': '{base}/local',
-+        },
-+    'deb_system': {
-+        'stdlib': '{base}/lib/python{py_version_short}',
-+        'platstdlib': '{platbase}/lib/python{py_version_short}',
-+        'purelib': '{base}/lib/python3/dist-packages',
-+        'platlib': '{platbase}/lib/python3/dist-packages',
-+        'include': '{base}/include/python{py_version_short}',
-+        'platinclude': '{platbase}/include/python{py_version_short}',
-+        'scripts': '{base}/bin',
-+        'data': '{base}',
-+        },
-     'posix_home': {
-         'stdlib': '{base}/lib/python',
-         'platstdlib': '{base}/lib/python',
+--- a/Lib/sysconfig.cfg
++++ b/Lib/sysconfig.cfg
+@@ -44,6 +44,26 @@
+ platinclude = {platbase}/include/python{py_version_short}{abiflags}
+ data = {base}
+ 
++[posix_local]
++stdlib = {base}/local/lib/python{py_version_short}
++platstdlib = {platbase}/local/lib/python{py_version_short}
++purelib = {base}/local/lib/python{py_version_short}/dist-packages
++platlib = {platbase}/local/lib/python{py_version_short}/dist-packages
++include = {base}/local/include/python{py_version_short}
++platinclude = {platbase}/local/include/python{py_version_short}
++scripts = {base}/local/bin
++data = {base}/local
++
++[deb_system]
++stdlib = {base}/lib/python{py_version_short}
++platstdlib = {platbase}/lib/python{py_version_short}
++purelib = {base}/lib/python3/dist-packages
++platlib = {platbase}/lib/python3/dist-packages
++include = {base}/include/python{py_version_short}
++platinclude = {platbase}/include/python{py_version_short}
++scripts = {base}/bin
++data = {base}
++
+ [posix_home]
+ stdlib = {base}/lib/python
+ platstdlib = {base}/lib/python
+--- a/Doc/install/install.rst
++++ b/Doc/install/install.rst
+@@ -242,6 +242,8 @@
+ +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
+ | Platform        | Standard installation location                      | Default value                                    | Notes |
+ +=================+=====================================================+==================================================+=======+
++| Debian/Ubuntu   | :file:`{prefix}/lib/python3/dist-packages`          | :file:`/usr/local/lib/python{X.Y}/dist-packages` | \(0)  |
+++-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
+ | Unix (pure)     | :file:`{prefix}/lib/python{X.Y}/site-packages`      | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
+ +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
+ | Unix (non-pure) | :file:`{exec-prefix}/lib/python{X.Y}/site-packages` | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
+@@ -251,6 +253,17 @@
+ 
+ Notes:
+ 
++(0)
++   Starting with Python-2.6 Debian/Ubuntu uses for the Python which comes within
++   the Linux distribution a non-default name for the installation directory. This
++   is to avoid overwriting of the python modules which come with the distribution,
++   which unfortunately is the upstream behaviour of the installation tools. The
++   non-default name in :file:`/usr/local` is used not to overwrite a local python
++   installation (defaulting to :file:`/usr/local`).
++
++   Starting with Python3, Debian/Ubuntu use a common installation directory for
++   all Python3 versions.
++
+ (1)
+    Most Linux distributions include Python as a standard part of the system, so
+    :file:`{prefix}` and :file:`{exec-prefix}` are usually both :file:`/usr` on

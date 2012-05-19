@@ -242,6 +242,8 @@ module distribution being installed is pure Python or contains extensions
 +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
 | Platform        | Standard installation location                      | Default value                                    | Notes |
 +=================+=====================================================+==================================================+=======+
+| Debian/Ubuntu   | :file:`{prefix}/lib/python3/dist-packages`          | :file:`/usr/local/lib/python{X.Y}/dist-packages` | \(0)  |
++-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
 | Unix (pure)     | :file:`{prefix}/lib/python{X.Y}/site-packages`      | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
 +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
 | Unix (non-pure) | :file:`{exec-prefix}/lib/python{X.Y}/site-packages` | :file:`/usr/local/lib/python{X.Y}/site-packages` | \(1)  |
@@ -250,6 +252,17 @@ module distribution being installed is pure Python or contains extensions
 +-----------------+-----------------------------------------------------+--------------------------------------------------+-------+
 
 Notes:
+
+(0)
+   Starting with Python-2.6 Debian/Ubuntu uses for the Python which comes within
+   the Linux distribution a non-default name for the installation directory. This
+   is to avoid overwriting of the python modules which come with the distribution,
+   which unfortunately is the upstream behaviour of the installation tools. The
+   non-default name in :file:`/usr/local` is used not to overwrite a local python
+   installation (defaulting to :file:`/usr/local`).
+
+   Starting with Python3, Debian/Ubuntu use a common installation directory for
+   all Python3 versions.
 
 (1)
    Most Linux distributions include Python as a standard part of the system, so

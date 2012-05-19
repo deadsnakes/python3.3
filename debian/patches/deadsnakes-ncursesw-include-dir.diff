@@ -7,28 +7,28 @@
 
 --- a/setup.py
 +++ b/setup.py
-@@ -1159,6 +1159,7 @@
-         # Curses support, requiring the System V version of curses, often
-         # provided by the ncurses library.
+@@ -1176,6 +1176,7 @@
+         curses_defines = []
+         curses_includes = []
          panel_library = 'panel'
 +        ncursesw_incdirs = ["/usr/include/ncursesw"]
-         if curses_library.startswith('ncurses'):
-             if curses_library == 'ncursesw':
-                 # Bug 1464056: If _curses.so links with ncursesw,
-@@ -1166,7 +1167,8 @@
-                 panel_library = 'panelw'
-             curses_libs = [curses_library]
+         if curses_library == 'ncursesw':
+             curses_defines.append(('HAVE_NCURSESW', '1'))
+             curses_includes.append('/usr/include/ncursesw')
+@@ -1188,7 +1189,8 @@
              exts.append( Extension('_curses', ['_cursesmodule.c'],
+                                    include_dirs=curses_includes,
+                                    define_macros=curses_defines,
 -                                   libraries = curses_libs) )
 +                                   libraries = curses_libs,
 +                                   include_dirs = ncursesw_incdirs) )
          elif curses_library == 'curses' and platform != 'darwin':
                  # OSX has an old Berkeley curses, not good enough for
                  # the _curses module.
-@@ -1186,7 +1188,8 @@
-         if (module_enabled(exts, '_curses') and
+@@ -1210,7 +1212,8 @@
              self.compiler.find_library_file(lib_dirs, panel_library)):
              exts.append( Extension('_curses_panel', ['_curses_panel.c'],
+                                    include_dirs=curses_includes,
 -                                   libraries = [panel_library] + curses_libs) )
 +                                   libraries = [panel_library] + curses_libs,
 +                                   include_dirs = ncursesw_incdirs) )

@@ -390,11 +390,9 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
 
     def detect_modules(self):
-        # Ensure that /usr/local is always used, but the local build
-        # directories (i.e. '.' and 'Include') must be first.  See issue
-        # 10520.
-        add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
-        add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+        # On Debian /usr/local is always used, so we don't include it twice
+        #add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+        #add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
         self.add_multiarch_paths()
 
         # Add paths specified in the environment variables LDFLAGS and
@@ -615,7 +613,7 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
         # Issue 7384: If readline is already linked against curses,
         # use the same library for the readline and curses modules.
-        if 'curses' in readline_termcap_library:
+        if False and 'curses' in readline_termcap_library:
             curses_library = readline_termcap_library
         elif self.compiler.find_library_file(lib_dirs, 'ncursesw'):
             curses_library = 'ncursesw'
@@ -1178,6 +1176,7 @@ class PyBuildExt(build_ext):
         curses_defines = []
         curses_includes = []
         panel_library = 'panel'
+        ncursesw_incdirs = ["/usr/include/ncursesw"]
         if curses_library == 'ncursesw':
             curses_defines.append(('HAVE_NCURSESW', '1'))
             curses_includes.append('/usr/include/ncursesw')
@@ -1190,7 +1189,8 @@ class PyBuildExt(build_ext):
             exts.append( Extension('_curses', ['_cursesmodule.c'],
                                    include_dirs=curses_includes,
                                    define_macros=curses_defines,
-                                   libraries = curses_libs) )
+                                   libraries = curses_libs,
+                                   include_dirs = ncursesw_incdirs) )
         elif curses_library == 'curses' and platform != 'darwin':
                 # OSX has an old Berkeley curses, not good enough for
                 # the _curses module.
@@ -1212,9 +1212,13 @@ class PyBuildExt(build_ext):
             self.compiler.find_library_file(lib_dirs, panel_library)):
             exts.append( Extension('_curses_panel', ['_curses_panel.c'],
                                    include_dirs=curses_includes,
-                                   libraries = [panel_library] + curses_libs) )
+                                   libraries = [panel_library] + curses_libs,
+                                   include_dirs = ncursesw_incdirs) )
         else:
             missing.append('_curses_panel')
+
+        #fpectl fpectlmodule.c ...
+        exts.append( Extension('fpectl', ['fpectlmodule.c']) )
 
         # Andrew Kuchling's zlib module.  Note that some versions of zlib
         # 1.1.3 have security problems.  See CERT Advisory CA-2002-07:

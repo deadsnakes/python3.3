@@ -2,7 +2,7 @@
 
 --- a/Lib/webbrowser.py
 +++ b/Lib/webbrowser.py
-@@ -444,9 +444,13 @@
+@@ -464,9 +464,13 @@
      if "KDE_FULL_SESSION" in os.environ and _iscommand("kfmclient"):
          register("kfmclient", Konqueror, Konqueror("kfmclient"))
  
@@ -16,7 +16,7 @@
                      "seamonkey", "mozilla", "netscape"):
          if _iscommand(browser):
              register(browser, None, Mozilla(browser))
-@@ -484,6 +488,8 @@
+@@ -509,6 +513,8 @@
  
  # Also try console browsers
  if os.environ.get("TERM"):
