@@ -47,10 +47,10 @@ endif
 #distribution := $(shell lsb_release -is)
 distribution := Ubuntu-PPA
 
-export VER=3.2
-export SVER=3.2~a4
-export NVER=3.3
-export PVER=python3.2
+export VER=3.3
+export SVER=3.3.0~a3
+export NVER=3.4
+export PVER=python3.3
 export PRIORITY=$(shell echo $(VER) | tr -d '.')0
 
 PREVVER	:= $(shell awk '/^python/ && NR > 1 {print substr($$2,2,length($$2)-2); exit}' debian/changelog)
