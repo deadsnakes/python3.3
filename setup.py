@@ -1176,7 +1176,6 @@ class PyBuildExt(build_ext):
         curses_defines = []
         curses_includes = []
         panel_library = 'panel'
-        ncursesw_incdirs = ["/usr/include/ncursesw"]
         if curses_library == 'ncursesw':
             curses_defines.append(('HAVE_NCURSESW', '1'))
             curses_includes.append('/usr/include/ncursesw')
@@ -1189,8 +1188,7 @@ class PyBuildExt(build_ext):
             exts.append( Extension('_curses', ['_cursesmodule.c'],
                                    include_dirs=curses_includes,
                                    define_macros=curses_defines,
-                                   libraries = curses_libs,
-                                   include_dirs = ncursesw_incdirs) )
+                                   libraries = curses_libs) )
         elif curses_library == 'curses' and platform != 'darwin':
                 # OSX has an old Berkeley curses, not good enough for
                 # the _curses module.
@@ -1212,8 +1210,7 @@ class PyBuildExt(build_ext):
             self.compiler.find_library_file(lib_dirs, panel_library)):
             exts.append( Extension('_curses_panel', ['_curses_panel.c'],
                                    include_dirs=curses_includes,
-                                   libraries = [panel_library] + curses_libs,
-                                   include_dirs = ncursesw_incdirs) )
+                                   libraries = [panel_library] + curses_libs) )
         else:
             missing.append('_curses_panel')
 
