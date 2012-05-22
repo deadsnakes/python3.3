@@ -88,6 +88,7 @@ are:
   platform		module
   posix			builtin
   posixpath		module
+  pprint		module
   pwd			builtin
   pyexpat		extension
   py_compile		module
