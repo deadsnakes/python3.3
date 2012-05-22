@@ -620,8 +620,8 @@ endif
 	rm -f $(d)/usr/lib/pkgconfig/python3.pc
 
 	: # Remove version information from the egg-info file
-	mv $(d)/$(scriptdir)/lib-dynload/Python-3*.egg-info \
-		$(d)/$(scriptdir)/lib-dynload/Python.egg-info
+	#mv $(d)/$(scriptdir)/lib-dynload/Python-3*.egg-info \
+	#	$(d)/$(scriptdir)/lib-dynload/Python.egg-info
 
 	dh_installdirs -p$(p_lib) \
 		$(scriptdir)/config-$(VER)$(ABIFLAGS) \
