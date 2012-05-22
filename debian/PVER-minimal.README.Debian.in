@@ -9,7 +9,6 @@ are:
 
   __builtin__		builtin
   __future__		module
-  _abcoll		module
   _bisect		extension
   _bytesio		builtin
   _codecs		builtin
@@ -22,6 +21,7 @@ are:
   _functools		extension
   _hashlib		extension
   _heapq		extension
+  _imp			builtin
   _io			builtin
   _locale		extension
   _pickle		extension
@@ -35,6 +35,7 @@ are:
   _string		builtin
   _stringio		builtin
   _symtable		builtin
+  _sysconfigdata	module
   _thread		builtin
   _types		builtin
   _weakref		builtin
@@ -50,7 +51,7 @@ are:
   bisect		module
   builtins		builtin
   codecs		module
-  collections		module
+  collections		package
   compileall		module
   copy			module
   copyreg		module
@@ -68,6 +69,7 @@ are:
   hashlib		module
   heapq			module
   imp			builtin
+  importlib		package
   inspect		module
   io			module
   itertools		extension
