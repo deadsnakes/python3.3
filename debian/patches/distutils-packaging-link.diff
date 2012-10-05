@@ -2,7 +2,7 @@
 
 --- a/Lib/distutils/unixccompiler.py
 +++ b/Lib/distutils/unixccompiler.py
-@@ -211,6 +211,13 @@
+@@ -153,6 +153,13 @@
                                          runtime_library_dirs)
          libraries, library_dirs, runtime_library_dirs = fixed_args
  
@@ -16,19 +16,3 @@
          lib_opts = gen_lib_options(self, library_dirs, runtime_library_dirs,
                                     libraries)
          if not isinstance(output_dir, (str, type(None))):
---- a/Lib/packaging/compiler/unixccompiler.py
-+++ b/Lib/packaging/compiler/unixccompiler.py
-@@ -213,6 +213,13 @@
-         libraries, library_dirs, runtime_library_dirs = \
-             self._fix_lib_args(libraries, library_dirs, runtime_library_dirs)
- 
-+        # filter out standard library paths, which are not explicitely needed
-+        # for linking
-+        library_dirs = [dir for dir in library_dirs
-+                        if not dir in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')]
-+        runtime_library_dirs = [dir for dir in runtime_library_dirs
-+                                if not dir in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')]
-+
-         lib_opts = gen_lib_options(self, library_dirs, runtime_library_dirs,
-                                    libraries)
-         if type(output_dir) not in (str, type(None)):

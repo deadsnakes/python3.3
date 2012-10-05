@@ -2,7 +2,7 @@
 
 --- a/Modules/getpath.c
 +++ b/Modules/getpath.c
-@@ -413,7 +413,9 @@
+@@ -466,7 +466,9 @@
      wchar_t *path = NULL;
      wchar_t *prog = Py_GetProgramName();
      wchar_t argv0_path[MAXPATHLEN+1];
@@ -12,7 +12,7 @@
      int pfound, efound; /* 1 if found; -1 if found build directory */
      wchar_t *buf;
      size_t bufsz;
-@@ -575,6 +577,7 @@
+@@ -669,6 +671,7 @@
      else
          reduce(prefix);
  
@@ -20,7 +20,7 @@
      wcsncpy(zip_path, prefix, MAXPATHLEN);
      zip_path[MAXPATHLEN] = L'\0';
      if (pfound > 0) { /* Use the reduced prefix returned by Py_GetPrefix() */
-@@ -587,6 +590,7 @@
+@@ -681,6 +684,7 @@
      bufsz = wcslen(zip_path);   /* Replace "00" with version */
      zip_path[bufsz - 6] = VERSION[0];
      zip_path[bufsz - 5] = VERSION[2];
@@ -28,7 +28,7 @@
  
      if (!(efound = search_for_exec_prefix(argv0_path, home, _exec_prefix))) {
          if (!Py_FrozenFlag)
-@@ -632,7 +636,9 @@
+@@ -726,7 +730,9 @@
          defpath = delim + 1;
      }
  
@@ -38,7 +38,7 @@
      bufsz += wcslen(exec_prefix) + 1;
  
      buf = (wchar_t *)PyMem_Malloc(bufsz*sizeof(wchar_t));
-@@ -652,9 +658,11 @@
+@@ -746,9 +752,11 @@
          else
              buf[0] = '\0';
  
