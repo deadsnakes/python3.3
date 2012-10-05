@@ -2,6 +2,7 @@
  PyAST_Compile@Base @VER@
  PyAST_CompileEx@Base @VER@
  PyAST_FromNode@Base @VER@
+ PyAST_Validate@Base @VER@
  PyAST_mod2obj@Base @VER@
  PyAST_obj2mod@Base @VER@
  PyArena_AddPyObject@Base @VER@
@@ -152,6 +153,7 @@
  PyDictProxy_Type@Base @VER@
  PyDictValues_Type@Base @VER@
  PyDict_Clear@Base @VER@
+ PyDict_ClearFreeList@Base @VER@
  PyDict_Contains@Base @VER@
  PyDict_Copy@Base @VER@
  PyDict_DelItem@Base @VER@
@@ -184,6 +186,7 @@
  PyErr_ExceptionMatches@Base @VER@
  PyErr_Fetch@Base @VER@
  PyErr_Format@Base @VER@
+ PyErr_GetExcInfo@Base @VER@
  PyErr_GivenExceptionMatches@Base @VER@
  PyErr_NewException@Base @VER@
  PyErr_NewExceptionWithDoc@Base @VER@
@@ -194,9 +197,11 @@
  PyErr_PrintEx@Base @VER@
  PyErr_ProgramText@Base @VER@
  PyErr_Restore@Base @VER@
+ PyErr_SetExcInfo@Base @VER@
  PyErr_SetFromErrno@Base @VER@
  PyErr_SetFromErrnoWithFilename@Base @VER@
  PyErr_SetFromErrnoWithFilenameObject@Base @VER@
+ PyErr_SetImportError@Base @VER@
  PyErr_SetInterrupt@Base @VER@
  PyErr_SetNone@Base @VER@
  PyErr_SetObject@Base @VER@
@@ -240,12 +245,20 @@
  PyExc_AttributeError@Base @VER@
  PyExc_BaseException@Base @VER@
  PyExc_BlockingIOError@Base @VER@
+ PyExc_BrokenPipeError@Base @VER@
  PyExc_BufferError@Base @VER@
  PyExc_BytesWarning@Base @VER@
+ PyExc_ChildProcessError@Base @VER@
+ PyExc_ConnectionAbortedError@Base @VER@
+ PyExc_ConnectionError@Base @VER@
+ PyExc_ConnectionRefusedError@Base @VER@
+ PyExc_ConnectionResetError@Base @VER@
  PyExc_DeprecationWarning@Base @VER@
  PyExc_EOFError@Base @VER@
  PyExc_EnvironmentError@Base @VER@
  PyExc_Exception@Base @VER@
+ PyExc_FileExistsError@Base @VER@
+ PyExc_FileNotFoundError@Base @VER@
  PyExc_FloatingPointError@Base @VER@
  PyExc_FutureWarning@Base @VER@
  PyExc_GeneratorExit@Base @VER@
@@ -254,15 +267,20 @@
  PyExc_ImportWarning@Base @VER@
  PyExc_IndentationError@Base @VER@
  PyExc_IndexError@Base @VER@
+ PyExc_InterruptedError@Base @VER@
+ PyExc_IsADirectoryError@Base @VER@
  PyExc_KeyError@Base @VER@
  PyExc_KeyboardInterrupt@Base @VER@
  PyExc_LookupError@Base @VER@
  PyExc_MemoryError@Base @VER@
  PyExc_NameError@Base @VER@
+ PyExc_NotADirectoryError@Base @VER@
  PyExc_NotImplementedError@Base @VER@
  PyExc_OSError@Base @VER@
  PyExc_OverflowError@Base @VER@
  PyExc_PendingDeprecationWarning@Base @VER@
+ PyExc_PermissionError@Base @VER@
+ PyExc_ProcessLookupError@Base @VER@
  PyExc_RecursionErrorInst@Base @VER@
  PyExc_ReferenceError@Base @VER@
  PyExc_ResourceWarning@Base @VER@
@@ -274,6 +292,7 @@
  PyExc_SystemError@Base @VER@
  PyExc_SystemExit@Base @VER@
  PyExc_TabError@Base @VER@
+ PyExc_TimeoutError@Base @VER@
  PyExc_TypeError@Base @VER@
  PyExc_UnboundLocalError@Base @VER@
  PyExc_UnicodeDecodeError@Base @VER@
@@ -329,6 +348,7 @@
  PyFunction_GetKwDefaults@Base @VER@
  PyFunction_GetModule@Base @VER@
  PyFunction_New@Base @VER@
+ PyFunction_NewWithQualName@Base @VER@
  PyFunction_SetAnnotations@Base @VER@
  PyFunction_SetClosure@Base @VER@
  PyFunction_SetDefaults@Base @VER@
@@ -349,10 +369,12 @@
  PyGrammar_RemoveAccelerators@Base @VER@
  PyIOBase_Type@Base @VER@
  PyImport_AddModule@Base @VER@
+ PyImport_AddModuleObject@Base @VER@
  PyImport_AppendInittab@Base @VER@
  PyImport_Cleanup@Base @VER@
  PyImport_ExecCodeModule@Base @VER@
  PyImport_ExecCodeModuleEx@Base @VER@
+ PyImport_ExecCodeModuleObject@Base @VER@
  PyImport_ExecCodeModuleWithPathnames@Base @VER@
  PyImport_ExtendInittab@Base @VER@
  PyImport_FrozenModules@Base @VER@
@@ -362,8 +384,10 @@
  PyImport_GetModuleDict@Base @VER@
  PyImport_Import@Base @VER@
  PyImport_ImportFrozenModule@Base @VER@
+ PyImport_ImportFrozenModuleObject@Base @VER@
  PyImport_ImportModule@Base @VER@
  PyImport_ImportModuleLevel@Base @VER@
+ PyImport_ImportModuleLevelObject@Base @VER@
  PyImport_ImportModuleNoBlock@Base @VER@
  PyImport_Inittab@Base @VER@
  PyImport_ReloadModule@Base @VER@
@@ -382,6 +406,7 @@
  PyListRevIter_Type@Base @VER@
  PyList_Append@Base @VER@
  PyList_AsTuple@Base @VER@
+ PyList_ClearFreeList@Base @VER@
  PyList_Fini@Base @VER@
  PyList_GetItem@Base @VER@
  PyList_GetSlice@Base @VER@
@@ -414,6 +439,7 @@
  PyLong_FromSsize_t@Base @VER@
  PyLong_FromString@Base @VER@
  PyLong_FromUnicode@Base @VER@
+ PyLong_FromUnicodeObject@Base @VER@
  PyLong_FromUnsignedLong@Base @VER@
  PyLong_FromUnsignedLongLong@Base @VER@
  PyLong_FromVoidPtr@Base @VER@
@@ -446,6 +472,7 @@
  PyMember_GetOne@Base @VER@
  PyMember_SetOne@Base @VER@
  PyMemoryView_FromBuffer@Base @VER@
+ PyMemoryView_FromMemory@Base @VER@
  PyMemoryView_FromObject@Base @VER@
  PyMemoryView_GetContiguous@Base @VER@
  PyMemoryView_Type@Base @VER@
@@ -464,16 +491,17 @@
  PyModule_GetFilename@Base @VER@
  PyModule_GetFilenameObject@Base @VER@
  PyModule_GetName@Base @VER@
+ PyModule_GetNameObject@Base @VER@
  PyModule_GetState@Base @VER@
  PyModule_GetWarningsModule@Base @VER@
  PyModule_New@Base @VER@
+ PyModule_NewObject@Base @VER@
  PyModule_Type@Base @VER@
  PyNode_AddChild@Base @VER@
  PyNode_Compile@Base @VER@
  PyNode_Free@Base @VER@
  PyNode_ListTree@Base @VER@
  PyNode_New@Base @VER@
- PyNullImporter_Type@Base @VER@
  PyNumber_Absolute@Base @VER@
  PyNumber_Add@Base @VER@
  PyNumber_And@Base @VER@
@@ -552,7 +580,9 @@
  PyObject_GC_Track@Base @VER@
  PyObject_GC_UnTrack@Base @VER@
  PyObject_GenericGetAttr@Base @VER@
+ PyObject_GenericGetDict@Base @VER@
  PyObject_GenericSetAttr@Base @VER@
+ PyObject_GenericSetDict@Base @VER@
  PyObject_GetAttr@Base @VER@
  PyObject_GetAttrString@Base @VER@
  PyObject_GetBuffer@Base @VER@
@@ -586,6 +616,7 @@
  PyParser_ASTFromFile@Base @VER@
  PyParser_ASTFromString@Base @VER@
  PyParser_AddToken@Base @VER@
+ PyParser_ClearError@Base @VER@
  PyParser_Delete@Base @VER@
  PyParser_New@Base @VER@
  PyParser_ParseFile@Base @VER@
@@ -653,6 +684,7 @@
  PySetIter_Type@Base @VER@
  PySet_Add@Base @VER@
  PySet_Clear@Base @VER@
+ PySet_ClearFreeList@Base @VER@
  PySet_Contains@Base @VER@
  PySet_Discard@Base @VER@
  PySet_Fini@Base @VER@
@@ -661,11 +693,14 @@
  PySet_Size@Base @VER@
  PySet_Type@Base @VER@
  PySignal_SetWakeupFd@Base @VER@
+ PySlice_Fini@Base @VER@
  PySlice_GetIndices@Base @VER@
  PySlice_GetIndicesEx@Base @VER@
  PySlice_New@Base @VER@
  PySlice_Type@Base @VER@
+ PyState_AddModule@Base @VER@
  PyState_FindModule@Base @VER@
+ PyState_RemoveModule@Base @VER@
  PyStaticMethod_New@Base @VER@
  PyStaticMethod_Type@Base @VER@
  PyStdPrinter_Type@Base @VER@
@@ -706,6 +741,7 @@
  PyThreadState_Next@Base @VER@
  PyThreadState_SetAsyncExc@Base @VER@
  PyThreadState_Swap@Base @VER@
+ PyThread_GetInfo@Base @VER@
  PyThread_ReInitTLS@Base @VER@
  PyThread_acquire_lock@Base @VER@
  PyThread_acquire_lock_timed@Base @VER@
@@ -727,6 +763,7 @@
  PyToken_ThreeChars@Base @VER@
  PyToken_TwoChars@Base @VER@
  PyTokenizer_FindEncoding@Base @VER@
+ PyTokenizer_FindEncodingFilename@Base @VER@
  PyTokenizer_Free@Base @VER@
  PyTokenizer_FromFile@Base @VER@
  PyTokenizer_FromString@Base @VER@
@@ -747,6 +784,7 @@
  PyTuple_Type@Base @VER@
  PyType_ClearCache@Base @VER@
  PyType_FromSpec@Base @VER@
+ PyType_FromSpecWithBases@Base @VER@
  PyType_GenericAlloc@Base @VER@
  PyType_GenericNew@Base @VER@
  PyType_GetFlags@Base @VER@
@@ -782,94 +820,111 @@
  PyUnicodeTranslateError_SetEnd@Base @VER@
  PyUnicodeTranslateError_SetReason@Base @VER@
  PyUnicodeTranslateError_SetStart@Base @VER@
- PyUnicodeUCS4_Append@Base @VER@
- PyUnicodeUCS4_AppendAndDel@Base @VER@
- PyUnicodeUCS4_AsASCIIString@Base @VER@
- PyUnicodeUCS4_AsCharmapString@Base @VER@
- PyUnicodeUCS4_AsDecodedObject@Base @VER@
- PyUnicodeUCS4_AsDecodedUnicode@Base @VER@
- PyUnicodeUCS4_AsEncodedObject@Base @VER@
- PyUnicodeUCS4_AsEncodedString@Base @VER@
- PyUnicodeUCS4_AsEncodedUnicode@Base @VER@
- PyUnicodeUCS4_AsLatin1String@Base @VER@
- PyUnicodeUCS4_AsRawUnicodeEscapeString@Base @VER@
- PyUnicodeUCS4_AsUTF16String@Base @VER@
- PyUnicodeUCS4_AsUTF32String@Base @VER@
- PyUnicodeUCS4_AsUTF8String@Base @VER@
- PyUnicodeUCS4_AsUnicode@Base @VER@
- PyUnicodeUCS4_AsUnicodeEscapeString@Base @VER@
- PyUnicodeUCS4_AsWideChar@Base @VER@
- PyUnicodeUCS4_AsWideCharString@Base @VER@
- PyUnicodeUCS4_ClearFreelist@Base @VER@
- PyUnicodeUCS4_Compare@Base @VER@
- PyUnicodeUCS4_CompareWithASCIIString@Base @VER@
- PyUnicodeUCS4_Concat@Base @VER@
- PyUnicodeUCS4_Contains@Base @VER@
- PyUnicodeUCS4_Count@Base @VER@
- PyUnicodeUCS4_Decode@Base @VER@
- PyUnicodeUCS4_DecodeASCII@Base @VER@
- PyUnicodeUCS4_DecodeCharmap@Base @VER@
- PyUnicodeUCS4_DecodeFSDefault@Base @VER@
- PyUnicodeUCS4_DecodeFSDefaultAndSize@Base @VER@
- PyUnicodeUCS4_DecodeLatin1@Base @VER@
- PyUnicodeUCS4_DecodeRawUnicodeEscape@Base @VER@
- PyUnicodeUCS4_DecodeUTF16@Base @VER@
- PyUnicodeUCS4_DecodeUTF16Stateful@Base @VER@
- PyUnicodeUCS4_DecodeUTF32@Base @VER@
- PyUnicodeUCS4_DecodeUTF32Stateful@Base @VER@
- PyUnicodeUCS4_DecodeUTF8@Base @VER@
- PyUnicodeUCS4_DecodeUTF8Stateful@Base @VER@
- PyUnicodeUCS4_DecodeUnicodeEscape@Base @VER@
- PyUnicodeUCS4_Encode@Base @VER@
- PyUnicodeUCS4_EncodeASCII@Base @VER@
- PyUnicodeUCS4_EncodeCharmap@Base @VER@
- PyUnicodeUCS4_EncodeDecimal@Base @VER@
- PyUnicodeUCS4_EncodeLatin1@Base @VER@
- PyUnicodeUCS4_EncodeRawUnicodeEscape@Base @VER@
- PyUnicodeUCS4_EncodeUTF16@Base @VER@
- PyUnicodeUCS4_EncodeUTF32@Base @VER@
- PyUnicodeUCS4_EncodeUTF8@Base @VER@
- PyUnicodeUCS4_EncodeUnicodeEscape@Base @VER@
- PyUnicodeUCS4_FSConverter@Base @VER@
- PyUnicodeUCS4_FSDecoder@Base @VER@
- PyUnicodeUCS4_Find@Base @VER@
- PyUnicodeUCS4_Format@Base @VER@
- PyUnicodeUCS4_FromEncodedObject@Base @VER@
- PyUnicodeUCS4_FromFormat@Base @VER@
- PyUnicodeUCS4_FromFormatV@Base @VER@
- PyUnicodeUCS4_FromObject@Base @VER@
- PyUnicodeUCS4_FromOrdinal@Base @VER@
- PyUnicodeUCS4_FromString@Base @VER@
- PyUnicodeUCS4_FromStringAndSize@Base @VER@
- PyUnicodeUCS4_FromUnicode@Base @VER@
- PyUnicodeUCS4_FromWideChar@Base @VER@
- PyUnicodeUCS4_GetDefaultEncoding@Base @VER@
- PyUnicodeUCS4_GetMax@Base @VER@
- PyUnicodeUCS4_GetSize@Base @VER@
- PyUnicodeUCS4_IsIdentifier@Base @VER@
- PyUnicodeUCS4_Join@Base @VER@
- PyUnicodeUCS4_Partition@Base @VER@
- PyUnicodeUCS4_RPartition@Base @VER@
- PyUnicodeUCS4_RSplit@Base @VER@
- PyUnicodeUCS4_Replace@Base @VER@
- PyUnicodeUCS4_Resize@Base @VER@
- PyUnicodeUCS4_RichCompare@Base @VER@
- PyUnicodeUCS4_Split@Base @VER@
- PyUnicodeUCS4_Splitlines@Base @VER@
- PyUnicodeUCS4_Tailmatch@Base @VER@
- PyUnicodeUCS4_Translate@Base @VER@
- PyUnicodeUCS4_TranslateCharmap@Base @VER@
+ PyUnicode_Append@Base @VER@
+ PyUnicode_AppendAndDel@Base @VER@
+ PyUnicode_AsASCIIString@Base @VER@
+ PyUnicode_AsCharmapString@Base @VER@
+ PyUnicode_AsDecodedObject@Base @VER@
+ PyUnicode_AsDecodedUnicode@Base @VER@
+ PyUnicode_AsEncodedObject@Base @VER@
+ PyUnicode_AsEncodedString@Base @VER@
+ PyUnicode_AsEncodedUnicode@Base @VER@
+ PyUnicode_AsLatin1String@Base @VER@
+ PyUnicode_AsRawUnicodeEscapeString@Base @VER@
+ PyUnicode_AsUCS4@Base @VER@
+ PyUnicode_AsUCS4Copy@Base @VER@
+ PyUnicode_AsUTF16String@Base @VER@
+ PyUnicode_AsUTF32String@Base @VER@
+ PyUnicode_AsUTF8@Base @VER@
+ PyUnicode_AsUTF8AndSize@Base @VER@
+ PyUnicode_AsUTF8String@Base @VER@
+ PyUnicode_AsUnicode@Base @VER@
+ PyUnicode_AsUnicodeAndSize@Base @VER@
  PyUnicode_AsUnicodeCopy@Base @VER@
+ PyUnicode_AsUnicodeEscapeString@Base @VER@
+ PyUnicode_AsWideChar@Base @VER@
+ PyUnicode_AsWideCharString@Base @VER@
  PyUnicode_BuildEncodingMap@Base @VER@
+ PyUnicode_ClearFreeList@Base @VER@
+ PyUnicode_Compare@Base @VER@
+ PyUnicode_CompareWithASCIIString@Base @VER@
+ PyUnicode_Concat@Base @VER@
+ PyUnicode_Contains@Base @VER@
+ PyUnicode_CopyCharacters@Base @VER@
+ PyUnicode_Count@Base @VER@
+ PyUnicode_Decode@Base @VER@
+ PyUnicode_DecodeASCII@Base @VER@
+ PyUnicode_DecodeCharmap@Base @VER@
+ PyUnicode_DecodeFSDefault@Base @VER@
+ PyUnicode_DecodeFSDefaultAndSize@Base @VER@
+ PyUnicode_DecodeLatin1@Base @VER@
+ PyUnicode_DecodeLocale@Base @VER@
+ PyUnicode_DecodeLocaleAndSize@Base @VER@
+ PyUnicode_DecodeRawUnicodeEscape@Base @VER@
+ PyUnicode_DecodeUTF16@Base @VER@
+ PyUnicode_DecodeUTF16Stateful@Base @VER@
+ PyUnicode_DecodeUTF32@Base @VER@
+ PyUnicode_DecodeUTF32Stateful@Base @VER@
  PyUnicode_DecodeUTF7@Base @VER@
  PyUnicode_DecodeUTF7Stateful@Base @VER@
+ PyUnicode_DecodeUTF8@Base @VER@
+ PyUnicode_DecodeUTF8Stateful@Base @VER@
+ PyUnicode_DecodeUnicodeEscape@Base @VER@
+ PyUnicode_Encode@Base @VER@
+ PyUnicode_EncodeASCII@Base @VER@
+ PyUnicode_EncodeCharmap@Base @VER@
+ PyUnicode_EncodeDecimal@Base @VER@
  PyUnicode_EncodeFSDefault@Base @VER@
+ PyUnicode_EncodeLatin1@Base @VER@
+ PyUnicode_EncodeLocale@Base @VER@
+ PyUnicode_EncodeRawUnicodeEscape@Base @VER@
+ PyUnicode_EncodeUTF16@Base @VER@
+ PyUnicode_EncodeUTF32@Base @VER@
  PyUnicode_EncodeUTF7@Base @VER@
+ PyUnicode_EncodeUTF8@Base @VER@
+ PyUnicode_EncodeUnicodeEscape@Base @VER@
+ PyUnicode_FSConverter@Base @VER@
+ PyUnicode_FSDecoder@Base @VER@
+ PyUnicode_Fill@Base @VER@
+ PyUnicode_Find@Base @VER@
+ PyUnicode_FindChar@Base @VER@
+ PyUnicode_Format@Base @VER@
+ PyUnicode_FromEncodedObject@Base @VER@
+ PyUnicode_FromFormat@Base @VER@
+ PyUnicode_FromFormatV@Base @VER@
+ PyUnicode_FromKindAndData@Base @VER@
+ PyUnicode_FromObject@Base @VER@
+ PyUnicode_FromOrdinal@Base @VER@
+ PyUnicode_FromString@Base @VER@
+ PyUnicode_FromStringAndSize@Base @VER@
+ PyUnicode_FromUnicode@Base @VER@
+ PyUnicode_FromWideChar@Base @VER@
+ PyUnicode_GetDefaultEncoding@Base @VER@
+ PyUnicode_GetLength@Base @VER@
+ PyUnicode_GetMax@Base @VER@
+ PyUnicode_GetSize@Base @VER@
  PyUnicode_InternFromString@Base @VER@
  PyUnicode_InternImmortal@Base @VER@
  PyUnicode_InternInPlace@Base @VER@
+ PyUnicode_IsIdentifier@Base @VER@
+ PyUnicode_Join@Base @VER@
+ PyUnicode_New@Base @VER@
+ PyUnicode_Partition@Base @VER@
+ PyUnicode_RPartition@Base @VER@
+ PyUnicode_RSplit@Base @VER@
+ PyUnicode_ReadChar@Base @VER@
+ PyUnicode_Replace@Base @VER@
+ PyUnicode_Resize@Base @VER@
+ PyUnicode_RichCompare@Base @VER@
+ PyUnicode_Split@Base @VER@
+ PyUnicode_Splitlines@Base @VER@
+ PyUnicode_Substring@Base @VER@
+ PyUnicode_Tailmatch@Base @VER@
  PyUnicode_TransformDecimalToASCII@Base @VER@
+ PyUnicode_Translate@Base @VER@
+ PyUnicode_TranslateCharmap@Base @VER@
  PyUnicode_Type@Base @VER@
+ PyUnicode_WriteChar@Base @VER@
  PyWeakref_GetObject@Base @VER@
  PyWeakref_NewProxy@Base @VER@
  PyWeakref_NewRef@Base @VER@
@@ -885,7 +940,6 @@
  Py_CompileStringFlags@Base @VER@
  Py_DebugFlag@Base @VER@
  Py_DecRef@Base @VER@
- Py_DivisionWarningFlag@Base @VER@
  Py_DontWriteBytecodeFlag@Base @VER@
  Py_EndInterpreter@Base @VER@
  Py_Exit@Base @VER@
@@ -930,8 +984,6 @@
  Py_SetProgramName@Base @VER@
  Py_SetPythonHome@Base @VER@
  Py_SetRecursionLimit@Base @VER@
- Py_SubversionRevision@Base @VER@
- Py_SubversionShortBranch@Base @VER@
  Py_SymtableString@Base @VER@
  Py_UNICODE_strcat@Base @VER@
  Py_UNICODE_strchr@Base @VER@
@@ -946,6 +998,7 @@
  Py_UseClassExceptionsFlag@Base @VER@
  Py_VaBuildValue@Base @VER@
  Py_VerboseFlag@Base @VER@
+ Py_hexdigits@Base @VER@
  Py_meta_grammar@Base @VER@
  Py_pgen@Base @VER@
  _PyAccu_Accumulate@Base @VER@
@@ -962,18 +1015,27 @@
  _PyBuiltin_Init@Base @VER@
  _PyByteArray_empty_string@Base @VER@
  _PyBytesIOBuffer_Type@Base @VER@
- _PyBytes_FormatLong@Base @VER@
  _PyBytes_Join@Base @VER@
  _PyBytes_Resize@Base @VER@
+ _PyCFunction_DebugMallocStats@Base @VER@
  _PyCapsule_hack@Base @VER@
  _PyCode_CheckLineNumber@Base @VER@
  _PyCodec_Lookup@Base @VER@
- _PyComplex_FormatAdvanced@Base @VER@
+ _PyComplex_FormatAdvancedWriter@Base @VER@
+ _PyDebugAllocatorStats@Base @VER@
+ _PyDictKeys_DecRef@Base @VER@
  _PyDict_Contains@Base @VER@
+ _PyDict_DebugMallocStats@Base @VER@
+ _PyDict_GetItemId@Base @VER@
+ _PyDict_GetItemIdWithError@Base @VER@
  _PyDict_HasOnlyStringKeys@Base @VER@
+ _PyDict_KeysSize@Base @VER@
+ _PyDict_LoadGlobal@Base @VER@
  _PyDict_MaybeUntrack@Base @VER@
+ _PyDict_NewKeysForClass@Base @VER@
  _PyDict_NewPresized@Base @VER@
  _PyDict_Next@Base @VER@
+ _PyDict_SetItemId@Base @VER@
  _PyErr_BadInternalCall@Base @VER@
  _PyEval_CallTracing@Base @VER@
  _PyEval_FiniThreads@Base @VER@
@@ -983,13 +1045,17 @@
  _PyEval_SliceIndex@Base @VER@
  _PyExc_Fini@Base @VER@
  _PyExc_Init@Base @VER@
+ _PyFaulthandler_Fini@Base @VER@
+ _PyFaulthandler_Init@Base @VER@
  _PyFileIO_closed@Base @VER@
- _PyFloat_FormatAdvanced@Base @VER@
+ _PyFloat_DebugMallocStats@Base @VER@
+ _PyFloat_FormatAdvancedWriter@Base @VER@
  _PyFloat_Init@Base @VER@
  _PyFloat_Pack4@Base @VER@
  _PyFloat_Pack8@Base @VER@
  _PyFloat_Unpack4@Base @VER@
  _PyFloat_Unpack8@Base @VER@
+ _PyFrame_DebugMallocStats@Base @VER@
  _PyFrame_Init@Base @VER@
  _PyGC_Dump@Base @VER@
  _PyGC_Fini@Base @VER@
@@ -997,6 +1063,8 @@
  _PyGILState_Fini@Base @VER@
  _PyGILState_Init@Base @VER@
  _PyGILState_Reinit@Base @VER@
+ _PyGen_FetchStopIterationValue@Base @VER@
+ _PyGen_Send@Base @VER@
  _PyIOBase_check_closed@Base @VER@
  _PyIOBase_check_readable@Base @VER@
  _PyIOBase_check_seekable@Base @VER@
@@ -1020,6 +1088,7 @@
  _PyIO_str_read1@Base @VER@
  _PyIO_str_read@Base @VER@
  _PyIO_str_readable@Base @VER@
+ _PyIO_str_readall@Base @VER@
  _PyIO_str_readinto@Base @VER@
  _PyIO_str_readline@Base @VER@
  _PyIO_str_reset@Base @VER@
@@ -1030,16 +1099,17 @@
  _PyIO_str_truncate@Base @VER@
  _PyIO_str_writable@Base @VER@
  _PyIO_str_write@Base @VER@
+ _PyIO_trap_eintr@Base @VER@
  _PyIO_zero@Base @VER@
  _PyImportHooks_Init@Base @VER@
+ _PyImportZip_Init@Base @VER@
  _PyImport_AcquireLock@Base @VER@
  _PyImport_DynLoadFiletab@Base @VER@
- _PyImport_Filetab@Base @VER@
  _PyImport_FindBuiltin@Base @VER@
- _PyImport_FindExtensionUnicode@Base @VER@
+ _PyImport_FindExtensionObject@Base @VER@
  _PyImport_Fini@Base @VER@
  _PyImport_FixupBuiltin@Base @VER@
- _PyImport_FixupExtensionUnicode@Base @VER@
+ _PyImport_FixupExtensionObject@Base @VER@
  _PyImport_GetDynLoadFunc@Base @VER@
  _PyImport_Init@Base @VER@
  _PyImport_Inittab@Base @VER@
@@ -1047,31 +1117,46 @@
  _PyImport_ReInitLock@Base @VER@
  _PyImport_ReleaseLock@Base @VER@
  _PyIncrementalNewlineDecoder_decode@Base @VER@
+ _PyList_DebugMallocStats@Base @VER@
  _PyList_Extend@Base @VER@
  _PyLong_AsByteArray@Base @VER@
+ _PyLong_AsTime_t@Base @VER@
  _PyLong_Copy@Base @VER@
  _PyLong_DigitValue@Base @VER@
  _PyLong_DivmodNear@Base @VER@
  _PyLong_Format@Base @VER@
- _PyLong_FormatAdvanced@Base @VER@
+ _PyLong_FormatAdvancedWriter@Base @VER@
+ _PyLong_FormatWriter@Base @VER@
  _PyLong_Frexp@Base @VER@
  _PyLong_FromByteArray@Base @VER@
+ _PyLong_FromTime_t@Base @VER@
  _PyLong_Init@Base @VER@
  _PyLong_New@Base @VER@
  _PyLong_NumBits@Base @VER@
  _PyLong_Sign@Base @VER@
+ _PyManagedBuffer_Type@Base @VER@
  _PyMethodWrapper_Type@Base @VER@
+ _PyMethod_DebugMallocStats@Base @VER@
  _PyModule_Clear@Base @VER@
- _PyNumber_ConvertIntegralToInt@Base @VER@
+ _PyNamespace_New@Base @VER@
+ _PyNamespace_Type@Base @VER@
+ _PyNode_SizeOf@Base @VER@
  _PyOS_GetOpt@Base @VER@
+ _PyOS_IsMainThread@Base @VER@
  _PyOS_ReadlineTState@Base @VER@
  _PyOS_ResetGetOpt@Base @VER@
  _PyOS_URandom@Base @VER@
  _PyOS_optarg@Base @VER@
  _PyOS_opterr@Base @VER@
  _PyOS_optind@Base @VER@
+ _PyObjectDict_SetItem@Base @VER@
  _PyObject_CallFunction_SizeT@Base @VER@
+ _PyObject_CallMethodId@Base @VER@
+ _PyObject_CallMethodId_SizeT@Base @VER@
+ _PyObject_CallMethodObjIdArgs@Base @VER@
  _PyObject_CallMethod_SizeT@Base @VER@
+ _PyObject_DebugMallocStats@Base @VER@
+ _PyObject_DebugTypeStats@Base @VER@
  _PyObject_Dump@Base @VER@
  _PyObject_GC_Malloc@Base @VER@
  _PyObject_GC_New@Base @VER@
@@ -1081,7 +1166,11 @@
  _PyObject_GC_UnTrack@Base @VER@
  _PyObject_GenericGetAttrWithDict@Base @VER@
  _PyObject_GenericSetAttrWithDict@Base @VER@
+ _PyObject_GetAttrId@Base @VER@
+ _PyObject_GetBuiltin@Base @VER@
  _PyObject_GetDictPtr@Base @VER@
+ _PyObject_HasAttrId@Base @VER@
+ _PyObject_IsAbstract@Base @VER@
  _PyObject_LengthHint@Base @VER@
  _PyObject_LookupSpecial@Base @VER@
  _PyObject_New@Base @VER@
@@ -1089,47 +1178,77 @@
  _PyObject_NextNotImplemented@Base @VER@
  _PyObject_RealIsInstance@Base @VER@
  _PyObject_RealIsSubclass@Base @VER@
+ _PyObject_SetAttrId@Base @VER@
  _PyParser_Grammar@Base @VER@
  _PyParser_TokenNames@Base @VER@
  _PyRandom_Init@Base @VER@
  _PySequence_BytesToCharpArray@Base @VER@
  _PySequence_IterSearch@Base @VER@
+ _PySet_DebugMallocStats@Base @VER@
  _PySet_NextEntry@Base @VER@
  _PySet_Update@Base @VER@
  _PySlice_FromIndices@Base @VER@
  _PyState_AddModule@Base @VER@
+ _PySys_ImplCacheTag@Base @VER@
+ _PySys_ImplName@Base @VER@
  _PySys_Init@Base @VER@
  _PyThreadState_Current@Base @VER@
  _PyThreadState_GetFrame@Base @VER@
  _PyThreadState_Init@Base @VER@
  _PyThreadState_Prealloc@Base @VER@
  _PyThread_CurrentFrames@Base @VER@
- _PyTime_DoubleToTimet@Base @VER@
  _PyTime_Init@Base @VER@
+ _PyTime_ObjectToTime_t@Base @VER@
+ _PyTime_ObjectToTimespec@Base @VER@
+ _PyTime_ObjectToTimeval@Base @VER@
  _PyTime_gettimeofday@Base @VER@
+ _PyTime_gettimeofday_info@Base @VER@
  _PyTrash_delete_later@Base @VER@
  _PyTrash_delete_nesting@Base @VER@
  _PyTrash_deposit_object@Base @VER@
  _PyTrash_destroy_chain@Base @VER@
+ _PyTrash_thread_deposit_object@Base @VER@
+ _PyTrash_thread_destroy_chain@Base @VER@
+ _PyTuple_DebugMallocStats@Base @VER@
  _PyTuple_MaybeUntrack@Base @VER@
  _PyTuple_Resize@Base @VER@
  _PyType_CalculateMetaclass@Base @VER@
  _PyType_Lookup@Base @VER@
- _PyUnicodeUCS4_AsDefaultEncodedString@Base @VER@
- _PyUnicodeUCS4_Fini@Base @VER@
- _PyUnicodeUCS4_Init@Base @VER@
- _PyUnicode_AsString@Base @VER@
- _PyUnicode_AsStringAndSize@Base @VER@
+ _PyUnicodeTranslateError_Create@Base @VER@
+ _PyUnicodeWriter_Dealloc@Base @VER@
+ _PyUnicodeWriter_Finish@Base @VER@
+ _PyUnicodeWriter_Init@Base @VER@
+ _PyUnicodeWriter_PrepareInternal@Base @VER@
+ _PyUnicodeWriter_WriteStr@Base @VER@
+ _PyUnicode_AsASCIIString@Base @VER@
+ _PyUnicode_AsKind@Base @VER@
+ _PyUnicode_AsLatin1String@Base @VER@
+ _PyUnicode_AsUTF8String@Base @VER@
  _PyUnicode_BidirectionalNames@Base @VER@
  _PyUnicode_CategoryNames@Base @VER@
+ _PyUnicode_ClearStaticStrings@Base @VER@
+ _PyUnicode_Copy@Base @VER@
  _PyUnicode_Database_Records@Base @VER@
  _PyUnicode_DecodeUnicodeInternal@Base @VER@
  _PyUnicode_EastAsianWidthNames@Base @VER@
- _PyUnicode_FormatAdvanced@Base @VER@
+ _PyUnicode_EncodeCharmap@Base @VER@
+ _PyUnicode_EncodeUTF16@Base @VER@
+ _PyUnicode_EncodeUTF32@Base @VER@
+ _PyUnicode_EncodeUTF7@Base @VER@
+ _PyUnicode_ExtendedCase@Base @VER@
+ _PyUnicode_FastCopyCharacters@Base @VER@
+ _PyUnicode_FastFill@Base @VER@
+ _PyUnicode_FindMaxChar@Base @VER@
+ _PyUnicode_Fini@Base @VER@
+ _PyUnicode_FormatAdvancedWriter@Base @VER@
+ _PyUnicode_FromASCII@Base @VER@
+ _PyUnicode_FromId@Base @VER@
  _PyUnicode_HasNULChars@Base @VER@
+ _PyUnicode_Init@Base @VER@
  _PyUnicode_InsertThousandsGrouping@Base @VER@
- _PyUnicode_InsertThousandsGroupingLocale@Base @VER@
  _PyUnicode_IsAlpha@Base @VER@
+ _PyUnicode_IsCaseIgnorable@Base @VER@
+ _PyUnicode_IsCased@Base @VER@
  _PyUnicode_IsDecimalDigit@Base @VER@
  _PyUnicode_IsDigit@Base @VER@
  _PyUnicode_IsLinebreak@Base @VER@
@@ -1141,12 +1260,19 @@
  _PyUnicode_IsWhitespace@Base @VER@
  _PyUnicode_IsXidContinue@Base @VER@
  _PyUnicode_IsXidStart@Base @VER@
+ _PyUnicode_Ready@Base @VER@
  _PyUnicode_ToDecimalDigit@Base @VER@
  _PyUnicode_ToDigit@Base @VER@
+ _PyUnicode_ToFoldedFull@Base @VER@
+ _PyUnicode_ToLowerFull@Base @VER@
  _PyUnicode_ToLowercase@Base @VER@
  _PyUnicode_ToNumeric@Base @VER@
+ _PyUnicode_ToTitleFull@Base @VER@
  _PyUnicode_ToTitlecase@Base @VER@
+ _PyUnicode_ToUpperFull@Base @VER@
  _PyUnicode_ToUppercase@Base @VER@
+ _PyUnicode_TransformDecimalAndSpaceToASCII@Base @VER@
+ _PyUnicode_TranslateCharmap@Base @VER@
  _PyUnicode_TypeRecords@Base @VER@
  _PyUnicode_XStrip@Base @VER@
  _PyWarnings_Init@Base @VER@
@@ -1176,6 +1302,8 @@
  _Py_Dict@Base @VER@
  _Py_DictComp@Base @VER@
  _Py_DisplaySourceLine@Base @VER@
+ _Py_DumpTraceback@Base @VER@
+ _Py_DumpTracebackThreads@Base @VER@
  _Py_Ellipsis@Base @VER@
  _Py_EllipsisObject@Base @VER@
  _Py_ExceptHandler@Base @VER@
@@ -1189,6 +1317,7 @@
  _Py_FunctionDef@Base @VER@
  _Py_GeneratorExp@Base @VER@
  _Py_Global@Base @VER@
+ _Py_HashBytes@Base @VER@
  _Py_HashDouble@Base @VER@
  _Py_HashPointer@Base @VER@
  _Py_HashSecret@Base @VER@
@@ -1197,10 +1326,12 @@
  _Py_Import@Base @VER@
  _Py_ImportFrom@Base @VER@
  _Py_Index@Base @VER@
+ _Py_InitializeEx_Private@Base @VER@
  _Py_Interactive@Base @VER@
  _Py_Lambda@Base @VER@
  _Py_List@Base @VER@
  _Py_ListComp@Base @VER@
+ _Py_M__importlib@Base @VER@
  _Py_Mangle@Base @VER@
  _Py_Module@Base @VER@
  _Py_Name@Base @VER@
@@ -1225,14 +1356,14 @@
  _Py_Suite@Base @VER@
  _Py_SwappedOp@Base @VER@
  _Py_TrueStruct@Base @VER@
- _Py_TryExcept@Base @VER@
- _Py_TryFinally@Base @VER@
+ _Py_Try@Base @VER@
  _Py_Tuple@Base @VER@
  _Py_UnaryOp@Base @VER@
  _Py_VaBuildValue_SizeT@Base @VER@
  _Py_While@Base @VER@
  _Py_With@Base @VER@
  _Py_Yield@Base @VER@
+ _Py_YieldFrom@Base @VER@
  _Py_abstract_hack@Base @VER@
  _Py_acosh@Base @VER@
  _Py_add_one_to_index_C@Base @VER@
@@ -1276,8 +1407,11 @@
  _Py_ctype_tolower@Base @VER@
  _Py_ctype_toupper@Base @VER@
  _Py_delbitset@Base @VER@
+ _Py_device_encoding@Base @VER@
  _Py_dg_dtoa@Base @VER@
  _Py_dg_freedtoa@Base @VER@
+ _Py_dg_infinity@Base @VER@
+ _Py_dg_stdnan@Base @VER@
  _Py_dg_strtod@Base @VER@
  _Py_expm1@Base @VER@
  _Py_findlabel@Base @VER@
@@ -1306,7 +1440,6 @@
  _Py_samebitset@Base @VER@
  (arch=amd64 i386 lpia)_Py_set_387controlword@Base @VER@
  _Py_stat@Base @VER@
- _Py_svnversion@Base @VER@
  _Py_swapcase__doc__@Base @VER@
  _Py_title__doc__@Base @VER@
  _Py_translatelabels@Base @VER@
@@ -1314,6 +1447,7 @@
  _Py_wchar2char@Base @VER@
  _Py_wfopen@Base @VER@
  _Py_wgetcwd@Base @VER@
+ _Py_withitem@Base @VER@
  _Py_wreadlink@Base @VER@
  _Py_wrealpath@Base @VER@
  _Py_wstat@Base @VER@
@@ -1365,9 +1499,13 @@
  PyInit__heapq@Base @VER@
  PyInit__io@Base @VER@
  PyInit__locale@Base @VER@
+ PyInit__md5@Base @VER@
  PyInit__pickle@Base @VER@
  PyInit__posixsubprocess@Base @VER@
  PyInit__random@Base @VER@
+ PyInit__sha1@Base @VER@
+ PyInit__sha256@Base @VER@
+ PyInit__sha512@Base @VER@
  PyInit__socket@Base @VER@
  PyInit__sre@Base @VER@
  PyInit__ssl@Base @VER@
@@ -1380,6 +1518,7 @@
  PyInit_atexit@Base @VER@
  PyInit_binascii@Base @VER@
  PyInit_errno@Base @VER@
+ PyInit_faulthandler@Base @VER@
  PyInit_fcntl@Base @VER@
  PyInit_gc@Base @VER@
  PyInit_grp@Base @VER@
