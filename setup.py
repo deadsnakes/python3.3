@@ -390,9 +390,11 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
 
     def detect_modules(self):
-        # On Debian /usr/local is always used, so we don't include it twice
-        #add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
-        #add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+        # Ensure that /usr/local is always used, but the local build
+        # directories (i.e. '.' and 'Include') must be first.  See issue
+        # 10520.
+        add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+        add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
         self.add_multiarch_paths()
 
         # Add paths specified in the environment variables LDFLAGS and
@@ -613,7 +615,7 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
         # Issue 7384: If readline is already linked against curses,
         # use the same library for the readline and curses modules.
-        if False and 'curses' in readline_termcap_library:
+        if 'curses' in readline_termcap_library:
             curses_library = readline_termcap_library
         elif self.compiler.find_library_file(lib_dirs, 'ncursesw'):
             curses_library = 'ncursesw'
@@ -777,7 +779,7 @@ class PyBuildExt(build_ext):
         # a release.  Most open source OSes come with one or more
         # versions of BerkeleyDB already installed.
 
-        max_db_ver = (5, 3)
+        max_db_ver = (5, 1)
         min_db_ver = (3, 3)
         db_setup_debug = False   # verbose debug prints from this script?
 
@@ -1213,9 +1215,6 @@ class PyBuildExt(build_ext):
                                    libraries = [panel_library] + curses_libs) )
         else:
             missing.append('_curses_panel')
-
-        #fpectl fpectlmodule.c ...
-        exts.append( Extension('fpectl', ['fpectlmodule.c']) )
 
         # Andrew Kuchling's zlib module.  Note that some versions of zlib
         # 1.1.3 have security problems.  See CERT Advisory CA-2002-07:
