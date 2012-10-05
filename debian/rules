@@ -618,7 +618,7 @@ endif
 	cp -p debian/pdb.1 $(d)/usr/share/man/man1/pdb$(VER).1
 
 	: # versioned install only
-	rm -f $(d)/usr/bin/{2to3,idle3,pydoc3,python3,python3-config}
+	rm -f $(d)/usr/bin/{2to3,idle3,pydoc3,python3,python3-config,pyvenv}
 	rm -f $(d)/usr/lib/pkgconfig/python3.pc
 
 	: # Remove version information from the egg-info file
