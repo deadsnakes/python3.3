@@ -1,6 +1,3 @@
-# idlelib images
-@PVER@ binary: image-file-in-usr-lib
-
 # yes, we have to
 @PVER@ binary: depends-on-python-minimal
 
@@ -11,3 +8,7 @@
 @PVER@ binary: extra-license-file
 
 @PVER@ binary: binary-without-manpage usr/bin/2to3-@VER@
+
+# venv script interpreters are fine
+@PVER@ binary: unusual-interpreter ./usr/lib/@PVER@/venv/scripts/*
+@PVER@ binary: interpreter-not-absolute ./usr/lib/@PVER@/venv/scripts/*
