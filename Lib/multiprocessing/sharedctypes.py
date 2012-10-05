@@ -63,7 +63,7 @@ def RawArray(typecode_or_type, size_or_initializer):
         result.__init__(*size_or_initializer)
         return result
 
-def Value(typecode_or_type, *args, lock=None):
+def Value(typecode_or_type, *args, lock=True):
     '''
     Return a synchronization wrapper for a Value
     '''
@@ -76,13 +76,10 @@ def Value(typecode_or_type, *args, lock=None):
         raise AttributeError("'%r' has no method 'acquire'" % lock)
     return synchronized(obj, lock)
 
-def Array(typecode_or_type, size_or_initializer, **kwds):
+def Array(typecode_or_type, size_or_initializer, *, lock=True):
     '''
     Return a synchronization wrapper for a RawArray
     '''
-    lock = kwds.pop('lock', None)
-    if kwds:
-        raise ValueError('unrecognized keyword argument(s): %s' % list(kwds.keys()))
     obj = RawArray(typecode_or_type, size_or_initializer)
     if lock is False:
         return obj
@@ -132,7 +129,8 @@ def rebuild_ctype(type_, wrapper, length):
     if length is not None:
         type_ = type_ * length
     ForkingPickler.register(type_, reduce_ctype)
-    obj = type_.from_address(wrapper.get_address())
+    buf = wrapper.create_memoryview()
+    obj = type_.from_buffer(buf)
     obj._wrapper = wrapper
     return obj
 

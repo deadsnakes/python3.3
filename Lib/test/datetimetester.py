@@ -235,6 +235,8 @@ class TestTimeZone(unittest.TestCase):
         self.assertEqual(timezone(-5 * HOUR), timezone(-5 * HOUR, 'EST'))
         with self.assertRaises(TypeError): timezone(ZERO) < timezone(ZERO)
         self.assertIn(timezone(ZERO), {timezone(ZERO)})
+        self.assertTrue(timezone(ZERO) != None)
+        self.assertFalse(timezone(ZERO) ==  None)
 
     def test_aware_datetime(self):
         # test that timezone instances can be used by datetime
@@ -1735,6 +1737,42 @@ class TestDateTime(TestDate):
         got = self.theclass.utcfromtimestamp(ts)
         self.verify_field_equality(expected, got)
 
+    # Run with US-style DST rules: DST begins 2 a.m. on second Sunday in
+    # March (M3.2.0) and ends 2 a.m. on first Sunday in November (M11.1.0).
+    @support.run_with_tz('EST+05EDT,M3.2.0,M11.1.0')
+    def test_timestamp_naive(self):
+        t = self.theclass(1970, 1, 1)
+        self.assertEqual(t.timestamp(), 18000.0)
+        t = self.theclass(1970, 1, 1, 1, 2, 3, 4)
+        self.assertEqual(t.timestamp(),
+                         18000.0 + 3600 + 2*60 + 3 + 4*1e-6)
+        # Missing hour may produce platform-dependent result
+        t = self.theclass(2012, 3, 11, 2, 30)
+        self.assertIn(self.theclass.fromtimestamp(t.timestamp()),
+                      [t - timedelta(hours=1), t + timedelta(hours=1)])
+        # Ambiguous hour defaults to DST
+        t = self.theclass(2012, 11, 4, 1, 30)
+        self.assertEqual(self.theclass.fromtimestamp(t.timestamp()), t)
+
+        # Timestamp may raise an overflow error on some platforms
+        for t in [self.theclass(1,1,1), self.theclass(9999,12,12)]:
+            try:
+                s = t.timestamp()
+            except OverflowError:
+                pass
+            else:
+                self.assertEqual(self.theclass.fromtimestamp(s), t)
+
+    def test_timestamp_aware(self):
+        t = self.theclass(1970, 1, 1, tzinfo=timezone.utc)
+        self.assertEqual(t.timestamp(), 0.0)
+        t = self.theclass(1970, 1, 1, 1, 2, 3, 4, tzinfo=timezone.utc)
+        self.assertEqual(t.timestamp(),
+                         3600 + 2*60 + 3 + 4*1e-6)
+        t = self.theclass(1970, 1, 1, 1, 2, 3, 4,
+                          tzinfo=timezone(timedelta(hours=-5), 'EST'))
+        self.assertEqual(t.timestamp(),
+                         18000 + 3600 + 2*60 + 3 + 4*1e-6)
     def test_microsecond_rounding(self):
         for fts in [self.theclass.fromtimestamp,
                     self.theclass.utcfromtimestamp]:
@@ -1936,7 +1974,7 @@ class TestDateTime(TestDate):
         # simply can't be applied to a naive object.
         dt = self.theclass.now()
         f = FixedOffset(44, "")
-        self.assertRaises(TypeError, dt.astimezone) # not enough args
+        self.assertRaises(ValueError, dt.astimezone) # naive
         self.assertRaises(TypeError, dt.astimezone, f, f) # too many args
         self.assertRaises(TypeError, dt.astimezone, dt) # arg wrong type
         self.assertRaises(ValueError, dt.astimezone, f) # naive
@@ -2508,7 +2546,7 @@ class TestTimeTZ(TestTime, TZInfoBase, unittest.TestCase):
         self.assertEqual(t1, t2)
         self.assertEqual(t1, t3)
         self.assertEqual(t2, t3)
-        self.assertRaises(TypeError, lambda: t4 == t5) # mixed tz-aware & naive
+        self.assertNotEqual(t4, t5) # mixed tz-aware & naive
         self.assertRaises(TypeError, lambda: t4 < t5) # mixed tz-aware & naive
         self.assertRaises(TypeError, lambda: t5 < t4) # mixed tz-aware & naive
 
@@ -2660,7 +2698,7 @@ class TestTimeTZ(TestTime, TZInfoBase, unittest.TestCase):
         t2 = t2.replace(tzinfo=FixedOffset(None, ""))
         self.assertEqual(t1, t2)
         t2 = t2.replace(tzinfo=FixedOffset(0, ""))
-        self.assertRaises(TypeError, lambda: t1 == t2)
+        self.assertNotEqual(t1, t2)
 
         # In time w/ identical tzinfo objects, utcoffset is ignored.
         class Varies(tzinfo):
@@ -2765,16 +2803,16 @@ class TestDateTimeTZ(TestDateTime, TZInfoBase, unittest.TestCase):
                            microsecond=1)
         self.assertTrue(t1 > t2)
 
-        # Make t2 naive and it should fail.
+        # Make t2 naive and it should differ.
         t2 = self.theclass.min
-        self.assertRaises(TypeError, lambda: t1 == t2)
+        self.assertNotEqual(t1, t2)
         self.assertEqual(t2, t2)
 
         # It's also naive if it has tzinfo but tzinfo.utcoffset() is None.
         class Naive(tzinfo):
             def utcoffset(self, dt): return None
         t2 = self.theclass(5, 6, 7, tzinfo=Naive())
-        self.assertRaises(TypeError, lambda: t1 == t2)
+        self.assertNotEqual(t1, t2)
         self.assertEqual(t2, t2)
 
         # OTOH, it's OK to compare two of these mixing the two ways of being
@@ -3217,8 +3255,6 @@ class TestDateTimeTZ(TestDateTime, TZInfoBase, unittest.TestCase):
         self.assertTrue(dt.tzinfo is f44m)
         # Replacing with degenerate tzinfo raises an exception.
         self.assertRaises(ValueError, dt.astimezone, fnone)
-        # Ditto with None tz.
-        self.assertRaises(TypeError, dt.astimezone, None)
         # Replacing with same tzinfo makes no change.
         x = dt.astimezone(dt.tzinfo)
         self.assertTrue(x.tzinfo is f44m)
@@ -3237,6 +3273,25 @@ class TestDateTimeTZ(TestDateTime, TZInfoBase, unittest.TestCase):
         self.assertEqual(got.timetz(), expected.timetz())
         self.assertTrue(got.tzinfo is expected.tzinfo)
         self.assertEqual(got, expected)
+
+    @support.run_with_tz('UTC')
+    def test_astimezone_default_utc(self):
+        dt = self.theclass.now(timezone.utc)
+        self.assertEqual(dt.astimezone(None), dt)
+        self.assertEqual(dt.astimezone(), dt)
+
+    # Note that offset in TZ variable has the opposite sign to that
+    # produced by %z directive.
+    @support.run_with_tz('EST+05EDT,M3.2.0,M11.1.0')
+    def test_astimezone_default_eastern(self):
+        dt = self.theclass(2012, 11, 4, 6, 30, tzinfo=timezone.utc)
+        local = dt.astimezone()
+        self.assertEqual(dt, local)
+        self.assertEqual(local.strftime("%z %Z"), "-0500 EST")
+        dt = self.theclass(2012, 11, 4, 5, 30, tzinfo=timezone.utc)
+        local = dt.astimezone()
+        self.assertEqual(dt, local)
+        self.assertEqual(local.strftime("%z %Z"), "-0400 EDT")
 
     def test_aware_subtract(self):
         cls = self.theclass
@@ -3291,7 +3346,7 @@ class TestDateTimeTZ(TestDateTime, TZInfoBase, unittest.TestCase):
         t2 = t2.replace(tzinfo=FixedOffset(None, ""))
         self.assertEqual(t1, t2)
         t2 = t2.replace(tzinfo=FixedOffset(0, ""))
-        self.assertRaises(TypeError, lambda: t1 == t2)
+        self.assertNotEqual(t1, t2)
 
         # In datetime w/ identical tzinfo objects, utcoffset is ignored.
         class Varies(tzinfo):

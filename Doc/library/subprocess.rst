@@ -156,7 +156,7 @@ use cases, the underlying :class:`Popen` interface can be used directly.
    decoding to text will often need to be handled at the application level.
 
    This behaviour may be overridden by setting *universal_newlines* to
-   :const:`True` as described below in :ref:`frequently-used-arguments`.
+   ``True`` as described below in :ref:`frequently-used-arguments`.
 
    To also capture standard error in the result, use
    ``stderr=subprocess.STDOUT``::
@@ -208,6 +208,54 @@ use cases, the underlying :class:`Popen` interface can be used directly.
    output.
 
 
+.. exception:: SubprocessError
+
+    Base class for all other exceptions from this module.
+
+    .. versionadded:: 3.3
+
+
+.. exception:: TimeoutExpired
+
+    Subclass of :exc:`SubprocessError`, raised when a timeout expires
+    while waiting for a child process.
+
+    .. attribute:: cmd
+
+        Command that was used to spawn the child process.
+
+    .. attribute:: timeout
+
+        Timeout in seconds.
+
+    .. attribute:: output
+
+        Output of the child process if this exception is raised by
+        :func:`check_output`.  Otherwise, ``None``.
+
+    .. versionadded:: 3.3
+
+
+.. exception:: CalledProcessError
+
+    Subclass of :exc:`SubprocessError`, raised when a process run by
+    :func:`check_call` or :func:`check_output` returns a non-zero exit status.
+
+    .. attribute:: returncode
+
+        Exit status of the child process.
+
+    .. attribute:: cmd
+
+        Command that was used to spawn the child process.
+
+    .. attribute:: output
+
+        Output of the child process if this exception is raised by
+        :func:`check_output`.  Otherwise, ``None``.
+
+
+
 .. _frequently-used-arguments:
 
 Frequently Used Arguments
@@ -237,17 +285,38 @@ default values. The arguments that are most commonly needed are:
    :data:`STDOUT`, which indicates that the stderr data from the child
    process should be captured into the same file handle as for *stdout*.
 
-   When *stdout* or *stderr* are pipes and *universal_newlines* is
-   :const:`True` then the output data is assumed to be encoded as UTF-8 and
-   will automatically be decoded to text. All line endings will be converted
-   to ``'\n'`` as described for the universal newlines ``'U'`` mode argument
-   to :func:`open`.
+   .. index::
+      single: universal newlines; subprocess module
 
-   If *shell* is :const:`True`, the specified command will be executed through
+   If *universal_newlines* is ``True``, the file objects *stdin*, *stdout* and
+   *stderr* will be opened as text streams in :term:`universal newlines` mode
+   using the encoding returned by :func:`locale.getpreferredencoding(False)
+   <locale.getpreferredencoding>`.  For *stdin*, line ending characters
+   ``'\n'`` in the input will be converted to the default line separator
+   :data:`os.linesep`.  For *stdout* and *stderr*, all line endings in the
+   output will be converted to ``'\n'``.  For more information see the
+   documentation of the :class:`io.TextIOWrapper` class when the *newline*
+   argument to its constructor is ``None``.
+
+   .. note::
+
+      The *universal_newlines* feature is supported only if Python is built
+      with universal newline support (the default).  Also, the newlines
+      attribute of the file objects :attr:`Popen.stdin`, :attr:`Popen.stdout`
+      and :attr:`Popen.stderr` are not updated by the
+      :meth:`Popen.communicate` method.
+
+   If *shell* is ``True``, the specified command will be executed through
    the shell. This can be useful if you are using Python primarily for the
    enhanced control flow it offers over most system shells and still want
    access to other shell features such as filename wildcards, shell pipes and
    environment variable expansion.
+
+   .. versionchanged:: 3.3
+      When *universal_newlines* is ``True``, the class uses the encoding
+      :func:`locale.getpreferredencoding(False) <locale.getpreferredencoding>`
+      instead of ``locale.getpreferredencoding()``.  See the
+      :class:`io.TextIOWrapper` class for more information on this change.
 
    .. warning::
 
@@ -442,18 +511,9 @@ functions.
 
    .. _side-by-side assembly: http://en.wikipedia.org/wiki/Side-by-Side_Assembly
 
-   If *universal_newlines* is :const:`True`, the file objects stdout and stderr are
-   opened as text files, but lines may be terminated by any of ``'\n'``, the Unix
-   end-of-line convention, ``'\r'``, the old Macintosh convention or ``'\r\n'``, the
-   Windows convention. All of these external representations are seen as ``'\n'``
-   by the Python program.
-
-   .. note::
-
-      This feature is only available if Python is built with universal newline
-      support (the default).  Also, the newlines attribute of the file objects
-      :attr:`stdout`, :attr:`stdin` and :attr:`stderr` are not updated by the
-      :meth:`communicate` method.
+   If *universal_newlines* is ``True``, the file objects *stdin*, *stdout*
+   and *stderr* are opened as text streams in universal newlines mode, as
+   described above in :ref:`frequently-used-arguments`.
 
    If given, *startupinfo* will be a :class:`STARTUPINFO` object, which is
    passed to the underlying ``CreateProcess`` function.

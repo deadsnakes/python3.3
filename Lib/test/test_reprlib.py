@@ -10,7 +10,7 @@ import shutil
 import importlib
 import unittest
 
-from test.support import run_unittest, create_empty_file
+from test.support import run_unittest, create_empty_file, verbose
 from reprlib import repr as r # Don't shadow builtin repr
 from reprlib import Repr
 from reprlib import recursive_repr
@@ -242,22 +242,23 @@ class LongReprTest(unittest.TestCase):
         # a path separator + `module_name` + ".py"
         source_path_len += len(module_name) + 1 + len(".py")
         cached_path_len = source_path_len + len(imp.cache_from_source("x.py")) - len("x.py")
-        if os.name == 'nt' and cached_path_len >= 259:
+        if os.name == 'nt' and cached_path_len >= 258:
             # Under Windows, the max path len is 260 including C's terminating
             # NUL character.
             # (see http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247%28v=vs.85%29.aspx#maxpath)
             self.skipTest("test paths too long (%d characters) for Windows' 260 character limit"
                           % cached_path_len)
+        elif os.name == 'nt' and verbose:
+            print("cached_path_len =", cached_path_len)
 
     def test_module(self):
         self._check_path_limitations(self.pkgname)
-        eq = self.assertEqual
         create_empty_file(os.path.join(self.subpkgname, self.pkgname + '.py'))
         importlib.invalidate_caches()
         from areallylongpackageandmodulenametotestreprtruncation.areallylongpackageandmodulenametotestreprtruncation import areallylongpackageandmodulenametotestreprtruncation
-        eq(repr(areallylongpackageandmodulenametotestreprtruncation),
-           "<module %r from %r>" % (areallylongpackageandmodulenametotestreprtruncation.__name__, areallylongpackageandmodulenametotestreprtruncation.__file__))
-        eq(repr(sys), "<module 'sys' (built-in)>")
+        module = areallylongpackageandmodulenametotestreprtruncation
+        self.assertEqual(repr(module), "<module %r from %r>" % (module.__name__, module.__file__))
+        self.assertEqual(repr(sys), "<module 'sys' (built-in)>")
 
     def test_type(self):
         self._check_path_limitations('foo')

@@ -10,22 +10,21 @@ from _imp import (lock_held, acquire_lock, release_lock,
                   load_dynamic, get_frozen_object, is_frozen_package,
                   init_builtin, init_frozen, is_builtin, is_frozen,
                   _fix_co_filename)
-# Could move out of _imp, but not worth the code
-from _imp import get_magic, get_tag
-# Can (probably) move to importlib
-from _imp import get_suffixes
 
-from importlib._bootstrap import _new_module as new_module
-from importlib._bootstrap import _cache_from_source as cache_from_source
+# Directly exposed by this module
+from importlib._bootstrap import new_module
+from importlib._bootstrap import cache_from_source, source_from_cache
+
 
 from importlib import _bootstrap
+from importlib import machinery
 import os
 import sys
 import tokenize
+import warnings
 
 
-# XXX "deprecate" once find_module(), load_module(), and get_suffixes() are
-#     deprecated.
+# DEPRECATED
 SEARCH_ERROR = 0
 PY_SOURCE = 1
 PY_COMPILED = 2
@@ -38,24 +37,25 @@ PY_CODERESOURCE = 8
 IMP_HOOK = 9
 
 
-def source_from_cache(path):
-    """Given the path to a .pyc./.pyo file, return the path to its .py file.
+def get_magic():
+    """Return the magic number for .pyc or .pyo files."""
+    return _bootstrap._MAGIC_BYTES
 
-    The .pyc/.pyo file does not need to exist; this simply returns the path to
-    the .py file calculated to correspond to the .pyc/.pyo file.  If path does
-    not conform to PEP 3147 format, ValueError will be raised.
 
-    """
-    head, pycache_filename = os.path.split(path)
-    head, pycache = os.path.split(head)
-    if pycache != _bootstrap.PYCACHE:
-        raise ValueError('{} not bottom-level directory in '
-                         '{!r}'.format(_bootstrap.PYCACHE, path))
-    if pycache_filename.count('.') != 2:
-        raise ValueError('expected only 2 dots in '
-                         '{!r}'.format(pycache_filename))
-    base_filename = pycache_filename.partition('.')[0]
-    return os.path.join(head, base_filename + _bootstrap.SOURCE_SUFFIXES[0])
+def get_tag():
+    """Return the magic tag for .pyc or .pyo files."""
+    return sys.implementation.cache_tag
+
+
+def get_suffixes():
+    warnings.warn('imp.get_suffixes() is deprecated; use the constants '
+                  'defined on importlib.machinery instead',
+                  DeprecationWarning, 2)
+    extensions = [(s, 'rb', C_EXTENSION) for s in machinery.EXTENSION_SUFFIXES]
+    source = [(s, 'U', PY_SOURCE) for s in machinery.SOURCE_SUFFIXES]
+    bytecode = [(s, 'rb', PY_COMPILED) for s in machinery.BYTECODE_SUFFIXES]
+
+    return extensions + source + bytecode
 
 
 class NullImporter:
@@ -101,8 +101,11 @@ class _LoadSourceCompatibility(_HackedGetData, _bootstrap.SourceFileLoader):
     """Compatibility support for implementing load_source()."""
 
 
-# XXX deprecate after better API exposed in importlib
 def load_source(name, pathname, file=None):
+    msg = ('imp.load_source() is deprecated; use '
+           'importlib.machinery.SourceFileLoader(name, pathname).load_module()'
+           ' instead')
+    warnings.warn(msg, DeprecationWarning, 2)
     return _LoadSourceCompatibility(name, pathname, file).load_module(name)
 
 
@@ -112,16 +115,22 @@ class _LoadCompiledCompatibility(_HackedGetData,
     """Compatibility support for implementing load_compiled()."""
 
 
-# XXX deprecate
 def load_compiled(name, pathname, file=None):
+    msg = ('imp.load_compiled() is deprecated; use '
+           'importlib.machinery.SourcelessFileLoader(name, pathname).'
+           'load_module() instead ')
+    warnings.warn(msg, DeprecationWarning, 2)
     return _LoadCompiledCompatibility(name, pathname, file).load_module(name)
 
 
-# XXX deprecate
 def load_package(name, path):
+    msg = ('imp.load_package() is deprecated; use either '
+           'importlib.machinery.SourceFileLoader() or '
+           'importlib.machinery.SourcelessFileLoader() instead')
+    warnings.warn(msg, DeprecationWarning, 2)
     if os.path.isdir(path):
-        extensions = _bootstrap._suffix_list(PY_SOURCE)
-        extensions += _bootstrap._suffix_list(PY_COMPILED)
+        extensions = (machinery.SOURCE_SUFFIXES[:] +
+                      machinery.BYTECODE_SUFFIXES[:])
         for extension in extensions:
             path = os.path.join(path, '__init__'+extension)
             if os.path.exists(path):
@@ -131,36 +140,43 @@ def load_package(name, path):
     return _bootstrap.SourceFileLoader(name, path).load_module(name)
 
 
-# XXX deprecate
 def load_module(name, file, filename, details):
-    """Load a module, given information returned by find_module().
+    """**DEPRECATED**
+
+    Load a module, given information returned by find_module().
 
     The module name must include the full package name, if any.
 
     """
     suffix, mode, type_ = details
-    if mode and (not mode.startswith(('r', 'U')) or '+' in mode):
-        raise ValueError('invalid file open mode {!r}'.format(mode))
-    elif file is None and type_ in {PY_SOURCE, PY_COMPILED}:
-        msg = 'file object required for import (type code {})'.format(type_)
-        raise ValueError(msg)
-    elif type_ == PY_SOURCE:
-        return load_source(name, filename, file)
-    elif type_ == PY_COMPILED:
-        return load_compiled(name, filename, file)
-    elif type_ == PKG_DIRECTORY:
-        return load_package(name, filename)
-    elif type_ == C_BUILTIN:
-        return init_builtin(name)
-    elif type_ == PY_FROZEN:
-        return init_frozen(name)
-    else:
-        msg =  "Don't know how to import {} (type code {}".format(name, type_)
-        raise ImportError(msg, name=name)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        if mode and (not mode.startswith(('r', 'U')) or '+' in mode):
+            raise ValueError('invalid file open mode {!r}'.format(mode))
+        elif file is None and type_ in {PY_SOURCE, PY_COMPILED, C_EXTENSION}:
+            msg = 'file object required for import (type code {})'.format(type_)
+            raise ValueError(msg)
+        elif type_ == PY_SOURCE:
+            return load_source(name, filename, file)
+        elif type_ == PY_COMPILED:
+            return load_compiled(name, filename, file)
+        elif type_ == C_EXTENSION:
+            return load_dynamic(name, filename, file)
+        elif type_ == PKG_DIRECTORY:
+            return load_package(name, filename)
+        elif type_ == C_BUILTIN:
+            return init_builtin(name)
+        elif type_ == PY_FROZEN:
+            return init_frozen(name)
+        else:
+            msg =  "Don't know how to import {} (type code {})".format(name, type_)
+            raise ImportError(msg, name=name)
 
 
 def find_module(name, path=None):
-    """Search for a module.
+    """**DEPRECATED**
+
+    Search for a module.
 
     If path is omitted or None, search for a built-in, frozen or special
     module and continue search in sys.path. The module name cannot
@@ -185,21 +201,23 @@ def find_module(name, path=None):
 
     for entry in path:
         package_directory = os.path.join(entry, name)
-        for suffix in ['.py', _bootstrap.BYTECODE_SUFFIX]:
+        for suffix in ['.py', machinery.BYTECODE_SUFFIXES[0]]:
             package_file_name = '__init__' + suffix
             file_path = os.path.join(package_directory, package_file_name)
             if os.path.isfile(file_path):
                 return None, package_directory, ('', '', PKG_DIRECTORY)
-        for suffix, mode, type_ in get_suffixes():
-            file_name = name + suffix
-            file_path = os.path.join(entry, file_name)
-            if os.path.isfile(file_path):
-                break
-        else:
-            continue
-        break  # Break out of outer loop when breaking out of inner loop.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            for suffix, mode, type_ in get_suffixes():
+                file_name = name + suffix
+                file_path = os.path.join(entry, file_name)
+                if os.path.isfile(file_path):
+                    break
+            else:
+                continue
+            break  # Break out of outer loop when breaking out of inner loop.
     else:
-        raise ImportError('No module name {!r}'.format(name), name=name)
+        raise ImportError(_bootstrap._ERR_MSG.format(name), name=name)
 
     encoding = None
     if mode == 'U':

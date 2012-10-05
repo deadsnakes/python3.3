@@ -165,6 +165,9 @@ example, to run all the tests except for the gui tests, give the
 option '-uall,-gui'.
 """
 
+# We import importlib *ASAP* in order to test #15386
+import importlib
+
 import builtins
 import faulthandler
 import getopt
@@ -172,8 +175,6 @@ import io
 import json
 import logging
 import os
-import packaging.command
-import packaging.database
 import platform
 import random
 import re
@@ -380,9 +381,9 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
                 huntrleaks[1] = int(huntrleaks[1])
             if len(huntrleaks) == 2 or not huntrleaks[2]:
                 huntrleaks[2:] = ["reflog.txt"]
-            # Avoid false positives due to the character cache in
-            # stringobject.c filling slowly with random data
-            warm_char_cache()
+            # Avoid false positives due to various caches
+            # filling slowly with random data:
+            warm_caches()
         elif o in ('-M', '--memlimit'):
             support.set_memlimit(a)
         elif o in ('-u', '--use'):
@@ -439,8 +440,11 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
             args, kwargs = json.loads(a)
             try:
                 result = runtest(*args, **kwargs)
+            except KeyboardInterrupt:
+                result = INTERRUPTED, ''
             except BaseException as e:
-                result = INTERRUPTED, e.__class__.__name__
+                traceback.print_exc()
+                result = CHILD_ERROR, str(e)
             sys.stdout.flush()
             print()   # Force a newline (just in case)
             print(json.dumps(result))
@@ -564,7 +568,7 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
         random.shuffle(selected)
     if trace:
         import trace, tempfile
-        tracer = trace.Trace(ignoredirs=[sys.prefix, sys.exec_prefix,
+        tracer = trace.Trace(ignoredirs=[sys.base_prefix, sys.base_exec_prefix,
                                          tempfile.gettempdir()],
                              trace=False, count=True)
 
@@ -613,17 +617,7 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
         from subprocess import Popen, PIPE
         debug_output_pat = re.compile(r"\[\d+ refs\]$")
         output = Queue()
-        def tests_and_args():
-            for test in tests:
-                args_tuple = (
-                    (test, verbose, quiet),
-                    dict(huntrleaks=huntrleaks, use_resources=use_resources,
-                         debug=debug, output_on_failure=verbose3,
-                         timeout=timeout, failfast=failfast,
-                         match_tests=match_tests)
-                )
-                yield (test, args_tuple)
-        pending = tests_and_args()
+        pending = MultiprocessTests(tests)
         opt_args = support.args_from_interpreter_flags()
         base_cmd = [sys.executable] + opt_args + ['-m', 'test.regrtest']
         def work():
@@ -631,15 +625,26 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
             try:
                 while True:
                     try:
-                        test, args_tuple = next(pending)
+                        test = next(pending)
                     except StopIteration:
                         output.put((None, None, None, None))
                         return
+                    args_tuple = (
+                        (test, verbose, quiet),
+                        dict(huntrleaks=huntrleaks, use_resources=use_resources,
+                             debug=debug, output_on_failure=verbose3,
+                             timeout=timeout, failfast=failfast,
+                             match_tests=match_tests)
+                    )
                     # -E is needed by some tests, e.g. test_import
+                    # Running the child from the same working directory ensures
+                    # that TEMPDIR for the child is the same when
+                    # sysconfig.is_python_build() is true. See issue 15300.
                     popen = Popen(base_cmd + ['--slaveargs', json.dumps(args_tuple)],
                                    stdout=PIPE, stderr=PIPE,
                                    universal_newlines=True,
-                                   close_fds=(os.name != 'nt'))
+                                   close_fds=(os.name != 'nt'),
+                                   cwd=support.SAVEDCWD)
                     stdout, stderr = popen.communicate()
                     retcode = popen.wait()
                     # Strip last refcount output line if it exists, since it
@@ -679,15 +684,16 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
                     print(stdout)
                 if stderr:
                     print(stderr, file=sys.stderr)
+                sys.stdout.flush()
+                sys.stderr.flush()
                 if result[0] == INTERRUPTED:
-                    assert result[1] == 'KeyboardInterrupt'
-                    raise KeyboardInterrupt   # What else?
+                    raise KeyboardInterrupt
                 if result[0] == CHILD_ERROR:
                     raise Exception("Child error on {}: {}".format(test, result[1]))
                 test_index += 1
         except KeyboardInterrupt:
             interrupted = True
-            pending.close()
+            pending.interrupted = True
         for worker in workers:
             worker.join()
     else:
@@ -833,6 +839,25 @@ def findtests(testdir=None, stdtests=STDTESTS, nottests=NOTTESTS):
             tests.append(mod)
     return stdtests + sorted(tests)
 
+# We do not use a generator so multiple threads can call next().
+class MultiprocessTests(object):
+
+    """A thread-safe iterator over tests for multiprocess mode."""
+
+    def __init__(self, tests):
+        self.interrupted = False
+        self.lock = threading.Lock()
+        self.tests = tests
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self.lock:
+            if self.interrupted:
+                raise StopIteration('tests interrupted')
+            return next(self.tests)
+
 def replace_stdout():
     """Set stdout encoder error handler to backslashreplace (as stderr error
     handler) to avoid UnicodeEncodeError when printing a traceback"""
@@ -968,8 +993,7 @@ class saved_test_environment:
                  'logging._handlers', 'logging._handlerList', 'sys.gettrace',
                  'sys.warnoptions', 'threading._dangling',
                  'multiprocessing.process._dangling',
-                 'sysconfig._CONFIG_VARS', 'sysconfig._SCHEMES',
-                 'packaging.command._COMMANDS', 'packaging.database_caches',
+                 'sysconfig._CONFIG_VARS', 'sysconfig._INSTALL_SCHEMES',
                  'support.TESTFN',
                 )
 
@@ -1075,44 +1099,6 @@ class saved_test_environment:
         # Can't easily revert the logging state
         pass
 
-    def get_packaging_command__COMMANDS(self):
-        # registry mapping command names to full dotted path or to the actual
-        # class (resolved on demand); this check only looks at the names, not
-        # the types of the values (IOW, if a value changes from a string
-        # (dotted path) to a class it's okay but if a key (i.e. command class)
-        # is added we complain)
-        id_ = id(packaging.command._COMMANDS)
-        keys = set(packaging.command._COMMANDS)
-        return id_, keys
-    def restore_packaging_command__COMMANDS(self, saved):
-        # if command._COMMANDS was bound to another dict object, we can't
-        # restore the previous object and contents, because the get_ method
-        # above does not return the dict object (to ignore changes in values)
-        for key in packaging.command._COMMANDS.keys() - saved[1]:
-            del packaging.command._COMMANDS[key]
-
-    def get_packaging_database_caches(self):
-        # caching system used by the PEP 376 implementation
-        # we have one boolean and four dictionaries, initially empty
-        switch = packaging.database._cache_enabled
-        saved = []
-        for name in ('_cache_name', '_cache_name_egg',
-                     '_cache_path', '_cache_path_egg'):
-            cache = getattr(packaging.database, name)
-            saved.append((id(cache), cache, cache.copy()))
-        return switch, saved
-    def restore_packaging_database_caches(self, saved):
-        switch, saved_caches = saved
-        packaging.database._cache_enabled = switch
-        for offset, name in enumerate(('_cache_name', '_cache_name_egg',
-                                       '_cache_path', '_cache_path_egg')):
-            _, cache, items = saved_caches[offset]
-            # put back the same object in place
-            setattr(packaging.database, name, cache)
-            # now restore its items
-            cache.clear()
-            cache.update(items)
-
     def get_sys_warnoptions(self):
         return id(sys.warnoptions), sys.warnoptions, sys.warnoptions[:]
     def restore_sys_warnoptions(self, saved_options):
@@ -1154,15 +1140,13 @@ class saved_test_environment:
         sysconfig._CONFIG_VARS.clear()
         sysconfig._CONFIG_VARS.update(saved[2])
 
-    def get_sysconfig__SCHEMES(self):
-        # it's mildly evil to look at the internal attribute, but it's easier
-        # than copying a RawConfigParser object
-        return (id(sysconfig._SCHEMES), sysconfig._SCHEMES._sections,
-                sysconfig._SCHEMES._sections.copy())
-    def restore_sysconfig__SCHEMES(self, saved):
-        sysconfig._SCHEMES._sections = saved[1]
-        sysconfig._SCHEMES._sections.clear()
-        sysconfig._SCHEMES._sections.update(saved[2])
+    def get_sysconfig__INSTALL_SCHEMES(self):
+        return (id(sysconfig._INSTALL_SCHEMES), sysconfig._INSTALL_SCHEMES,
+                sysconfig._INSTALL_SCHEMES.copy())
+    def restore_sysconfig__INSTALL_SCHEMES(self, saved):
+        sysconfig._INSTALL_SCHEMES = saved[1]
+        sysconfig._INSTALL_SCHEMES.clear()
+        sysconfig._INSTALL_SCHEMES.update(saved[2])
 
     def get_support_TESTFN(self):
         if os.path.isfile(support.TESTFN):
@@ -1446,10 +1430,15 @@ def dash_R_cleanup(fs, ps, pic, zdc, abcs):
     # Collect cyclic trash.
     gc.collect()
 
-def warm_char_cache():
+def warm_caches():
+    # char cache
     s = bytes(range(256))
     for i in range(256):
         s[i:i+1]
+    # unicode cache
+    x = [chr(i) for i in range(256)]
+    # int cache
+    x = list(range(-5, 257))
 
 def findtestdir(path=None):
     return path or os.path.dirname(__file__) or os.curdir

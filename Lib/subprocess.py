@@ -349,6 +349,10 @@ import signal
 import builtins
 import warnings
 import errno
+try:
+    from time import monotonic as _time
+except ImportError:
+    from time import time as _time
 
 # Exception classes used by this module.
 class SubprocessError(Exception): pass
@@ -473,6 +477,37 @@ def _eintr_retry_call(func, *args):
             return func(*args)
         except InterruptedError:
             continue
+
+
+# XXX This function is only used by multiprocessing and the test suite,
+# but it's here so that it can be imported when Python is compiled without
+# threads.
+
+def _args_from_interpreter_flags():
+    """Return a list of command-line arguments reproducing the current
+    settings in sys.flags and sys.warnoptions."""
+    flag_opt_map = {
+        'debug': 'd',
+        # 'inspect': 'i',
+        # 'interactive': 'i',
+        'optimize': 'O',
+        'dont_write_bytecode': 'B',
+        'no_user_site': 's',
+        'no_site': 'S',
+        'ignore_environment': 'E',
+        'verbose': 'v',
+        'bytes_warning': 'b',
+        'quiet': 'q',
+        'hash_randomization': 'R',
+    }
+    args = []
+    for flag, opt in flag_opt_map.items():
+        v = getattr(sys.flags, flag)
+        if v > 0:
+            args.append('-' + opt * v)
+    for opt in sys.warnoptions:
+        args.append('-W' + opt)
+    return args
 
 
 def call(*popenargs, timeout=None, **kwargs):
@@ -762,7 +797,7 @@ class Popen(object):
 
         if p2cwrite != -1:
             self.stdin = io.open(p2cwrite, 'wb', bufsize)
-            if self.universal_newlines:
+            if universal_newlines:
                 self.stdin = io.TextIOWrapper(self.stdin, write_through=True)
         if c2pread != -1:
             self.stdout = io.open(c2pread, 'rb', bufsize)
@@ -775,7 +810,7 @@ class Popen(object):
 
         try:
             self._execute_child(args, executable, preexec_fn, close_fds,
-                                pass_fds, cwd, env, universal_newlines,
+                                pass_fds, cwd, env,
                                 startupinfo, creationflags, shell,
                                 p2cread, p2cwrite,
                                 c2pread, c2pwrite,
@@ -793,8 +828,8 @@ class Popen(object):
 
 
     def _translate_newlines(self, data, encoding):
-        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-        return data.decode(encoding)
+        data = data.decode(encoding)
+        return data.replace("\r\n", "\n").replace("\r", "\n")
 
     def __enter__(self):
         return self
@@ -863,7 +898,7 @@ class Popen(object):
             self.wait()
         else:
             if timeout is not None:
-                endtime = time.time() + timeout
+                endtime = _time() + timeout
             else:
                 endtime = None
 
@@ -886,14 +921,14 @@ class Popen(object):
         if endtime is None:
             return None
         else:
-            return endtime - time.time()
+            return endtime - _time()
 
 
     def _check_timeout(self, endtime, orig_timeout):
         """Convenience for checking if a timeout has expired."""
         if endtime is None:
             return
-        if time.time() > endtime:
+        if _time() > endtime:
             raise TimeoutExpired(self.args, orig_timeout)
 
 
@@ -990,7 +1025,7 @@ class Popen(object):
             if not os.path.exists(w9xpopen):
                 # Eeek - file-not-found - possibly an embedding
                 # situation - see if we can locate it in sys.exec_prefix
-                w9xpopen = os.path.join(os.path.dirname(sys.exec_prefix),
+                w9xpopen = os.path.join(os.path.dirname(sys.base_exec_prefix),
                                         "w9xpopen.exe")
                 if not os.path.exists(w9xpopen):
                     raise RuntimeError("Cannot locate w9xpopen.exe, which is "
@@ -1000,7 +1035,7 @@ class Popen(object):
 
 
         def _execute_child(self, args, executable, preexec_fn, close_fds,
-                           pass_fds, cwd, env, universal_newlines,
+                           pass_fds, cwd, env,
                            startupinfo, creationflags, shell,
                            p2cread, p2cwrite,
                            c2pread, c2pwrite,
@@ -1153,11 +1188,11 @@ class Popen(object):
             # calls communicate again.
             if self.stdout is not None:
                 self.stdout_thread.join(self._remaining_time(endtime))
-                if self.stdout_thread.isAlive():
+                if self.stdout_thread.is_alive():
                     raise TimeoutExpired(self.args, orig_timeout)
             if self.stderr is not None:
                 self.stderr_thread.join(self._remaining_time(endtime))
-                if self.stderr_thread.isAlive():
+                if self.stderr_thread.is_alive():
                     raise TimeoutExpired(self.args, orig_timeout)
 
             # Collect the output from and close both pipes, now that we know
@@ -1272,7 +1307,7 @@ class Popen(object):
 
 
         def _execute_child(self, args, executable, preexec_fn, close_fds,
-                           pass_fds, cwd, env, universal_newlines,
+                           pass_fds, cwd, env,
                            startupinfo, creationflags, shell,
                            p2cread, p2cwrite,
                            c2pread, c2pwrite,
@@ -1440,7 +1475,7 @@ class Popen(object):
             # printing.
             if endtime is not None or timeout is not None:
                 if endtime is None:
-                    endtime = time.time() + timeout
+                    endtime = _time() + timeout
                 elif timeout is None:
                     timeout = self._remaining_time(endtime)
 
@@ -1501,6 +1536,17 @@ class Popen(object):
             return (stdout, stderr)
 
 
+        def _save_input(self, input):
+            # This method is called from the _communicate_with_*() methods
+            # so that if we time out while communicating, we can continue
+            # sending input if we retry.
+            if self.stdin and self._input is None:
+                self._input_offset = 0
+                self._input = input
+                if self.universal_newlines and input is not None:
+                    self._input = self._input.encode(self.stdin.encoding)
+
+
         def _communicate_with_poll(self, input, endtime, orig_timeout):
             stdout = None # Return
             stderr = None # Return
@@ -1537,13 +1583,7 @@ class Popen(object):
                 register_and_append(self.stderr, select_POLLIN_POLLPRI)
                 stderr = self._fd2output[self.stderr.fileno()]
 
-            # Save the input here so that if we time out while communicating,
-            # we can continue sending input if we retry.
-            if self.stdin and self._input is None:
-                self._input_offset = 0
-                self._input = input
-                if self.universal_newlines:
-                    self._input = self._input.encode(self.stdin.encoding)
+            self._save_input(input)
 
             while self._fd2file:
                 timeout = self._remaining_time(endtime)
@@ -1597,11 +1637,7 @@ class Popen(object):
                 if self.stderr:
                     self._read_set.append(self.stderr)
 
-            if self.stdin and self._input is None:
-                self._input_offset = 0
-                self._input = input
-                if self.universal_newlines:
-                    self._input = self._input.encode(self.stdin.encoding)
+            self._save_input(input)
 
             stdout = None # Return
             stderr = None # Return

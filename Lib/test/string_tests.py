@@ -262,6 +262,9 @@ class BaseTest(unittest.TestCase):
         # issue 7458
         self.checkequal(-1, 'ab', 'rfind', 'xxx', sys.maxsize + 1, 0)
 
+        # issue #15534
+        self.checkequal(0, '<......\u043c...', "rfind", "<")
+
     def test_index(self):
         self.checkequal(0, 'abcdefghiabc', 'index', '')
         self.checkequal(3, 'abcdefghiabc', 'index', 'def')
@@ -597,6 +600,8 @@ class BaseTest(unittest.TestCase):
         EQ("ReyKKjavik", "Reykjavik", "replace", "k", "KK", 1)
         EQ("Reykjavik", "Reykjavik", "replace", "k", "KK", 0)
         EQ("A----B----C----", "A.B.C.", "replace", ".", "----")
+        # issue #15534
+        EQ('...\u043c......&lt;', '...\u043c......<', "replace", "<", "&lt;")
 
         EQ("Reykjavik", "Reykjavik", "replace", "q", "KK")
 
@@ -1197,6 +1202,10 @@ class MixinStrUnicodeUserStringTest:
         self.checkraises(TypeError, '%10.*f', '__mod__', ('foo', 42.))
         self.checkraises(ValueError, '%10', '__mod__', (42,))
 
+        # Outrageously large width or precision should raise ValueError.
+        self.checkraises(ValueError, '%%%df' % (2**64), '__mod__', (3.2))
+        self.checkraises(ValueError, '%%.%df' % (2**64), '__mod__', (3.2))
+
     def test_floatformatting(self):
         # float formatting
         for prec in range(100):
@@ -1311,6 +1320,9 @@ class MixinStrUnicodeUserStringTest:
                                 x, None, None, None)
         self.assertRaisesRegex(TypeError, r'^endswith\(', s.endswith,
                                 x, None, None, None)
+
+        # issue #15534
+        self.checkequal(10, "...\u043c......<", "find", "<")
 
 
 class MixinStrUnicodeTest:

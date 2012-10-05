@@ -63,7 +63,7 @@ Details on custom importers can be found in :pep:`302`.
 Functions
 ---------
 
-.. function:: __import__(name, globals={}, locals={}, fromlist=list(), level=0)
+.. function:: __import__(name, globals=None, locals=None, fromlist=(), level=0)
 
     An implementation of the built-in :func:`__import__` function.
 
@@ -86,14 +86,27 @@ Functions
     that was imported (e.g. ``pkg.mod``), while :func:`__import__` returns the
     top-level package or module (e.g. ``pkg``).
 
+.. function:: find_loader(name, path=None)
+
+   Find the loader for a module, optionally within the specified *path*. If the
+   module is in :attr:`sys.modules`, then ``sys.modules[name].__loader__`` is
+   returned (unless the loader would be ``None``, in which case
+   :exc:`ValueError` is raised). Otherwise a search using :attr:`sys.meta_path`
+   is done. ``None`` is returned if no loader is found.
+
+   A dotted name does not have its parent's implicitly imported. If that is
+   desired (although not nessarily required to find the loader, it will most
+   likely be needed if the loader actually is used to load the module), then
+   you will have to import the packages containing the module prior to calling
+   this function.
+
 .. function:: invalidate_caches()
 
-   Invalidate the internal caches of the finders stored at
-   :data:`sys.path_importer_cache`. If a finder implements
-   :meth:`abc.Finder.invalidate_caches()` then it will be called to perform the
-   invalidation.  This function may be needed if some modules are installed
-   while your program is running and you expect the program to notice the
-   changes.
+   Invalidate the internal caches of finders stored at
+   :data:`sys.meta_path`. If a finder implements ``invalidate_caches()`` then it
+   will be called to perform the invalidation.  This function may be needed if
+   some modules are installed while your program is running and you expect the
+   program to notice the changes.
 
    .. versionadded:: 3.3
 
@@ -108,25 +121,90 @@ The :mod:`importlib.abc` module contains all of the core abstract base classes
 used by :keyword:`import`. Some subclasses of the core abstract base classes
 are also provided to help in implementing the core ABCs.
 
+ABC hierarchy::
+
+    object
+     +-- Finder (deprecated)
+     |    +-- MetaPathFinder
+     |    +-- PathEntryFinder
+     +-- Loader
+          +-- ResourceLoader --------+
+          +-- InspectLoader          |
+               +-- ExecutionLoader --+
+                                     +-- FileLoader
+                                     +-- SourceLoader
+                                          +-- PyLoader (deprecated)
+                                          +-- PyPycLoader (deprecated)
+
 
 .. class:: Finder
 
-    An abstract base class representing a :term:`finder`.
-    See :pep:`302` for the exact definition for a finder.
+   An abstract base class representing a :term:`finder`.
 
-    .. method:: find_module(fullname, path=None)
+   .. deprecated:: 3.3
+      Use :class:`MetaPathFinder` or :class:`PathEntryFinder` instead.
 
-        An abstract method for finding a :term:`loader` for the specified
-        module. If the :term:`finder` is found on :data:`sys.meta_path` and the
-        module to be searched for is a subpackage or module then *path* will
-        be the value of :attr:`__path__` from the parent package. If a loader
-        cannot be found, ``None`` is returned.
+   .. method:: find_module(fullname, path=None)
+
+      An abstact method for finding a :term:`loader` for the specified
+      module.  Originally specified in :pep:`302`, this method was meant
+      for use in :data:`sys.meta_path` and in the path-based import subsystem.
+
+
+.. class:: MetaPathFinder
+
+   An abstract base class representing a :term:`meta path finder`. For
+   compatibility, this is a subclass of :class:`Finder`.
+
+   .. versionadded:: 3.3
+
+   .. method:: find_module(fullname, path)
+
+      An abstract method for finding a :term:`loader` for the specified
+      module.  If this is a top-level import, *path* will be ``None``.
+      Otheriwse, this is a search for a subpackage or module and *path*
+      will be the value of :attr:`__path__` from the parent
+      package. If a loader cannot be found, ``None`` is returned.
 
    .. method:: invalidate_caches()
 
-        An optional method which, when called, should invalidate any internal
-        cache used by the finder. Used by :func:`invalidate_caches()` when
-        invalidating the caches of all cached finders.
+      An optional method which, when called, should invalidate any internal
+      cache used by the finder. Used by :func:`importlib.invalidate_caches`
+      when invalidating the caches of all finders on :data:`sys.meta_path`.
+
+
+.. class:: PathEntryFinder
+
+   An abstract base class representing a :term:`path entry finder`.  Though
+   it bears some similarities to :class:`MetaPathFinder`, ``PathEntryFinder``
+   is meant for use only within the path-based import subsystem provided
+   by :class:`PathFinder`. This ABC is a subclass of :class:`Finder` for
+   compatibility.
+
+   .. versionadded:: 3.3
+
+   .. method:: find_loader(fullname):
+
+      An abstract method for finding a :term:`loader` for the specified
+      module.  Returns a 2-tuple of ``(loader, portion)`` where ``portion``
+      is a sequence of file system locations contributing to part of a namespace
+      package. The loader may be ``None`` while specifying ``portion`` to
+      signify the contribution of the file system locations to a namespace
+      package. An empty list can be used for ``portion`` to signify the loader
+      is not part of a package. If ``loader`` is ``None`` and ``portion`` is
+      the empty list then no loader or location for a namespace package were
+      found (i.e. failure to find anything for the module).
+
+   .. method:: find_module(fullname):
+
+      A concrete implementation of :meth:`Finder.find_module` which is
+      equivalent to ``self.find_loader(fullname)[0]``.
+
+   .. method:: invalidate_caches()
+
+      An optional method which, when called, should invalidate any internal
+      cache used by the finder. Used by :meth:`PathFinder.invalidate_caches`
+      when invalidating the caches of all cached finders.
 
 
 .. class:: Loader
@@ -176,6 +254,13 @@ are also provided to help in implementing the core ABCs.
             (This is not set by the built-in import machinery,
             but it should be set whenever a :term:`loader` is used.)
 
+    .. method:: module_repr(module)
+
+        An abstract method which when implemented calculates and returns the
+        given module's repr, as a string.
+
+        .. versionadded: 3.3
+
 
 .. class:: ResourceLoader
 
@@ -206,12 +291,16 @@ are also provided to help in implementing the core ABCs.
         (e.g. built-in module).  :exc:`ImportError` is raised if loader cannot
         find the requested module.
 
+        .. index::
+           single: universal newlines; importlib.abc.InspectLoader.get_source method
+
     .. method:: get_source(fullname)
 
         An abstract method to return the source of a module. It is returned as
-        a text string with universal newlines. Returns ``None`` if no
-        source is available (e.g. a built-in module). Raises :exc:`ImportError`
-        if the loader cannot find the module specified.
+        a text string using :term:`universal newlines`, translating all
+        recognized line separators into ``'\n'`` characters.  Returns ``None``
+        if no source is available (e.g. a built-in module). Raises
+        :exc:`ImportError` if the loader cannot find the module specified.
 
     .. method:: is_package(fullname)
 
@@ -256,6 +345,10 @@ are also provided to help in implementing the core ABCs.
 
       Path to the file of the module.
 
+   .. method:: load_module(fullname)
+
+      Calls super's ``load_module()``.
+
    .. method:: get_filename(fullname)
 
       Returns :attr:`path`.
@@ -284,7 +377,7 @@ are also provided to help in implementing the core ABCs.
     optimization to speed up loading by removing the parsing step of Python's
     compiler, and so no bytecode-specific API is exposed.
 
-    .. method:: path_stats(self, path)
+    .. method:: path_stats(path)
 
         Optional abstract method which returns a :class:`dict` containing
         metadata about the specifed path.  Supported dictionary keys are:
@@ -298,7 +391,7 @@ are also provided to help in implementing the core ABCs.
 
         .. versionadded:: 3.3
 
-    .. method:: path_mtime(self, path)
+    .. method:: path_mtime(path)
 
         Optional abstract method which returns the modification time for the
         specified path.
@@ -308,7 +401,7 @@ are also provided to help in implementing the core ABCs.
            have to implement it, but it is still available for compatibility
            purposes.
 
-    .. method:: set_data(self, path, data)
+    .. method:: set_data(path, data)
 
         Optional abstract method which writes the specified bytes to a file
         path. Any intermediate directories which do not exist are to be created
@@ -317,23 +410,25 @@ are also provided to help in implementing the core ABCs.
         When writing to the path fails because the path is read-only
         (:attr:`errno.EACCES`), do not propagate the exception.
 
-    .. method:: get_code(self, fullname)
+    .. method:: get_code(fullname)
 
         Concrete implementation of :meth:`InspectLoader.get_code`.
 
-    .. method:: load_module(self, fullname)
+    .. method:: load_module(fullname)
 
         Concrete implementation of :meth:`Loader.load_module`.
 
-    .. method:: get_source(self, fullname)
+    .. method:: get_source(fullname)
 
         Concrete implementation of :meth:`InspectLoader.get_source`.
 
-    .. method:: is_package(self, fullname)
+    .. method:: is_package(fullname)
 
         Concrete implementation of :meth:`InspectLoader.is_package`. A module
-        is determined to be a package if its file path is a file named
-        ``__init__`` when the file extension is removed.
+        is determined to be a package if its file path (as provided by
+        :meth:`ExecutionLoader.get_filename`) is a file named
+        ``__init__`` when the file extension is removed **and** the module name
+        itself does not end in ``__init__``.
 
 
 .. class:: PyLoader
@@ -434,6 +529,10 @@ are also provided to help in implementing the core ABCs.
         :class:`PyLoader`. Do note that this solution will not support
         sourceless/bytecode-only loading; only source *and* bytecode loading.
 
+    .. versionchanged:: 3.3
+       Updated to parse (but not use) the new source size field in bytecode
+       files when reading and to write out the field properly when writing.
+
     .. method:: source_mtime(fullname)
 
         An abstract method which returns the modification time for the source
@@ -477,12 +576,59 @@ are also provided to help in implementing the core ABCs.
 This module contains the various objects that help :keyword:`import`
 find and load modules.
 
+.. attribute:: SOURCE_SUFFIXES
+
+   A list of strings representing the recognized file suffixes for source
+   modules.
+
+   .. versionadded:: 3.3
+
+.. attribute:: DEBUG_BYTECODE_SUFFIXES
+
+   A list of strings representing the file suffixes for non-optimized bytecode
+   modules.
+
+   .. versionadded:: 3.3
+
+.. attribute:: OPTIMIZED_BYTECODE_SUFFIXES
+
+   A list of strings representing the file suffixes for optimized bytecode
+   modules.
+
+   .. versionadded:: 3.3
+
+.. attribute:: BYTECODE_SUFFIXES
+
+   A list of strings representing the recognized file suffixes for bytecode
+   modules. Set to either :attr:`DEBUG_BYTECODE_SUFFIXES` or
+   :attr:`OPTIMIZED_BYTECODE_SUFFIXES` based on whether ``__debug__`` is true.
+
+   .. versionadded:: 3.3
+
+.. attribute:: EXTENSION_SUFFIXES
+
+   A list of strings representing the recognized file suffixes for
+   extension modules.
+
+   .. versionadded:: 3.3
+
+.. function:: all_suffixes()
+
+   Returns a combined list of strings representing all file suffixes for
+   modules recognized by the standard import machinery. This is a
+   helper for code which simply needs to know if a filesystem path
+   potentially refers to a module without needing any details on the kind
+   of module (for example, :func:`inspect.getmodulename`)
+
+   .. versionadded:: 3.3
+
+
 .. class:: BuiltinImporter
 
     An :term:`importer` for built-in modules. All known built-in modules are
     listed in :data:`sys.builtin_module_names`. This class implements the
-    :class:`importlib.abc.Finder` and :class:`importlib.abc.InspectLoader`
-    ABCs.
+    :class:`importlib.abc.MetaPathFinder` and
+    :class:`importlib.abc.InspectLoader` ABCs.
 
     Only class methods are defined by this class to alleviate the need for
     instantiation.
@@ -491,52 +637,62 @@ find and load modules.
 .. class:: FrozenImporter
 
     An :term:`importer` for frozen modules. This class implements the
-    :class:`importlib.abc.Finder` and :class:`importlib.abc.InspectLoader`
-    ABCs.
+    :class:`importlib.abc.MetaPathFinder` and
+    :class:`importlib.abc.InspectLoader` ABCs.
 
     Only class methods are defined by this class to alleviate the need for
     instantiation.
+
+
+.. class:: WindowsRegistryFinder
+
+   :term:`Finder` for modules declared in the Windows registry.  This class
+   implements the :class:`importlib.abc.Finder` ABC.
+
+   Only class methods are defined by this class to alleviate the need for
+   instantiation.
+
+   .. versionadded:: 3.3
 
 
 .. class:: PathFinder
 
-    :term:`Finder` for :data:`sys.path`. This class implements the
-    :class:`importlib.abc.Finder` ABC.
+   A :term:`Finder` for :data:`sys.path` and package ``__path__`` attributes.
+   This class implements the :class:`importlib.abc.MetaPathFinder` ABC.
 
-    This class does not perfectly mirror the semantics of :keyword:`import` in
-    terms of :data:`sys.path`. No implicit path hooks are assumed for
-    simplification of the class and its semantics. This implies that when
-    ``None`` is found in :data:`sys.path_importer_cache` that it is simply
-    ignored instead of implying a default finder.
+   Only class methods are defined by this class to alleviate the need for
+   instantiation.
 
-    Only class methods are defined by this class to alleviate the need for
-    instantiation.
+   .. classmethod:: find_module(fullname, path=None)
 
-    .. classmethod:: find_module(fullname, path=None)
+     Class method that attempts to find a :term:`loader` for the module
+     specified by *fullname* on :data:`sys.path` or, if defined, on
+     *path*. For each path entry that is searched,
+     :data:`sys.path_importer_cache` is checked. If a non-false object is
+     found then it is used as the :term:`finder` to look for the module
+     being searched for. If no entry is found in
+     :data:`sys.path_importer_cache`, then :data:`sys.path_hooks` is
+     searched for a finder for the path entry and, if found, is stored in
+     :data:`sys.path_importer_cache` along with being queried about the
+     module. If no finder is ever found then ``None`` is both stored in
+     the cache and returned.
 
-        Class method that attempts to find a :term:`loader` for the module
-        specified by *fullname* on :data:`sys.path` or, if defined, on
-        *path*. For each path entry that is searched,
-        :data:`sys.path_importer_cache` is checked. If a non-false object is
-        found then it is used as the :term:`finder` to look for the module
-        being searched for. If no entry is found in
-        :data:`sys.path_importer_cache`, then :data:`sys.path_hooks` is
-        searched for a finder for the path entry and, if found, is stored in
-        :data:`sys.path_importer_cache` along with being queried about the
-        module. If no finder is ever found then ``None`` is returned.
+   .. classmethod:: invalidate_caches()
+
+     Calls :meth:`importlib.abc.PathEntryFinder.invalidate_caches` on all
+     finders stored in :attr:`sys.path_importer_cache`.
 
 
 .. class:: FileFinder(path, \*loader_details)
 
-   A concrete implementation of :class:`importlib.abc.Finder` which caches
-   results from the file system.
+   A concrete implementation of :class:`importlib.abc.PathEntryFinder` which
+   caches results from the file system.
 
    The *path* argument is the directory for which the finder is in charge of
    searching.
 
-   The *loader_details* argument is a variable number of 3-item tuples each
-   containing a loader, file suffixes the loader recognizes, and a boolean
-   representing whether the loader handles packages.
+   The *loader_details* argument is a variable number of 2-item tuples each
+   containing a loader and a sequence of file suffixes the loader recognizes.
 
    The finder will cache the directory contents as necessary, making stat calls
    for each module search to verify the cache is not outdated. Because cache
@@ -601,10 +757,6 @@ find and load modules.
 
       Concrete implementation of :meth:`importlib.abc.SourceLoader.set_data`.
 
-   .. method:: load_module(fullname)
-
-      Load the specified module if it is the same as :attr:`name`.
-
 
 .. class:: SourcelessFileLoader(fullname, path)
 
@@ -639,10 +791,6 @@ find and load modules.
       Returns ``None`` as bytecode files have no source when this loader is
       used.
 
-   .. method:: load_module(fullname)
-
-      Loads the specified module if it is the same as :attr:`name`.
-
 
 .. class:: ExtensionFileLoader(fullname, path)
 
@@ -664,12 +812,13 @@ find and load modules.
 
    .. method:: load_module(fullname)
 
-      Loads the extension module if and only if *fullname** is the same as
-      :attr:`name`.
+      Loads the extension module if and only if *fullname* is the same as
+      :attr:`name` or is ``None``.
 
    .. method:: is_package(fullname)
 
-      Returns ``False`` as extension modules can never be packages.
+      Returns ``True`` if the file path points to a package's ``__init__``
+      module based on :attr:`EXTENSION_SUFFIXES`.
 
    .. method:: get_code(fullname)
 
@@ -688,6 +837,22 @@ find and load modules.
 
 This module contains the various objects that help in the construction of
 an :term:`importer`.
+
+.. function:: resolve_name(name, package)
+
+   Resolve a relative module name to an absolute one.
+
+   If  **name** has no leading dots, then **name** is simply returned. This
+   allows for usage such as
+   ``importlib.util.resolve_name('sys', __package__)`` without doing a
+   check to see if the **package** argument is needed.
+
+   :exc:`ValueError` is raised if **name** is a relative module name but
+   package is a false value (e.g. ``None`` or the empty string).
+   :exc:`ValueError` is also raised a relative name would escape its containing
+   package (e.g. requesting ``..bacon`` from within the ``spam`` package).
+
+   .. versionadded:: 3.3
 
 .. decorator:: module_for_loader
 
@@ -719,8 +884,8 @@ an :term:`importer`.
     loader should initialize as specified by :pep:`302` as best as possible.
 
     .. versionchanged:: 3.3
-      :attr:`__loader__` and :attr:`__package__` are automatically set
-      (when possible).
+       :attr:`__loader__` and :attr:`__package__` are automatically set
+       (when possible).
 
 .. decorator:: set_loader
 

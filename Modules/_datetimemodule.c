@@ -766,6 +766,8 @@ typedef struct
 
 /* The interned UTC timezone instance */
 static PyObject *PyDateTime_TimeZone_UTC;
+/* The interned Epoch datetime instance */
+static PyObject *PyDateTime_Epoch;
 
 /* Create new timezone instance checking offset range.  This
    function does not check the name argument.  Caller must assure
@@ -807,14 +809,16 @@ new_timezone(PyObject *offset, PyObject *name)
     }
     if (GET_TD_MICROSECONDS(offset) != 0 || GET_TD_SECONDS(offset) % 60 != 0) {
         PyErr_Format(PyExc_ValueError, "offset must be a timedelta"
-                     " representing a whole number of minutes");
+                     " representing a whole number of minutes,"
+                     " not %R.", offset);
         return NULL;
     }
     if ((GET_TD_DAYS(offset) == -1 && GET_TD_SECONDS(offset) == 0) ||
         GET_TD_DAYS(offset) < -1 || GET_TD_DAYS(offset) >= 1) {
         PyErr_Format(PyExc_ValueError, "offset must be a timedelta"
                      " strictly between -timedelta(hours=24) and"
-                     " timedelta(hours=24).");
+                     " timedelta(hours=24),"
+                     " not %R.", offset);
         return NULL;
     }
 
@@ -3211,6 +3215,12 @@ timezone_richcompare(PyDateTime_TimeZone *self,
 {
     if (op != Py_EQ && op != Py_NE)
         Py_RETURN_NOTIMPLEMENTED;
+    if (Py_TYPE(other) != &PyDateTime_TimeZoneType) {
+	if (op == Py_EQ)
+	    Py_RETURN_FALSE;
+	else
+	    Py_RETURN_TRUE;
+    }
     return delta_richcompare(self->offset, other->offset, op);
 }
 
@@ -3704,6 +3714,14 @@ time_richcompare(PyObject *self, PyObject *other, int op)
             diff = TIME_GET_MICROSECOND(self) -
                    TIME_GET_MICROSECOND(other);
         result = diff_to_bool(diff, op);
+    }
+    else if (op == Py_EQ) {
+        result = Py_False;
+        Py_INCREF(result);
+    }
+    else if (op == Py_NE) {
+        result = Py_True;
+        Py_INCREF(result);
     }
     else {
         PyErr_SetString(PyExc_TypeError,
@@ -4582,6 +4600,14 @@ datetime_richcompare(PyObject *self, PyObject *other, int op)
         Py_DECREF(delta);
         result = diff_to_bool(diff, op);
     }
+    else if (op == Py_EQ) {
+        result = Py_False;
+        Py_INCREF(result);
+    }
+    else if (op == Py_NE) {
+        result = Py_True;
+        Py_INCREF(result);
+    }
     else {
         PyErr_SetString(PyExc_TypeError,
                         "can't compare offset-naive and "
@@ -4668,17 +4694,83 @@ datetime_replace(PyDateTime_DateTime *self, PyObject *args, PyObject *kw)
 }
 
 static PyObject *
+local_timezone(PyDateTime_DateTime *utc_time)
+{
+    PyObject *result = NULL;
+    struct tm *timep;
+    time_t timestamp;
+    PyObject *delta;
+    PyObject *one_second;
+    PyObject *seconds;
+    PyObject *nameo = NULL;
+    const char *zone = NULL;
+
+    delta = datetime_subtract((PyObject *)utc_time, PyDateTime_Epoch);
+    if (delta == NULL)
+        return NULL;
+    one_second = new_delta(0, 1, 0, 0);
+    if (one_second == NULL)
+        goto error;
+    seconds = divide_timedelta_timedelta((PyDateTime_Delta *)delta,
+                                         (PyDateTime_Delta *)one_second);
+    Py_DECREF(one_second);
+    if (seconds == NULL)
+        goto error;
+    Py_DECREF(delta);
+    timestamp = PyLong_AsLong(seconds);
+    Py_DECREF(seconds);
+    if (timestamp == -1 && PyErr_Occurred())
+        return NULL;
+    timep = localtime(&timestamp);
+#ifdef HAVE_STRUCT_TM_TM_ZONE
+    zone = timep->tm_zone;
+    delta = new_delta(0, timep->tm_gmtoff, 0, 1);
+#else /* HAVE_STRUCT_TM_TM_ZONE */
+    {
+        PyObject *local_time;
+        local_time = new_datetime(timep->tm_year + 1900, timep->tm_mon + 1,
+                                  timep->tm_mday, timep->tm_hour, timep->tm_min,
+                                  timep->tm_sec, DATE_GET_MICROSECOND(utc_time),
+                                  utc_time->tzinfo);
+        if (local_time == NULL)
+            goto error;
+        delta = datetime_subtract(local_time, (PyObject*)utc_time);
+        /* XXX: before relying on tzname, we should compare delta
+           to the offset implied by timezone/altzone */
+        if (daylight && timep->tm_isdst >= 0)
+            zone = tzname[timep->tm_isdst % 2];
+        else
+            zone = tzname[0];
+        Py_DECREF(local_time);
+    }
+#endif /* HAVE_STRUCT_TM_TM_ZONE */
+    if (zone != NULL) {
+        nameo = PyUnicode_DecodeLocale(zone, "surrogateescape");
+        if (nameo == NULL)
+            goto error;
+    }
+    result = new_timezone(delta, nameo);
+    Py_DECREF(nameo);
+  error:
+    Py_DECREF(delta);
+    return result;
+}
+
+static PyDateTime_DateTime *
 datetime_astimezone(PyDateTime_DateTime *self, PyObject *args, PyObject *kw)
 {
-    PyObject *result;
+    PyDateTime_DateTime *result;
     PyObject *offset;
     PyObject *temp;
-    PyObject *tzinfo;
+    PyObject *tzinfo = Py_None;
     _Py_IDENTIFIER(fromutc);
     static char *keywords[] = {"tz", NULL};
 
-    if (! PyArg_ParseTupleAndKeywords(args, kw, "O!:astimezone", keywords,
-                                      &PyDateTime_TZInfoType, &tzinfo))
+    if (! PyArg_ParseTupleAndKeywords(args, kw, "|O:astimezone", keywords,
+				      &tzinfo))
+        return NULL;
+
+    if (check_tzinfo_subclass(tzinfo) == -1)
         return NULL;
 
     if (!HASTZINFO(self) || self->tzinfo == Py_None)
@@ -4687,7 +4779,7 @@ datetime_astimezone(PyDateTime_DateTime *self, PyObject *args, PyObject *kw)
     /* Conversion to self's own time zone is a NOP. */
     if (self->tzinfo == tzinfo) {
         Py_INCREF(self);
-        return (PyObject *)self;
+        return self;
     }
 
     /* Convert self to UTC. */
@@ -4703,20 +4795,29 @@ datetime_astimezone(PyDateTime_DateTime *self, PyObject *args, PyObject *kw)
     }
 
     /* result = self - offset */
-    result = add_datetime_timedelta(self,
-                (PyDateTime_Delta *)offset, -1);
+    result = (PyDateTime_DateTime *)add_datetime_timedelta(self,
+                                       (PyDateTime_Delta *)offset, -1);
     Py_DECREF(offset);
     if (result == NULL)
         return NULL;
 
     /* Attach new tzinfo and let fromutc() do the rest. */
-    temp = ((PyDateTime_DateTime *)result)->tzinfo;
-    ((PyDateTime_DateTime *)result)->tzinfo = tzinfo;
-    Py_INCREF(tzinfo);
+    temp = result->tzinfo;
+    if (tzinfo == Py_None) {
+        tzinfo = local_timezone(result);
+        if (tzinfo == NULL) {
+            Py_DECREF(result);
+            return NULL;
+        }
+    }
+    else
+      Py_INCREF(tzinfo);
+    result->tzinfo = tzinfo;
     Py_DECREF(temp);
 
-    temp = result;
-    result = _PyObject_CallMethodId(tzinfo, &PyId_fromutc, "O", temp);
+    temp = (PyObject *)result;
+    result = (PyDateTime_DateTime *)
+        _PyObject_CallMethodId(tzinfo, &PyId_fromutc, "O", temp);
     Py_DECREF(temp);
 
     return result;
@@ -4745,6 +4846,44 @@ datetime_timetuple(PyDateTime_DateTime *self)
                              DATE_GET_MINUTE(self),
                              DATE_GET_SECOND(self),
                              dstflag);
+}
+
+static PyObject *
+datetime_timestamp(PyDateTime_DateTime *self)
+{
+    PyObject *result;
+
+    if (HASTZINFO(self) && self->tzinfo != Py_None) {
+        PyObject *delta;
+        delta = datetime_subtract((PyObject *)self, PyDateTime_Epoch);
+        if (delta == NULL)
+            return NULL;
+        result = delta_total_seconds(delta);
+        Py_DECREF(delta);
+    }
+    else {
+        struct tm time;
+        time_t timestamp;
+        memset((void *) &time, '\0', sizeof(struct tm));
+        time.tm_year = GET_YEAR(self) - 1900;
+        time.tm_mon = GET_MONTH(self) - 1;
+        time.tm_mday = GET_DAY(self);
+        time.tm_hour = DATE_GET_HOUR(self);
+        time.tm_min = DATE_GET_MINUTE(self);
+        time.tm_sec = DATE_GET_SECOND(self);
+        time.tm_wday = -1;
+        time.tm_isdst = -1;
+        timestamp = mktime(&time);
+        /* Return value of -1 does not necessarily mean an error, but tm_wday
+         * cannot remain set to -1 if mktime succeeded. */
+        if (timestamp == (time_t)(-1) && time.tm_wday == -1) {
+            PyErr_SetString(PyExc_OverflowError,
+                            "timestamp out of range");
+            return NULL;
+        }
+        result = PyFloat_FromDouble(timestamp + DATE_GET_MICROSECOND(self) / 1e6);
+    }
+    return result;
 }
 
 static PyObject *
@@ -4893,6 +5032,9 @@ static PyMethodDef datetime_methods[] = {
 
     {"timetuple",   (PyCFunction)datetime_timetuple, METH_NOARGS,
      PyDoc_STR("Return time tuple, compatible with time.localtime().")},
+
+    {"timestamp",   (PyCFunction)datetime_timestamp, METH_NOARGS,
+     PyDoc_STR("Return POSIX timestamp as float.")},
 
     {"utctimetuple",   (PyCFunction)datetime_utctimetuple, METH_NOARGS,
      PyDoc_STR("Return UTC time tuple, compatible with time.localtime().")},
@@ -5150,6 +5292,12 @@ PyInit__datetime(void)
     if (x == NULL || PyDict_SetItemString(d, "max", x) < 0)
         return NULL;
     Py_DECREF(x);
+
+    /* Epoch */
+    PyDateTime_Epoch = new_datetime(1970, 1, 1, 0, 0, 0, 0,
+                                    PyDateTime_TimeZone_UTC);
+    if (PyDateTime_Epoch == NULL)
+      return NULL;
 
     /* module initialization */
     PyModule_AddIntConstant(m, "MINYEAR", MINYEAR);

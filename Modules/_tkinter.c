@@ -996,8 +996,8 @@ AsObj(PyObject *value)
                              ch);
                 ckfree(FREECAST outbuf);
                 return NULL;
-#endif
             }
+#endif
             outbuf[i] = ch;
         }
         result = Tcl_NewUnicodeObj(outbuf, size);
@@ -3133,8 +3133,10 @@ PyInit__tkinter(void)
 
     PyDict_SetItemString(d, "TkappType", (PyObject *)&Tkapp_Type);
 
-    if (PyType_Ready(&Tktt_Type) < 0)
+    if (PyType_Ready(&Tktt_Type) < 0) {
+        Py_DECREF(m);
         return NULL;
+    }
     PyDict_SetItemString(d, "TkttType", (PyObject *)&Tktt_Type);
 
     Py_TYPE(&PyTclObject_Type) = &PyType_Type;

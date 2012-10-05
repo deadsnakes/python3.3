@@ -552,7 +552,7 @@ class ContextTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError) as cm:
             ctx.load_dh_params(WRONGCERT)
         self.assertEqual(cm.exception.errno, errno.ENOENT)
-        with self.assertRaisesRegex(ssl.SSLError, "PEM routines"):
+        with self.assertRaises(ssl.SSLError) as cm:
             ctx.load_dh_params(CERTFILE)
 
     @skip_if_broken_ubuntu_ssl
@@ -588,6 +588,47 @@ class ContextTests(unittest.TestCase):
         self.assertRaises(TypeError, ctx.set_ecdh_curve, None)
         self.assertRaises(ValueError, ctx.set_ecdh_curve, "foo")
         self.assertRaises(ValueError, ctx.set_ecdh_curve, b"foo")
+
+
+class SSLErrorTests(unittest.TestCase):
+
+    def test_str(self):
+        # The str() of a SSLError doesn't include the errno
+        e = ssl.SSLError(1, "foo")
+        self.assertEqual(str(e), "foo")
+        self.assertEqual(e.errno, 1)
+        # Same for a subclass
+        e = ssl.SSLZeroReturnError(1, "foo")
+        self.assertEqual(str(e), "foo")
+        self.assertEqual(e.errno, 1)
+
+    def test_lib_reason(self):
+        # Test the library and reason attributes
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        with self.assertRaises(ssl.SSLError) as cm:
+            ctx.load_dh_params(CERTFILE)
+        self.assertEqual(cm.exception.library, 'PEM')
+        self.assertEqual(cm.exception.reason, 'NO_START_LINE')
+        s = str(cm.exception)
+        self.assertTrue(s.startswith("[PEM: NO_START_LINE] no start line"), s)
+
+    def test_subclass(self):
+        # Check that the appropriate SSLError subclass is raised
+        # (this only tests one of them)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(5)
+            with socket.socket() as c:
+                c.connect(s.getsockname())
+                c.setblocking(False)
+                c = ctx.wrap_socket(c, False, do_handshake_on_connect=False)
+                with self.assertRaises(ssl.SSLWantReadError) as cm:
+                    c.do_handshake()
+                s = str(cm.exception)
+                self.assertTrue(s.startswith("The operation did not complete (read)"), s)
+                # For compatibility
+                self.assertEqual(cm.exception.errno, ssl.SSL_ERROR_WANT_READ)
 
 
 class NetworkedTests(unittest.TestCase):
@@ -830,13 +871,18 @@ class NetworkedTests(unittest.TestCase):
         # SHA256 was added in OpenSSL 0.9.8
         if ssl.OPENSSL_VERSION_INFO < (0, 9, 8, 0, 15):
             self.skipTest("SHA256 not available on %r" % ssl.OPENSSL_VERSION)
+        # sha256.tbs-internet.com needs SNI to use the correct certificate
+        if not ssl.HAS_SNI:
+            self.skipTest("SNI needed for this test")
         # https://sha2.hboeck.de/ was used until 2011-01-08 (no route to host)
         remote = ("sha256.tbs-internet.com", 443)
         sha256_cert = os.path.join(os.path.dirname(__file__), "sha256.pem")
         with support.transient_internet("sha256.tbs-internet.com"):
-            s = ssl.wrap_socket(socket.socket(socket.AF_INET),
-                                cert_reqs=ssl.CERT_REQUIRED,
-                                ca_certs=sha256_cert,)
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            ctx.verify_mode = ssl.CERT_REQUIRED
+            ctx.load_verify_locations(sha256_cert)
+            s = ctx.wrap_socket(socket.socket(socket.AF_INET),
+                                server_hostname="sha256.tbs-internet.com")
             try:
                 s.connect(remote)
                 if support.verbose:
@@ -1926,7 +1972,7 @@ def test_main(verbose=False):
         if not os.path.exists(filename):
             raise support.TestFailed("Can't read certificate file %r" % filename)
 
-    tests = [ContextTests, BasicSocketTests]
+    tests = [ContextTests, BasicSocketTests, SSLErrorTests]
 
     if support.is_resource_enabled('network'):
         tests.append(NetworkedTests)

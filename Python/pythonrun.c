@@ -52,7 +52,7 @@ extern wchar_t *Py_GetPath(void);
 extern grammar _PyParser_Grammar; /* From graminit.c */
 
 /* Forward */
-static void initmain(void);
+static void initmain(PyInterpreterState *interp);
 static int initfsencoding(PyInterpreterState *interp);
 static void initsite(void);
 static int initstdio(void);
@@ -242,7 +242,7 @@ import_init(PyInterpreterState *interp, PyObject *sysmod)
 
 
 void
-Py_InitializeEx(int install_sigs)
+_Py_InitializeEx_Private(int install_sigs, int install_importlib)
 {
     PyInterpreterState *interp;
     PyThreadState *tstate;
@@ -356,14 +356,17 @@ Py_InitializeEx(int install_sigs)
 
     _PyImportHooks_Init();
 
-    /* initialize the faulthandler module */
-    if (_PyFaulthandler_Init())
-        Py_FatalError("Py_Initialize: can't initialize faulthandler");
-
     /* Initialize _warnings. */
     _PyWarnings_Init();
 
+    if (!install_importlib)
+        return;
+
     import_init(interp, sysmod);
+
+    /* initialize the faulthandler module */
+    if (_PyFaulthandler_Init())
+        Py_FatalError("Py_Initialize: can't initialize faulthandler");
 
     _PyTime_Init();
 
@@ -373,7 +376,7 @@ Py_InitializeEx(int install_sigs)
     if (install_sigs)
         initsigs(); /* Signal handling stuff, including initintr() */
 
-    initmain(); /* Module __main__ */
+    initmain(interp); /* Module __main__ */
     if (initstdio() < 0)
         Py_FatalError(
             "Py_Initialize: can't initialize sys standard streams");
@@ -390,6 +393,12 @@ Py_InitializeEx(int install_sigs)
 
     if (!Py_NoSiteFlag)
         initsite(); /* Module site */
+}
+
+void
+Py_InitializeEx(int install_sigs)
+{
+    _Py_InitializeEx_Private(install_sigs, 1);
 }
 
 void
@@ -633,7 +642,7 @@ Py_Finalize(void)
 #endif /* Py_TRACE_REFS */
 #ifdef PYMALLOC_DEBUG
     if (Py_GETENV("PYTHONMALLOCSTATS"))
-        _PyObject_DebugMallocStats();
+        _PyObject_DebugMallocStats(stderr);
 #endif
 
     call_ll_exitfuncs();
@@ -719,7 +728,7 @@ Py_NewInterpreter(void)
         if (initstdio() < 0)
             Py_FatalError(
             "Py_Initialize: can't initialize sys standard streams");
-        initmain();
+        initmain(interp);
         if (!Py_NoSiteFlag)
             initsite();
     }
@@ -769,7 +778,11 @@ Py_EndInterpreter(PyThreadState *tstate)
     PyInterpreterState_Delete(interp);
 }
 
+#ifdef MS_WINDOWS
 static wchar_t *progname = L"python";
+#else
+static wchar_t *progname = L"python3";
+#endif
 
 void
 Py_SetProgramName(wchar_t *pn)
@@ -812,7 +825,7 @@ Py_GetPythonHome(void)
 /* Create __main__ module */
 
 static void
-initmain(void)
+initmain(PyInterpreterState *interp)
 {
     PyObject *m, *d;
     m = PyImport_AddModule("__main__");
@@ -821,10 +834,30 @@ initmain(void)
     d = PyModule_GetDict(m);
     if (PyDict_GetItemString(d, "__builtins__") == NULL) {
         PyObject *bimod = PyImport_ImportModule("builtins");
-        if (bimod == NULL ||
-            PyDict_SetItemString(d, "__builtins__", bimod) != 0)
-            Py_FatalError("can't add __builtins__ to __main__");
+        if (bimod == NULL) {
+            Py_FatalError("Failed to retrieve builtins module");
+        }
+        if (PyDict_SetItemString(d, "__builtins__", bimod) < 0) {
+            Py_FatalError("Failed to initialize __main__.__builtins__");
+        }
         Py_DECREF(bimod);
+    }
+    /* Main is a little special - imp.is_builtin("__main__") will return
+     * False, but BuiltinImporter is still the most appropriate initial
+     * setting for its __loader__ attribute. A more suitable value will
+     * be set if __main__ gets further initialized later in the startup
+     * process.
+     */
+    if (PyDict_GetItemString(d, "__loader__") == NULL) {
+        PyObject *loader = PyObject_GetAttrString(interp->importlib,
+                                                  "BuiltinImporter");
+        if (loader == NULL) {
+            Py_FatalError("Failed to retrieve BuiltinImporter");
+        }
+        if (PyDict_SetItemString(d, "__loader__", loader) < 0) {
+            Py_FatalError("Failed to initialize __main__.__loader__");
+        }
+        Py_DECREF(loader);
     }
 }
 
@@ -938,12 +971,15 @@ create_stdio(PyObject* io,
     Py_CLEAR(raw);
     Py_CLEAR(text);
 
-    newline = "\n";
 #ifdef MS_WINDOWS
-    if (!write_mode) {
-        /* translate \r\n to \n for sys.stdin on Windows */
-        newline = NULL;
-    }
+    /* sys.stdin: enable universal newline mode, translate "\r\n" and "\r"
+       newlines to "\n".
+       sys.stdout and sys.stderr: translate "\n" to "\r\n". */
+    newline = NULL;
+#else
+    /* sys.stdin: split lines at "\n".
+       sys.stdout and sys.stderr: don't translate newlines (use "\n"). */
+    newline = "\n";
 #endif
 
     stream = _PyObject_CallMethodId(io, &PyId_TextIOWrapper, "OsssO",
@@ -1318,6 +1354,32 @@ maybe_pyc_file(FILE *fp, const char* filename, const char* ext, int closeit)
 }
 
 int
+static set_main_loader(PyObject *d, const char *filename, const char *loader_name)
+{
+    PyInterpreterState *interp;
+    PyThreadState *tstate;
+    PyObject *loader_type, *loader;
+    int result = 0;
+    /* Get current thread state and interpreter pointer */
+    tstate = PyThreadState_GET();
+    interp = tstate->interp;
+    loader_type = PyObject_GetAttrString(interp->importlib, loader_name);
+    if (loader_type == NULL) {
+        return -1;
+    }
+    loader = PyObject_CallFunction(loader_type, "ss", "__main__", filename);
+    Py_DECREF(loader_type);
+    if (loader == NULL) {
+        return -1;
+    }
+    if (PyDict_SetItemString(d, "__loader__", loader) < 0) {
+        result = -1;
+    }
+    Py_DECREF(loader);
+    return result;
+}
+
+int
 PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
                         PyCompilerFlags *flags)
 {
@@ -1349,10 +1411,11 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
     len = strlen(filename);
     ext = filename + len - (len > 4 ? 4 : 0);
     if (maybe_pyc_file(fp, filename, ext, closeit)) {
+        FILE *pyc_fp;
         /* Try to run a pyc file. First, re-open in binary */
         if (closeit)
             fclose(fp);
-        if ((fp = fopen(filename, "rb")) == NULL) {
+        if ((pyc_fp = fopen(filename, "rb")) == NULL) {
             fprintf(stderr, "python: Can't reopen .pyc file\n");
             ret = -1;
             goto done;
@@ -1360,8 +1423,23 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
         /* Turn on optimization if a .pyo file is given */
         if (strcmp(ext, ".pyo") == 0)
             Py_OptimizeFlag = 1;
-        v = run_pyc_file(fp, filename, d, d, flags);
+
+        if (set_main_loader(d, filename, "SourcelessFileLoader") < 0) {
+            fprintf(stderr, "python: failed to set __main__.__loader__\n");
+            ret = -1;
+            fclose(pyc_fp);
+            goto done;
+        }
+        v = run_pyc_file(pyc_fp, filename, d, d, flags);
+        fclose(pyc_fp);
     } else {
+        /* When running from stdin, leave __main__.__loader__ alone */
+        if (strcmp(filename, "<stdin>") != 0 &&
+            set_main_loader(d, filename, "SourceFileLoader") < 0) {
+            fprintf(stderr, "python: failed to set __main__.__loader__\n");
+            ret = -1;
+            goto done;
+        }
         v = PyRun_FileExFlags(fp, filename, Py_file_input, d, d,
                               closeit, flags);
     }
@@ -1761,11 +1839,7 @@ print_exception_recursive(PyObject *f, PyObject *value, PyObject *seen)
         else if (PyExceptionInstance_Check(value)) {
             cause = PyException_GetCause(value);
             context = PyException_GetContext(value);
-            if (cause && cause == Py_None) {
-                /* print neither cause nor context */
-                ;
-            }
-            else if (cause) {
+            if (cause) {
                 res = PySet_Contains(seen, cause);
                 if (res == -1)
                     PyErr_Clear();
@@ -1776,7 +1850,8 @@ print_exception_recursive(PyObject *f, PyObject *value, PyObject *seen)
                         cause_message, f);
                 }
             }
-            else if (context) {
+            else if (context &&
+                !((PyBaseExceptionObject *)value)->suppress_context) {
                 res = PySet_Contains(seen, context);
                 if (res == -1)
                     PyErr_Clear();
@@ -1923,7 +1998,6 @@ run_pyc_file(FILE *fp, const char *filename, PyObject *globals,
     (void) PyMarshal_ReadLongFromFile(fp);
     (void) PyMarshal_ReadLongFromFile(fp);
     v = PyMarshal_ReadLastObjectFromFile(fp);
-    fclose(fp);
     if (v == NULL || !PyCode_Check(v)) {
         Py_XDECREF(v);
         PyErr_SetString(PyExc_RuntimeError,

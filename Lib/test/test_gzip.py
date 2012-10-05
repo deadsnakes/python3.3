@@ -33,7 +33,7 @@ class UnseekableIO(io.BytesIO):
         raise io.UnsupportedOperation
 
 
-class TestGzip(unittest.TestCase):
+class BaseTest(unittest.TestCase):
     filename = support.TESTFN
 
     def setUp(self):
@@ -43,6 +43,7 @@ class TestGzip(unittest.TestCase):
         support.unlink(self.filename)
 
 
+class TestGzip(BaseTest):
     def test_write(self):
         with gzip.GzipFile(self.filename, 'wb') as f:
             f.write(data1 * 50)
@@ -115,14 +116,14 @@ class TestGzip(unittest.TestCase):
         # Bug #1074261 was triggered when reading a file that contained
         # many, many members.  Create such a file and verify that reading it
         # works.
-        with gzip.open(self.filename, 'wb', 9) as f:
+        with gzip.GzipFile(self.filename, 'wb', 9) as f:
             f.write(b'a')
         for i in range(0, 200):
-            with gzip.open(self.filename, "ab", 9) as f: # append
+            with gzip.GzipFile(self.filename, "ab", 9) as f: # append
                 f.write(b'a')
 
         # Try reading the file
-        with gzip.open(self.filename, "rb") as zgfile:
+        with gzip.GzipFile(self.filename, "rb") as zgfile:
             contents = b""
             while 1:
                 ztxt = zgfile.read(8192)
@@ -354,6 +355,20 @@ class TestGzip(unittest.TestCase):
             with gzip.GzipFile(fileobj=f, mode="w") as g:
                 pass
 
+    def test_bytes_filename(self):
+        str_filename = self.filename
+        try:
+            bytes_filename = str_filename.encode("ascii")
+        except UnicodeEncodeError:
+            self.skipTest("Temporary file name needs to be ASCII")
+        with gzip.GzipFile(bytes_filename, "wb") as f:
+            f.write(data1 * 50)
+        with gzip.GzipFile(bytes_filename, "rb") as f:
+            self.assertEqual(f.read(), data1 * 50)
+        # Sanity check that we are actually operating on the right file.
+        with gzip.GzipFile(str_filename, "rb") as f:
+            self.assertEqual(f.read(), data1 * 50)
+
     # Testing compress/decompress shortcut functions
 
     def test_compress(self):
@@ -374,8 +389,109 @@ class TestGzip(unittest.TestCase):
             datac = gzip.compress(data)
             self.assertEqual(gzip.decompress(datac), data)
 
+
+class TestOpen(BaseTest):
+    def test_binary_modes(self):
+        uncompressed = data1 * 50
+        with gzip.open(self.filename, "wb") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read())
+            self.assertEqual(file_data, uncompressed)
+        with gzip.open(self.filename, "rb") as f:
+            self.assertEqual(f.read(), uncompressed)
+        with gzip.open(self.filename, "ab") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read())
+            self.assertEqual(file_data, uncompressed * 2)
+
+    def test_implicit_binary_modes(self):
+        # Test implicit binary modes (no "b" or "t" in mode string).
+        uncompressed = data1 * 50
+        with gzip.open(self.filename, "w") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read())
+            self.assertEqual(file_data, uncompressed)
+        with gzip.open(self.filename, "r") as f:
+            self.assertEqual(f.read(), uncompressed)
+        with gzip.open(self.filename, "a") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read())
+            self.assertEqual(file_data, uncompressed * 2)
+
+    def test_text_modes(self):
+        uncompressed = data1.decode("ascii") * 50
+        uncompressed_raw = uncompressed.replace("\n", os.linesep)
+        with gzip.open(self.filename, "wt") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read()).decode("ascii")
+            self.assertEqual(file_data, uncompressed_raw)
+        with gzip.open(self.filename, "rt") as f:
+            self.assertEqual(f.read(), uncompressed)
+        with gzip.open(self.filename, "at") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read()).decode("ascii")
+            self.assertEqual(file_data, uncompressed_raw * 2)
+
+    def test_fileobj(self):
+        uncompressed_bytes = data1 * 50
+        uncompressed_str = uncompressed_bytes.decode("ascii")
+        compressed = gzip.compress(uncompressed_bytes)
+        with gzip.open(io.BytesIO(compressed), "r") as f:
+            self.assertEqual(f.read(), uncompressed_bytes)
+        with gzip.open(io.BytesIO(compressed), "rb") as f:
+            self.assertEqual(f.read(), uncompressed_bytes)
+        with gzip.open(io.BytesIO(compressed), "rt") as f:
+            self.assertEqual(f.read(), uncompressed_str)
+
+    def test_bad_params(self):
+        # Test invalid parameter combinations.
+        with self.assertRaises(TypeError):
+            gzip.open(123.456)
+        with self.assertRaises(ValueError):
+            gzip.open(self.filename, "wbt")
+        with self.assertRaises(ValueError):
+            gzip.open(self.filename, "rb", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            gzip.open(self.filename, "rb", errors="ignore")
+        with self.assertRaises(ValueError):
+            gzip.open(self.filename, "rb", newline="\n")
+
+    def test_encoding(self):
+        # Test non-default encoding.
+        uncompressed = data1.decode("ascii") * 50
+        uncompressed_raw = uncompressed.replace("\n", os.linesep)
+        with gzip.open(self.filename, "wt", encoding="utf-16") as f:
+            f.write(uncompressed)
+        with open(self.filename, "rb") as f:
+            file_data = gzip.decompress(f.read()).decode("utf-16")
+            self.assertEqual(file_data, uncompressed_raw)
+        with gzip.open(self.filename, "rt", encoding="utf-16") as f:
+            self.assertEqual(f.read(), uncompressed)
+
+    def test_encoding_error_handler(self):
+        # Test with non-default encoding error handler.
+        with gzip.open(self.filename, "wb") as f:
+            f.write(b"foo\xffbar")
+        with gzip.open(self.filename, "rt", encoding="ascii", errors="ignore") \
+                as f:
+            self.assertEqual(f.read(), "foobar")
+
+    def test_newline(self):
+        # Test with explicit newline (universal newline mode disabled).
+        uncompressed = data1.decode("ascii") * 50
+        with gzip.open(self.filename, "wt", newline="\n") as f:
+            f.write(uncompressed)
+        with gzip.open(self.filename, "rt", newline="\r") as f:
+            self.assertEqual(f.readlines(), [uncompressed])
+
 def test_main(verbose=None):
-    support.run_unittest(TestGzip)
+    support.run_unittest(TestGzip, TestOpen)
 
 if __name__ == "__main__":
     test_main(verbose=True)

@@ -12,6 +12,7 @@ import time
 import tokenize
 import traceback
 import types
+import io
 
 import linecache
 from code import InteractiveInterpreter
@@ -247,8 +248,8 @@ class PyShellEditorWindow(EditorWindow):
     def ranges_to_linenumbers(self, ranges):
         lines = []
         for index in range(0, len(ranges), 2):
-            lineno = int(float(ranges[index]))
-            end = int(float(ranges[index+1]))
+            lineno = int(float(ranges[index].string))
+            end = int(float(ranges[index+1].string))
             while lineno < end:
                 lines.append(lineno)
                 lineno += 1
@@ -308,6 +309,11 @@ class ModifiedColorDelegator(ColorDelegator):
             "stderr": idleConf.GetHighlight(theme, "stderr"),
             "console": idleConf.GetHighlight(theme, "console"),
         })
+
+    def removecolors(self):
+        # Don't remove shell color tags before "iomark"
+        for tag in self.tagdefs:
+            self.tag_remove(tag, "iomark", "end")
 
 class ModifiedUndoDelegator(UndoDelegator):
     "Extend base class: forbid insert/delete before the I/O mark"
@@ -405,6 +411,9 @@ class ModifiedInterpreter(InteractiveInterpreter):
         except socket.timeout as err:
             self.display_no_subprocess_error()
             return None
+        # Can't regiter self.tkconsole.stdin, since run.py wants to
+        # call non-TextIO methods on it (such as getvar)
+        # XXX should be renamed to "console"
         self.rpcclt.register("stdin", self.tkconsole)
         self.rpcclt.register("stdout", self.tkconsole.stdout)
         self.rpcclt.register("stderr", self.tkconsole.stderr)
@@ -755,7 +764,7 @@ class ModifiedInterpreter(InteractiveInterpreter):
 
     def write(self, s):
         "Override base class method"
-        self.tkconsole.stderr.write(s)
+        return self.tkconsole.stderr.write(s)
 
     def display_port_binding_error(self):
         tkMessageBox.showerror(
@@ -849,13 +858,14 @@ class PyShell(OutputWindow):
         self.save_stderr = sys.stderr
         self.save_stdin = sys.stdin
         from idlelib import IOBinding
+        self.stdin = PseudoInputFile(self)
         self.stdout = PseudoFile(self, "stdout", IOBinding.encoding)
         self.stderr = PseudoFile(self, "stderr", IOBinding.encoding)
         self.console = PseudoFile(self, "console", IOBinding.encoding)
         if not use_subprocess:
             sys.stdout = self.stdout
             sys.stderr = self.stderr
-            sys.stdin = self
+            sys.stdin = self.stdin
         try:
             # page help() text to shell.
             import pydoc # import must be done here to capture i/o rebinding.
@@ -1235,7 +1245,7 @@ class PyShell(OutputWindow):
                                      'Non-BMP character not supported in Tk')
         try:
             self.text.mark_gravity("iomark", "right")
-            OutputWindow.write(self, s, tags, "iomark")
+            count = OutputWindow.write(self, s, tags, "iomark")
             self.text.mark_gravity("iomark", "left")
         except:
             raise ###pass  # ### 11Aug07 KBK if we are expecting exceptions
@@ -1244,6 +1254,7 @@ class PyShell(OutputWindow):
             self.canceled = 0
             if not use_subprocess:
                 raise KeyboardInterrupt
+        return count
 
 class PseudoFile(object):
 
@@ -1253,7 +1264,9 @@ class PseudoFile(object):
         self.encoding = encoding
 
     def write(self, s):
-        self.shell.write(s, self.tags)
+        if not isinstance(s, str):
+            raise TypeError('must be str, not ' + type(s).__name__)
+        return self.shell.write(s, self.tags)
 
     def writelines(self, lines):
         for line in lines:
@@ -1264,6 +1277,15 @@ class PseudoFile(object):
 
     def isatty(self):
         return True
+
+class PseudoInputFile(object):
+    def __init__(self, shell):
+        self.readline = shell.readline
+        self.isatty = shell.isatty
+
+    def write(self, s):
+        raise io.UnsupportedOperation("not writable")
+    writelines = write
 
 
 usage_msg = """\
@@ -1451,7 +1473,8 @@ def main():
     if tkversionwarning:
         shell.interp.runcommand(''.join(("print('", tkversionwarning, "')")))
 
-    root.mainloop()
+    while flist.inversedict:  # keep IDLE running while files are open.
+        root.mainloop()
     root.destroy()
 
 if __name__ == "__main__":

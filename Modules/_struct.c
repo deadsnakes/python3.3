@@ -1752,6 +1752,18 @@ s_get_size(PyStructObject *self, void *unused)
     return PyLong_FromSsize_t(self->s_size);
 }
 
+PyDoc_STRVAR(s_sizeof__doc__,
+"S.__sizeof__() -> size of S in memory, in bytes");
+
+static PyObject *
+s_sizeof(PyStructObject *self, void *unused)
+{
+    Py_ssize_t size;
+
+    size = sizeof(PyStructObject) + sizeof(formatcode) * (self->s_len + 1);
+    return PyLong_FromSsize_t(size);
+}
+
 /* List of functions */
 
 static struct PyMethodDef s_methods[] = {
@@ -1760,6 +1772,7 @@ static struct PyMethodDef s_methods[] = {
     {"unpack",          s_unpack,       METH_O, s_unpack__doc__},
     {"unpack_from",     (PyCFunction)s_unpack_from, METH_VARARGS|METH_KEYWORDS,
                     s_unpack_from__doc__},
+    {"__sizeof__",      (PyCFunction)s_sizeof, METH_NOARGS, s_sizeof__doc__},
     {NULL,       NULL}          /* sentinel */
 };
 

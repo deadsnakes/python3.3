@@ -11,9 +11,9 @@ import socketserver
 import time
 import calendar
 
-from test.support import reap_threads, verbose, transient_internet, run_with_tz
+from test.support import reap_threads, verbose, transient_internet, run_with_tz, run_with_locale
 import unittest
-
+from datetime import datetime, timezone, timedelta
 try:
     import ssl
 except ImportError:
@@ -43,14 +43,30 @@ class TestImaplib(unittest.TestCase):
                             imaplib.Internaldate2tuple(
             b'25 (INTERNALDATE "02-Apr-2000 03:30:00 +0000")'))
 
-    def test_that_Time2Internaldate_returns_a_result(self):
-        # We can check only that it successfully produces a result,
-        # not the correctness of the result itself, since the result
-        # depends on the timezone the machine is in.
-        timevalues = [2000000000, 2000000000.0, time.localtime(2000000000),
-                      '"18-May-2033 05:33:20 +0200"']
 
-        for t in timevalues:
+
+    def timevalues(self):
+        return [2000000000, 2000000000.0, time.localtime(2000000000),
+                (2033, 5, 18, 5, 33, 20, -1, -1, -1),
+                (2033, 5, 18, 5, 33, 20, -1, -1, 1),
+                datetime.fromtimestamp(2000000000,
+                                       timezone(timedelta(0, 2*60*60))),
+                '"18-May-2033 05:33:20 +0200"']
+
+    @run_with_locale('LC_ALL', 'de_DE', 'fr_FR')
+    @run_with_tz('STD-1DST')
+    def test_Time2Internaldate(self):
+        expected = '"18-May-2033 05:33:20 +0200"'
+
+        for t in self.timevalues():
+            internal = imaplib.Time2Internaldate(t)
+            self.assertEqual(internal, expected)
+
+    def test_that_Time2Internaldate_returns_a_result(self):
+        # Without tzset, we can check only that it successfully
+        # produces a result, not the correctness of the result itself,
+        # since the result depends on the timezone the machine is in.
+        for t in self.timevalues():
             imaplib.Time2Internaldate(t)
 
 
@@ -233,8 +249,8 @@ class RemoteIMAPTest(unittest.TestCase):
         with transient_internet(self.host):
             for cap in self.server.capabilities:
                 self.assertIsInstance(cap, str)
-            self.assertTrue('LOGINDISABLED' in self.server.capabilities)
-            self.assertTrue('AUTH=ANONYMOUS' in self.server.capabilities)
+            self.assertIn('LOGINDISABLED', self.server.capabilities)
+            self.assertIn('AUTH=ANONYMOUS', self.server.capabilities)
             rs = self.server.login(self.username, self.password)
             self.assertEqual(rs[0], 'OK')
 
@@ -257,7 +273,7 @@ class RemoteIMAP_STARTTLSTest(RemoteIMAPTest):
     def test_logincapa(self):
         for cap in self.server.capabilities:
             self.assertIsInstance(cap, str)
-        self.assertFalse('LOGINDISABLED' in self.server.capabilities)
+        self.assertNotIn('LOGINDISABLED', self.server.capabilities)
 
 
 @unittest.skipUnless(ssl, "SSL not available")
@@ -280,8 +296,8 @@ class RemoteIMAP_SSLTest(RemoteIMAPTest):
         try:
             for cap in server.capabilities:
                 self.assertIsInstance(cap, str)
-            self.assertFalse('LOGINDISABLED' in server.capabilities)
-            self.assertTrue('AUTH=PLAIN' in server.capabilities)
+            self.assertNotIn('LOGINDISABLED', server.capabilities)
+            self.assertIn('AUTH=PLAIN', server.capabilities)
             rs = server.login(self.username, self.password)
             self.assertEqual(rs[0], 'OK')
         finally:

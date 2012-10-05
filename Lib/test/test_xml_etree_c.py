@@ -1,36 +1,11 @@
 # xml.etree test for cElementTree
-
+import sys, struct
 from test import support
 from test.support import import_fresh_module
 import unittest
 
 cET = import_fresh_module('xml.etree.ElementTree', fresh=['_elementtree'])
 cET_alias = import_fresh_module('xml.etree.cElementTree', fresh=['_elementtree', 'xml.etree'])
-
-
-# cElementTree specific tests
-
-def sanity():
-    r"""
-    Import sanity.
-
-    Issue #6697.
-
-    >>> cElementTree = cET
-    >>> e = cElementTree.Element('a')
-    >>> getattr(e, '\uD800')           # doctest: +ELLIPSIS
-    Traceback (most recent call last):
-      ...
-    UnicodeEncodeError: ...
-
-    >>> p = cElementTree.XMLParser()
-    >>> p.version.split()[0]
-    'Expat'
-    >>> getattr(p, '\uD800')
-    Traceback (most recent call last):
-     ...
-    AttributeError: 'XMLParser' object has no attribute '\ud800'
-    """
 
 
 class MiscTests(unittest.TestCase):
@@ -46,12 +21,14 @@ class MiscTests(unittest.TestCase):
         finally:
             data = None
 
+
 @unittest.skipUnless(cET, 'requires _elementtree')
 class TestAliasWorking(unittest.TestCase):
     # Test that the cET alias module is alive
     def test_alias_working(self):
         e = cET_alias.Element('foo')
         self.assertEqual(e.tag, 'foo')
+
 
 @unittest.skipUnless(cET, 'requires _elementtree')
 class TestAcceleratorImported(unittest.TestCase):
@@ -63,15 +40,41 @@ class TestAcceleratorImported(unittest.TestCase):
         self.assertEqual(cET_alias.SubElement.__module__, '_elementtree')
 
 
+@unittest.skipUnless(cET, 'requires _elementtree')
+@support.cpython_only
+class SizeofTest(unittest.TestCase):
+    def setUp(self):
+        self.elementsize = support.calcobjsize('5P')
+        # extra
+        self.extra = struct.calcsize('PiiP4P')
+
+    check_sizeof = support.check_sizeof
+
+    def test_element(self):
+        e = cET.Element('a')
+        self.check_sizeof(e, self.elementsize)
+
+    def test_element_with_attrib(self):
+        e = cET.Element('a', href='about:')
+        self.check_sizeof(e, self.elementsize + self.extra)
+
+    def test_element_with_children(self):
+        e = cET.Element('a')
+        for i in range(5):
+            cET.SubElement(e, 'span')
+        # should have space for 8 children now
+        self.check_sizeof(e, self.elementsize + self.extra +
+                             struct.calcsize('8P'))
+
 def test_main():
     from test import test_xml_etree, test_xml_etree_c
 
     # Run the tests specific to the C implementation
-    support.run_doctest(test_xml_etree_c, verbosity=True)
     support.run_unittest(
         MiscTests,
         TestAliasWorking,
-        TestAcceleratorImported
+        TestAcceleratorImported,
+        SizeofTest,
         )
 
     # Run the same test suite as the Python module

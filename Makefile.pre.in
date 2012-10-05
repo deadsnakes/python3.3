@@ -34,6 +34,7 @@ MAINCC=		@MAINCC@
 LINKCC=		@LINKCC@
 AR=		@AR@
 RANLIB=		@RANLIB@
+READELF=	@READELF@
 SOABI=		@SOABI@
 LDVERSION=	@LDVERSION@
 HGVERSION=	@HGVERSION@
@@ -193,6 +194,10 @@ LIBOBJS=	@LIBOBJS@
 PYTHON=		python$(EXE)
 BUILDPYTHON=	python$(BUILDEXE)
 
+PYTHON_FOR_BUILD=@PYTHON_FOR_BUILD@
+_PYTHON_HOST_PLATFORM=@_PYTHON_HOST_PLATFORM@
+HOST_GNU_TYPE=  @host@
+
 # The task to run while instrument when building the profile-opt target
 PROFILE_TASK=	$(srcdir)/Tools/pybench/pybench.py -n 2 --with-gc --with-syscheck
 #PROFILE_TASK=	$(srcdir)/Lib/test/regrtest.py
@@ -324,7 +329,6 @@ PYTHON_OBJS=	\
 		Python/codecs.o \
 		Python/dynamic_annotations.o \
 		Python/errors.o \
-		Python/frozen.o \
 		Python/frozenmain.o \
 		Python/future.o \
 		Python/getargs.o \
@@ -392,6 +396,7 @@ OBJECT_OBJS=	\
 		Objects/memoryobject.o \
 		Objects/methodobject.o \
 		Objects/moduleobject.o \
+		Objects/namespaceobject.o \
 		Objects/object.o \
 		Objects/obmalloc.o \
 		Objects/capsule.o \
@@ -409,7 +414,7 @@ SYSCONFIGDATA=$(srcdir)/Lib/_sysconfigdata.py
 
 ##########################################################################
 # objects that get linked into the Python library
-LIBRARY_OBJS=	\
+LIBRARY_OBJS_OMIT_FROZEN=	\
 		Modules/getbuildinfo.o \
 		$(PARSER_OBJS) \
 		$(OBJECT_OBJS) \
@@ -417,6 +422,10 @@ LIBRARY_OBJS=	\
 		$(MODULE_OBJS) \
 		$(SIGNAL_OBJS) \
 		$(MODOBJS)
+
+LIBRARY_OBJS=	\
+		$(LIBRARY_OBJS_OMIT_FROZEN) \
+		Python/frozen.o
 
 #########################################################################
 # Rules
@@ -441,10 +450,11 @@ build_all_generate_profile:
 	$(MAKE) all CFLAGS="$(CFLAGS) -fprofile-generate" LIBS="$(LIBS) -lgcov"
 
 run_profile_task:
-	./$(BUILDPYTHON) $(PROFILE_TASK)
+	: # FIXME: can't run for a cross build
+	$(RUNSHARED) ./$(BUILDPYTHON) $(PROFILE_TASK)
 
 build_all_use_profile:
-	$(MAKE) all CFLAGS="$(CFLAGS) -fprofile-use"
+	$(MAKE) all CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction"
 
 coverage:
 	@echo "Building with support for coverage checking:"
@@ -457,18 +467,17 @@ $(BUILDPYTHON):	Modules/python.o $(LIBRARY) $(LDLIBRARY) $(PY3LIBRARY)
 	$(LINKCC) $(PY_LDFLAGS) $(LINKFORSHARED) -o $@ Modules/python.o $(BLDLIBRARY) $(LIBS) $(MODLIBS) $(SYSLIBS) $(LDLAST)
 
 platform: $(BUILDPYTHON) $(SYSCONFIGDATA)
-	$(RUNSHARED) ./$(BUILDPYTHON) -E -c 'import sys ; from sysconfig import get_platform ; print(get_platform()+"-"+sys.version[0:3])' >platform
+	$(RUNSHARED) $(PYTHON_FOR_BUILD) -c 'import sys ; from sysconfig import get_platform ; print(get_platform()+"-"+sys.version[0:3])' >platform
 
 # Generate the sysconfig build-time data
 $(SYSCONFIGDATA): $(BUILDPYTHON)
-	$(RUNSHARED) ./$(BUILDPYTHON) -SE -m sysconfig --generate-posix-vars
+	$(RUNSHARED) $(PYTHON_FOR_BUILD) -S -m sysconfig --generate-posix-vars
 
 # Build the shared modules
 sharedmods: $(BUILDPYTHON) $(SYSCONFIGDATA)
-	@case $$MAKEFLAGS in \
-	*s*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' ./$(BUILDPYTHON) -E $(srcdir)/setup.py -q build;; \
-	*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' ./$(BUILDPYTHON) -E $(srcdir)/setup.py build;; \
-	esac
+	case $$MAKEFLAGS in *s*) quiet=-q; esac; \
+	$(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' \
+		$(PYTHON_FOR_BUILD) $(srcdir)/setup.py $$quiet build
 
 # Build static library
 # avoid long command lines, same as LIBRARY_OBJS
@@ -477,7 +486,7 @@ $(LIBRARY): $(LIBRARY_OBJS)
 	$(AR) $(ARFLAGS) $@ Modules/getbuildinfo.o
 	$(AR) $(ARFLAGS) $@ $(PARSER_OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJECT_OBJS)
-	$(AR) $(ARFLAGS) $@ $(PYTHON_OBJS)
+	$(AR) $(ARFLAGS) $@ $(PYTHON_OBJS) Python/frozen.o
 	$(AR) $(ARFLAGS) $@ $(MODULE_OBJS) $(SIGNAL_OBJS)
 	$(AR) $(ARFLAGS) $@ $(MODOBJS)
 	$(RANLIB) $@
@@ -577,18 +586,14 @@ Modules/_testembed: Modules/_testembed.o $(LIBRARY) $(LDLIBRARY) $(PY3LIBRARY)
 ############################################################################
 # Importlib
 
-Python/importlib.h: $(srcdir)/Lib/importlib/_bootstrap.py $(srcdir)/Python/freeze_importlib.py
-	@if test -f ./$(BUILDPYTHON); then \
-	    ./$(BUILDPYTHON) $(srcdir)/Python/freeze_importlib.py \
-		$(srcdir)/Lib/importlib/_bootstrap.py Python/importlib.h; \
-	else \
-	    echo "----------------------------------------------------------"; \
-	    echo "Python/importlib.h needs to be rebuilt, but no interpreter"; \
-	    echo "is available to do so. Leaving the previous version in"; \
-	    echo "place. You may want to run ''make'' a second time after"; \
-	    echo "this build is complete."; \
-	    echo "----------------------------------------------------------"; \
-	fi
+Modules/_freeze_importlib: Modules/_freeze_importlib.o $(LIBRARY_OBJS_OMIT_FROZEN)
+	$(LINKCC) $(PY_LDFLAGS) -o $@ Modules/_freeze_importlib.o $(LIBRARY_OBJS_OMIT_FROZEN) $(LIBS) $(MODLIBS) $(SYSLIBS) $(LDLAST)
+
+Python/importlib.h: $(srcdir)/Lib/importlib/_bootstrap.py Modules/_freeze_importlib.c
+	$(MAKE) Modules/_freeze_importlib
+	./Modules/_freeze_importlib \
+		$(srcdir)/Lib/importlib/_bootstrap.py Python/importlib.h
+
 
 ############################################################################
 # Special rules for object files
@@ -766,6 +771,7 @@ PYTHON_HEADERS= \
 		$(srcdir)/Include/methodobject.h \
 		$(srcdir)/Include/modsupport.h \
 		$(srcdir)/Include/moduleobject.h \
+		$(srcdir)/Include/namespaceobject.h \
 		$(srcdir)/Include/node.h \
 		$(srcdir)/Include/object.h \
 		$(srcdir)/Include/objimpl.h \
@@ -945,8 +951,8 @@ bininstall: altbininstall
 	(cd $(DESTDIR)$(BINDIR); $(LN) -s pydoc$(VERSION) pydoc3)
 	-rm -f $(DESTDIR)$(BINDIR)/2to3
 	(cd $(DESTDIR)$(BINDIR); $(LN) -s 2to3-$(VERSION) 2to3)
-	-rm -f $(DESTDIR)$(BINDIR)/pysetup3
-	(cd $(DESTDIR)$(BINDIR); $(LN) -s pysetup$(VERSION) pysetup3)
+	-rm -f $(DESTDIR)$(BINDIR)/pyvenv
+	(cd $(DESTDIR)$(BINDIR); $(LN) -s pyvenv-$(VERSION) pyvenv)
 
 # Install the manual page
 maninstall:
@@ -972,6 +978,26 @@ LIBSUBDIRS=	tkinter tkinter/test tkinter/test/test_tkinter \
 		test/cjkencodings test/decimaltestdata test/xmltestdata \
 		test/subprocessdata test/sndhdrdata \
 		test/tracedmodules test/encoded_modules \
+		test/namespace_pkgs \
+		test/namespace_pkgs/both_portions \
+		test/namespace_pkgs/both_portions/foo \
+		test/namespace_pkgs/not_a_namespace_pkg \
+		test/namespace_pkgs/not_a_namespace_pkg/foo \
+		test/namespace_pkgs/portion1 \
+		test/namespace_pkgs/portion1/foo \
+		test/namespace_pkgs/portion2 \
+		test/namespace_pkgs/portion2/foo \
+		test/namespace_pkgs/project1 \
+		test/namespace_pkgs/project1/parent \
+		test/namespace_pkgs/project1/parent/child \
+		test/namespace_pkgs/project2 \
+		test/namespace_pkgs/project2/parent \
+		test/namespace_pkgs/project2/parent/child \
+		test/namespace_pkgs/project3 \
+		test/namespace_pkgs/project3/parent \
+		test/namespace_pkgs/project3/parent/child \
+                test/namespace_pkgs/module_and_namespace_package \
+                test/namespace_pkgs/module_and_namespace_package/a_test \
 		collections concurrent concurrent/futures encodings \
 		email email/mime test/test_email test/test_email/data \
 		html json test/json_tests http dbm xmlrpc \
@@ -982,62 +1008,13 @@ LIBSUBDIRS=	tkinter tkinter/test tkinter/test/test_tkinter \
 		lib2to3/tests/data/fixers/myfixes \
 		ctypes ctypes/test ctypes/macholib idlelib idlelib/Icons \
 		distutils distutils/command distutils/tests $(XMLLIBSUBDIRS) \
-		importlib importlib/test importlib/test/builtin \
-		importlib/test/extension importlib/test/frozen \
-		importlib/test/import_ importlib/test/source \
-		packaging packaging/command packaging/compiler \
-		packaging/pypi packaging/tests \
-		packaging/tests/fake_dists \
-		packaging/tests/fake_dists/babar-0.1.dist-info \
-		packaging/tests/fake_dists/bacon-0.1.egg-info \
-		packaging/tests/fake_dists/banana-0.4.egg \
-		packaging/tests/fake_dists/banana-0.4.egg/EGG-INFO \
-		packaging/tests/fake_dists/choxie-2.0.0.9 \
-		packaging/tests/fake_dists/choxie-2.0.0.9/choxie \
-		packaging/tests/fake_dists/choxie-2.0.0.9.dist-info \
-		packaging/tests/fake_dists/coconuts-aster-10.3.egg-info \
-		packaging/tests/fake_dists/grammar-1.0a4 \
-		packaging/tests/fake_dists/grammar-1.0a4.dist-info \
-		packaging/tests/fake_dists/grammar-1.0a4/grammar \
-		packaging/tests/fake_dists/towel_stuff-0.1 \
-		packaging/tests/fake_dists/towel_stuff-0.1.dist-info \
-		packaging/tests/fake_dists/towel_stuff-0.1/towel_stuff \
-		packaging/tests/fixer packaging/tests/pypiserver \
-		packaging/tests/pypiserver/downloads_with_md5 \
-		packaging/tests/pypiserver/downloads_with_md5/packages \
-		packaging/tests/pypiserver/downloads_with_md5/packages/source \
-		packaging/tests/pypiserver/downloads_with_md5/packages/source/f \
-		packaging/tests/pypiserver/downloads_with_md5/packages/source/f/foobar \
-		packaging/tests/pypiserver/downloads_with_md5/simple \
-		packaging/tests/pypiserver/downloads_with_md5/simple/badmd5 \
-		packaging/tests/pypiserver/downloads_with_md5/simple/foobar \
-		packaging/tests/pypiserver/foo_bar_baz \
-		packaging/tests/pypiserver/foo_bar_baz/simple \
-		packaging/tests/pypiserver/foo_bar_baz/simple/bar \
-		packaging/tests/pypiserver/foo_bar_baz/simple/baz \
-		packaging/tests/pypiserver/foo_bar_baz/simple/foo \
-		packaging/tests/pypiserver/project_list \
-		packaging/tests/pypiserver/project_list/simple \
-		packaging/tests/pypiserver/test_found_links \
-		packaging/tests/pypiserver/test_found_links/simple \
-		packaging/tests/pypiserver/test_found_links/simple/foobar \
-		packaging/tests/pypiserver/test_pypi_server \
-		packaging/tests/pypiserver/test_pypi_server/external \
-		packaging/tests/pypiserver/test_pypi_server/simple \
-		packaging/tests/pypiserver/with_externals \
-		packaging/tests/pypiserver/with_externals/external \
-		packaging/tests/pypiserver/with_externals/simple \
-		packaging/tests/pypiserver/with_externals/simple/foobar \
-		packaging/tests/pypiserver/with_norel_links \
-		packaging/tests/pypiserver/with_norel_links/external \
-		packaging/tests/pypiserver/with_norel_links/simple \
-		packaging/tests/pypiserver/with_norel_links/simple/foobar \
-		packaging/tests/pypiserver/with_real_externals \
-		packaging/tests/pypiserver/with_real_externals/simple \
-		packaging/tests/pypiserver/with_real_externals/simple/foobar \
+		importlib test/test_importlib test/test_importlib/builtin \
+		test/test_importlib/extension test/test_importlib/frozen \
+		test/test_importlib/import_ test/test_importlib/source \
 		turtledemo \
 		multiprocessing multiprocessing/dummy \
 		unittest unittest/test unittest/test/testmock \
+		venv venv/scripts venv/scripts/posix \
 		curses pydoc_data $(MACHDEPS)
 libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 	@for i in $(SCRIPTDIR) $(LIBDEST); \
@@ -1059,7 +1036,7 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 		else	true; \
 		fi; \
 	done
-	@for i in $(srcdir)/Lib/*.py $(srcdir)/Lib/*.cfg ; \
+	@for i in $(srcdir)/Lib/*.py ; \
 	do \
 		if test -x $$i; then \
 			$(INSTALL_SCRIPT) $$i $(DESTDIR)$(LIBDEST); \
@@ -1099,30 +1076,28 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 		$(INSTALL_DATA) $(srcdir)/Modules/xxmodule.c \
 			$(DESTDIR)$(LIBDEST)/distutils/tests ; \
 	fi
-	if test -d $(DESTDIR)$(LIBDEST)/packaging/tests; then \
-		$(INSTALL_DATA) $(srcdir)/Modules/xxmodule.c \
-			$(DESTDIR)$(LIBDEST)/packaging/tests ; \
-	fi
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST)  $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(PYTHON_FOR_BUILD) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST) -f \
 		-x 'bad_coding|badsyntax|site-packages|lib2to3/tests/data' \
 		$(DESTDIR)$(LIBDEST)
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(PYTHON_FOR_BUILD) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST) -f \
 		-x 'bad_coding|badsyntax|site-packages|lib2to3/tests/data' \
 		$(DESTDIR)$(LIBDEST)
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST)  $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(PYTHON_FOR_BUILD) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST)/site-packages -f \
 		-x badsyntax $(DESTDIR)$(LIBDEST)/site-packages
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(PYTHON_FOR_BUILD) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST)/site-packages -f \
 		-x badsyntax $(DESTDIR)$(LIBDEST)/site-packages
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -c "import lib2to3.pygram, lib2to3.patcomp;lib2to3.patcomp.PatternCompiler()"
+		$(PYTHON_FOR_BUILD) -m lib2to3.pgen2.driver $(DESTDIR)$(LIBDEST)/lib2to3/Grammar.txt
+	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
+		$(PYTHON_FOR_BUILD) -m lib2to3.pgen2.driver $(DESTDIR)$(LIBDEST)/lib2to3/PatternGrammar.txt
 
 # Create the PLATDIR source directory, if one wasn't distributed..
 $(srcdir)/Lib/$(PLATDIR):
@@ -1216,7 +1191,7 @@ libainstall:	all python-config
 # Install the dynamically loadable modules
 # This goes into $(exec_prefix)
 sharedinstall: sharedmods
-	$(RUNSHARED) ./$(BUILDPYTHON) -E $(srcdir)/setup.py install \
+	$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/setup.py install \
 	   	--prefix=$(prefix) \
 		--install-scripts=$(BINDIR) \
 		--install-platlib=$(DESTSHARED) \
@@ -1265,8 +1240,11 @@ frameworkinstallstructure:	$(LDLIBRARY)
 # Install a number of symlinks to keep software that expects a normal unix
 # install (which includes python-config) happy.
 frameworkinstallmaclib:
+	ln -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(LDVERSION).a"
+	ln -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(LDVERSION).dylib"
 	ln -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(VERSION).a"
 	ln -fs "../../../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/python$(VERSION)/config-$(LDVERSION)/libpython$(VERSION).dylib"
+	ln -fs "../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/libpython$(LDVERSION).dylib"
 	ln -fs "../$(PYTHONFRAMEWORK)" "$(DESTDIR)$(prefix)/lib/libpython$(VERSION).dylib"
 
 # This installs the IDE, the Launcher and other apps into /Applications
@@ -1288,7 +1266,7 @@ frameworkinstallextras:
 # This installs a few of the useful scripts in Tools/scripts
 scriptsinstall:
 	SRCDIR=$(srcdir) $(RUNSHARED) \
-	./$(BUILDPYTHON) $(srcdir)/Tools/scripts/setup.py install \
+	$(PYTHON_FOR_BUILD) $(srcdir)/Tools/scripts/setup.py install \
 	--prefix=$(prefix) \
 	--install-scripts=$(BINDIR) \
 	--root=$(DESTDIR)/
@@ -1366,7 +1344,7 @@ clean: pycremoval
 	find build -name 'fficonfig.py' -exec rm -f {} ';' || true
 	-rm -f Lib/lib2to3/*Grammar*.pickle
 	-rm -f $(SYSCONFIGDATA)
-	-rm -f Modules/_testembed
+	-rm -f Modules/_testembed Modules/_freeze_importlib
 
 profile-removal:
 	find . -name '*.gc??' -exec rm -f {} ';'

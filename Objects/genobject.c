@@ -97,7 +97,8 @@ gen_send_ex(PyGenObject *gen, PyObject *arg, int exc)
             /* Delay exception instantiation if we can */
             PyErr_SetNone(PyExc_StopIteration);
         } else {
-            PyObject *e = PyStopIteration_Create(result);
+            PyObject *e = PyObject_CallFunctionObjArgs(
+                               PyExc_StopIteration, result, NULL);
             if (e != NULL) {
                 PyErr_SetObject(PyExc_StopIteration, e);
                 Py_DECREF(e);
@@ -137,7 +138,7 @@ _PyGen_Send(PyGenObject *gen, PyObject *arg)
 }
 
 PyDoc_STRVAR(close_doc,
-"close(arg) -> raise GeneratorExit inside generator.");
+"close() -> raise GeneratorExit inside generator.");
 
 /*
  *   This helper function is used by gen_close and gen_throw to
@@ -148,13 +149,14 @@ static int
 gen_close_iter(PyObject *yf)
 {
     PyObject *retval = NULL;
+    _Py_IDENTIFIER(close);
 
     if (PyGen_CheckExact(yf)) {
         retval = gen_close((PyGenObject *)yf, NULL);
         if (retval == NULL)
             return -1;
     } else {
-        PyObject *meth = PyObject_GetAttrString(yf, "close");
+        PyObject *meth = _PyObject_GetAttrId(yf, &PyId_close);
         if (meth == NULL) {
             if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                 PyErr_WriteUnraisable(yf);
@@ -294,6 +296,7 @@ gen_throw(PyGenObject *gen, PyObject *args)
     PyObject *tb = NULL;
     PyObject *val = NULL;
     PyObject *yf = gen_yf(gen);
+    _Py_IDENTIFIER(throw);
 
     if (!PyArg_UnpackTuple(args, "throw", 1, 3, &typ, &val, &tb))
         return NULL;
@@ -315,7 +318,7 @@ gen_throw(PyGenObject *gen, PyObject *args)
             ret = gen_throw((PyGenObject *)yf, args);
             gen->gi_running = 0;
         } else {
-            PyObject *meth = PyObject_GetAttrString(yf, "throw");
+            PyObject *meth = _PyObject_GetAttrId(yf, &PyId_throw);
             if (meth == NULL) {
                 if (!PyErr_ExceptionMatches(PyExc_AttributeError)) {
                     Py_DECREF(yf);
@@ -339,7 +342,7 @@ gen_throw(PyGenObject *gen, PyObject *args)
             Py_DECREF(ret);
             /* Termination repetition of YIELD_FROM */
             gen->gi_frame->f_lasti++;
-            if (PyGen_FetchStopIterationValue(&val) == 0) {
+            if (_PyGen_FetchStopIterationValue(&val) == 0) {
                 ret = gen_send_ex(gen, val, 0);
                 Py_DECREF(val);
             } else {
@@ -428,7 +431,7 @@ gen_iternext(PyGenObject *gen)
  */
 
 int
-PyGen_FetchStopIterationValue(PyObject **pvalue) {
+_PyGen_FetchStopIterationValue(PyObject **pvalue) {
     PyObject *et, *ev, *tb;
     PyObject *value = NULL;
 

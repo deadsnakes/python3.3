@@ -24,6 +24,8 @@ import sysconfig
 import fnmatch
 import logging.handlers
 import struct
+import tempfile
+import _testcapi
 
 try:
     import _thread, threading
@@ -45,24 +47,31 @@ try:
 except ImportError:
     bz2 = None
 
+try:
+    import lzma
+except ImportError:
+    lzma = None
+
 __all__ = [
-    "Error", "TestFailed", "ResourceDenied", "import_module",
-    "verbose", "use_resources", "max_memuse", "record_original_stdout",
+    "Error", "TestFailed", "ResourceDenied", "import_module", "verbose",
+    "use_resources", "max_memuse", "record_original_stdout",
     "get_original_stdout", "unload", "unlink", "rmtree", "forget",
     "is_resource_enabled", "requires", "requires_freebsd_version",
-    "requires_linux_version", "requires_mac_ver", "find_unused_port", "bind_port",
-    "IPV6_ENABLED", "is_jython", "TESTFN", "HOST", "SAVEDCWD", "temp_cwd",
-    "findfile", "create_empty_file", "sortdict", "check_syntax_error", "open_urlresource",
-    "check_warnings", "CleanImport", "EnvironmentVarGuard", "TransientResource",
-    "captured_stdout", "captured_stdin", "captured_stderr", "time_out",
-    "socket_peer_reset", "ioerror_peer_reset", "run_with_locale", 'temp_umask',
+    "requires_linux_version", "requires_mac_ver", "find_unused_port",
+    "bind_port", "IPV6_ENABLED", "is_jython", "TESTFN", "HOST", "SAVEDCWD",
+    "temp_cwd", "findfile", "create_empty_file", "sortdict",
+    "check_syntax_error", "open_urlresource", "check_warnings", "CleanImport",
+    "EnvironmentVarGuard", "TransientResource", "captured_stdout",
+    "captured_stdin", "captured_stderr", "time_out", "socket_peer_reset",
+    "ioerror_peer_reset", "run_with_locale", 'temp_umask',
     "transient_internet", "set_memlimit", "bigmemtest", "bigaddrspacetest",
     "BasicTestRunner", "run_unittest", "run_doctest", "threading_setup",
     "threading_cleanup", "reap_children", "cpython_only", "check_impl_detail",
     "get_attribute", "swap_item", "swap_attr", "requires_IEEE_754",
     "TestHandler", "Matcher", "can_symlink", "skip_unless_symlink",
-    "import_fresh_module", "requires_zlib", "PIPE_MAX_SIZE", "failfast",
-    "anticipate_failure", "run_with_tz", "requires_bz2"
+    "skip_unless_xattr", "import_fresh_module", "requires_zlib",
+    "PIPE_MAX_SIZE", "failfast", "anticipate_failure", "run_with_tz",
+    "requires_bz2", "requires_lzma"
     ]
 
 class Error(Exception):
@@ -216,17 +225,81 @@ def unload(name):
     except KeyError:
         pass
 
+if sys.platform.startswith("win"):
+    def _waitfor(func, pathname, waitall=False):
+        # Peform the operation
+        func(pathname)
+        # Now setup the wait loop
+        if waitall:
+            dirname = pathname
+        else:
+            dirname, name = os.path.split(pathname)
+            dirname = dirname or '.'
+        # Check for `pathname` to be removed from the filesystem.
+        # The exponential backoff of the timeout amounts to a total
+        # of ~1 second after which the deletion is probably an error
+        # anyway.
+        # Testing on a i7@4.3GHz shows that usually only 1 iteration is
+        # required when contention occurs.
+        timeout = 0.001
+        while timeout < 1.0:
+            # Note we are only testing for the existance of the file(s) in
+            # the contents of the directory regardless of any security or
+            # access rights.  If we have made it this far, we have sufficient
+            # permissions to do that much using Python's equivalent of the
+            # Windows API FindFirstFile.
+            # Other Windows APIs can fail or give incorrect results when
+            # dealing with files that are pending deletion.
+            L = os.listdir(dirname)
+            if not (L if waitall else name in L):
+                return
+            # Increase the timeout and try again
+            time.sleep(timeout)
+            timeout *= 2
+        warnings.warn('tests may fail, delete still pending for ' + pathname,
+                      RuntimeWarning, stacklevel=4)
+
+    def _unlink(filename):
+        _waitfor(os.unlink, filename)
+
+    def _rmdir(dirname):
+        _waitfor(os.rmdir, dirname)
+
+    def _rmtree(path):
+        def _rmtree_inner(path):
+            for name in os.listdir(path):
+                fullname = os.path.join(path, name)
+                if os.path.isdir(fullname):
+                    _waitfor(_rmtree_inner, fullname, waitall=True)
+                    os.rmdir(fullname)
+                else:
+                    os.unlink(fullname)
+        _waitfor(_rmtree_inner, path, waitall=True)
+        _waitfor(os.rmdir, path)
+else:
+    _unlink = os.unlink
+    _rmdir = os.rmdir
+    _rmtree = shutil.rmtree
+
 def unlink(filename):
     try:
-        os.unlink(filename)
+        _unlink(filename)
     except OSError as error:
         # The filename need not exist.
         if error.errno not in (errno.ENOENT, errno.ENOTDIR):
             raise
 
+def rmdir(dirname):
+    try:
+        _rmdir(dirname)
+    except OSError as error:
+        # The directory need not exist.
+        if error.errno != errno.ENOENT:
+            raise
+
 def rmtree(path):
     try:
-        shutil.rmtree(path)
+        _rmtree(path)
     except OSError as error:
         if error.errno != errno.ENOENT:
             raise
@@ -485,14 +558,16 @@ def bind_port(sock, host=HOST):
 def _is_ipv6_enabled():
     """Check whether IPv6 is enabled on this host."""
     if socket.has_ipv6:
+        sock = None
         try:
             sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
             sock.bind(('::1', 0))
+            return True
         except (socket.error, socket.gaierror):
             pass
-        else:
-            sock.close()
-            return True
+        finally:
+            if sock:
+                sock.close()
     return False
 
 IPV6_ENABLED = _is_ipv6_enabled()
@@ -512,6 +587,8 @@ requires_IEEE_754 = unittest.skipUnless(
 requires_zlib = unittest.skipUnless(zlib, 'requires zlib')
 
 requires_bz2 = unittest.skipUnless(bz2, 'requires bz2')
+
+requires_lzma = unittest.skipUnless(lzma, 'requires lzma')
 
 is_jython = sys.platform.startswith('java')
 
@@ -1070,6 +1147,33 @@ def python_is_optimized():
     return final_opt != '' and final_opt != '-O0'
 
 
+_header = 'nP'
+_align = '0n'
+if hasattr(sys, "gettotalrefcount"):
+    _header = '2P' + _header
+    _align = '0P'
+_vheader = _header + 'n'
+
+def calcobjsize(fmt):
+    return struct.calcsize(_header + fmt + _align)
+
+def calcvobjsize(fmt):
+    return struct.calcsize(_vheader + fmt + _align)
+
+
+_TPFLAGS_HAVE_GC = 1<<14
+_TPFLAGS_HEAPTYPE = 1<<9
+
+def check_sizeof(test, o, size):
+    result = sys.getsizeof(o)
+    # add GC header size
+    if ((type(o) == type) and (o.__flags__ & _TPFLAGS_HEAPTYPE) or\
+        ((type(o) != type) and (type(o).__flags__ & _TPFLAGS_HAVE_GC))):
+        size += _testcapi.SIZEOF_PYGC_HEAD
+    msg = 'wrong size for %s: got %d, expected %d' \
+            % (type(o), result, size)
+    test.assertEqual(result, size, msg)
+
 #=======================================================================
 # Decorator for running a function in a different locale, correctly resetting
 # it afterwards.
@@ -1583,30 +1687,13 @@ def strip_python_stderr(stderr):
     This will typically be run on the result of the communicate() method
     of a subprocess.Popen object.
     """
-    stderr = re.sub(br"\[\d+ refs\]\r?\n?$", b"", stderr).strip()
+    stderr = re.sub(br"\[\d+ refs\]\r?\n?", b"", stderr).strip()
     return stderr
 
 def args_from_interpreter_flags():
     """Return a list of command-line arguments reproducing the current
     settings in sys.flags and sys.warnoptions."""
-    flag_opt_map = {
-        'bytes_warning': 'b',
-        'dont_write_bytecode': 'B',
-        'hash_randomization': 'R',
-        'ignore_environment': 'E',
-        'no_user_site': 's',
-        'no_site': 'S',
-        'optimize': 'O',
-        'verbose': 'v',
-    }
-    args = []
-    for flag, opt in flag_opt_map.items():
-        v = getattr(sys.flags, flag)
-        if v > 0:
-            args.append('-' + opt * v)
-    for opt in sys.warnoptions:
-        args.append('-W' + opt)
-    return args
+    return subprocess._args_from_interpreter_flags()
 
 #============================================================
 # Support for assertions about logging.
@@ -1694,6 +1781,40 @@ def skip_unless_symlink(test):
     """Skip decorator for tests that require functional symlink"""
     ok = can_symlink()
     msg = "Requires functional symlink implementation"
+    return test if ok else unittest.skip(msg)(test)
+
+_can_xattr = None
+def can_xattr():
+    global _can_xattr
+    if _can_xattr is not None:
+        return _can_xattr
+    if not hasattr(os, "setxattr"):
+        can = False
+    else:
+        tmp_fp, tmp_name = tempfile.mkstemp()
+        try:
+            with open(TESTFN, "wb") as fp:
+                try:
+                    # TESTFN & tempfile may use different file systems with
+                    # different capabilities
+                    os.setxattr(tmp_fp, b"user.test", b"")
+                    os.setxattr(fp.fileno(), b"user.test", b"")
+                    # Kernels < 2.6.39 don't respect setxattr flags.
+                    kernel_version = platform.release()
+                    m = re.match("2.6.(\d{1,2})", kernel_version)
+                    can = m is None or int(m.group(1)) >= 39
+                except OSError:
+                    can = False
+        finally:
+            unlink(TESTFN)
+            unlink(tmp_name)
+    _can_xattr = can
+    return can
+
+def skip_unless_xattr(test):
+    """Skip decorator for tests that require functional extended attributes"""
+    ok = can_xattr()
+    msg = "no non-broken extended attribute support"
     return test if ok else unittest.skip(msg)(test)
 
 def patch(test_instance, object_to_patch, attr_name, new_value):

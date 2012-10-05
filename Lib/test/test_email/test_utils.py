@@ -1,6 +1,9 @@
 import datetime
 from email import utils
+import test.support
+import time
 import unittest
+import sys
 
 class DateTimeTests(unittest.TestCase):
 
@@ -43,3 +46,91 @@ class DateTimeTests(unittest.TestCase):
         self.assertEqual(
             utils.parsedate_to_datetime(self.datestring + ' -0000'),
             self.naive_dt)
+
+
+class LocaltimeTests(unittest.TestCase):
+
+    def test_localtime_is_tz_aware_daylight_true(self):
+        test.support.patch(self, time, 'daylight', True)
+        t = utils.localtime()
+        self.assertIsNot(t.tzinfo, None)
+
+    def test_localtime_is_tz_aware_daylight_false(self):
+        test.support.patch(self, time, 'daylight', False)
+        t = utils.localtime()
+        self.assertIsNot(t.tzinfo, None)
+
+    def test_localtime_daylight_true_dst_false(self):
+        test.support.patch(self, time, 'daylight', True)
+        t0 = datetime.datetime(2012, 3, 12, 1, 1)
+        t1 = utils.localtime(t0, isdst=-1)
+        t2 = utils.localtime(t1)
+        self.assertEqual(t1, t2)
+
+    def test_localtime_daylight_false_dst_false(self):
+        test.support.patch(self, time, 'daylight', False)
+        t0 = datetime.datetime(2012, 3, 12, 1, 1)
+        t1 = utils.localtime(t0, isdst=-1)
+        t2 = utils.localtime(t1)
+        self.assertEqual(t1, t2)
+
+    def test_localtime_daylight_true_dst_true(self):
+        test.support.patch(self, time, 'daylight', True)
+        t0 = datetime.datetime(2012, 3, 12, 1, 1)
+        t1 = utils.localtime(t0, isdst=1)
+        t2 = utils.localtime(t1)
+        self.assertEqual(t1, t2)
+
+    def test_localtime_daylight_false_dst_true(self):
+        test.support.patch(self, time, 'daylight', False)
+        t0 = datetime.datetime(2012, 3, 12, 1, 1)
+        t1 = utils.localtime(t0, isdst=1)
+        t2 = utils.localtime(t1)
+        self.assertEqual(t1, t2)
+
+    @test.support.run_with_tz('EST+05EDT,M3.2.0,M11.1.0')
+    def test_localtime_epoch_utc_daylight_true(self):
+        test.support.patch(self, time, 'daylight', True)
+        t0 = datetime.datetime(1970, 1, 1, tzinfo = datetime.timezone.utc)
+        t1 = utils.localtime(t0)
+        t2 = t0 - datetime.timedelta(hours=5)
+        t2 = t2.replace(tzinfo = datetime.timezone(datetime.timedelta(hours=-5)))
+        self.assertEqual(t1, t2)
+
+    @test.support.run_with_tz('EST+05EDT,M3.2.0,M11.1.0')
+    def test_localtime_epoch_utc_daylight_false(self):
+        test.support.patch(self, time, 'daylight', False)
+        t0 = datetime.datetime(1970, 1, 1, tzinfo = datetime.timezone.utc)
+        t1 = utils.localtime(t0)
+        t2 = t0 - datetime.timedelta(hours=5)
+        t2 = t2.replace(tzinfo = datetime.timezone(datetime.timedelta(hours=-5)))
+        self.assertEqual(t1, t2)
+
+    def test_localtime_epoch_notz_daylight_true(self):
+        test.support.patch(self, time, 'daylight', True)
+        t0 = datetime.datetime(1970, 1, 1)
+        t1 = utils.localtime(t0)
+        t2 = utils.localtime(t0.replace(tzinfo=None))
+        self.assertEqual(t1, t2)
+
+    def test_localtime_epoch_notz_daylight_false(self):
+        test.support.patch(self, time, 'daylight', False)
+        t0 = datetime.datetime(1970, 1, 1)
+        t1 = utils.localtime(t0)
+        t2 = utils.localtime(t0.replace(tzinfo=None))
+        self.assertEqual(t1, t2)
+
+    # XXX: Need a more robust test for Olson's tzdata
+    @unittest.skipIf(sys.platform.startswith('win'),
+                     "Windows does not use Olson's TZ database")
+    @test.support.run_with_tz('Europe/Kiev')
+    def test_variable_tzname(self):
+        t0 = datetime.datetime(1984, 1, 1, tzinfo=datetime.timezone.utc)
+        t1 = utils.localtime(t0)
+        self.assertEqual(t1.tzname(), 'MSK')
+        t0 = datetime.datetime(1994, 1, 1, tzinfo=datetime.timezone.utc)
+        t1 = utils.localtime(t0)
+        self.assertEqual(t1.tzname(), 'EET')
+
+if __name__ == '__main__':
+    unittest.main()

@@ -29,6 +29,33 @@ always available.
    command line, see the :mod:`fileinput` module.
 
 
+.. data:: base_exec_prefix
+
+   Set during Python startup, before ``site.py`` is run, to the same value as
+   :data:`exec_prefix`. If not running in a
+   :ref:`virtual environment <venv-def>`, the values will stay the same; if
+   ``site.py`` finds that a virtual environment is in use, the values of
+   :data:`prefix` and :data:`exec_prefix` will be changed to point to the
+   virtual environment, whereas :data:`base_prefix` and
+   :data:`base_exec_prefix` will remain pointing to the base Python
+   installation (the one which the virtual environment was created from).
+
+   .. versionadded:: 3.3
+
+
+.. data:: base_prefix
+
+   Set during Python startup, before ``site.py`` is run, to the same value as
+   :data:`prefix`. If not running in a :ref:`virtual environment <venv-def>`, the values
+   will stay the same; if ``site.py`` finds that a virtual environment is in
+   use, the values of :data:`prefix` and :data:`exec_prefix` will be changed to
+   point to the virtual environment, whereas :data:`base_prefix` and
+   :data:`base_exec_prefix` will remain pointing to the base Python
+   installation (the one which the virtual environment was created from).
+
+   .. versionadded:: 3.3
+
+
 .. data:: byteorder
 
    An indicator of the native byte order.  This will have the value ``'big'`` on
@@ -78,6 +105,22 @@ always available.
    code examines the frame.
 
    This function should be used for internal and specialized purposes only.
+
+
+.. function:: _debugmallocstats()
+
+   Print low-level information to stderr about the state of CPython's memory
+   allocator.
+
+   If Python is configured --with-pydebug, it also performs some expensive
+   internal consistency checks.
+
+   .. versionadded:: 3.3
+
+   .. impl-detail::
+
+      This function is specific to CPython.  The exact output format is not
+      defined here, and may change.
 
 
 .. data:: dllhandle
@@ -198,6 +241,11 @@ always available.
    :file:`{exec_prefix}/lib/python{X.Y}/config`, and shared library modules are
    installed in :file:`{exec_prefix}/lib/python{X.Y}/lib-dynload`, where *X.Y*
    is the version number of Python, for example ``3.2``.
+
+   .. note:: If a :ref:`virtual environment <venv-def>` is in effect, this
+      value will be changed in ``site.py`` to point to the virtual environment.
+      The value for the Python installation will still be available, via
+      :data:`base_exec_prefix`.
 
 
 .. data:: executable
@@ -411,6 +459,9 @@ always available.
    does not have to hold true for third-party extensions as it is implementation
    specific.
 
+   Only the memory consumption directly attributed to the object is
+   accounted for, not the memory consumption of objects it refers to.
+
    If given, *default* will be returned if the object does not provide means to
    retrieve the size.  Otherwise a :exc:`TypeError` will be raised.
 
@@ -585,6 +636,47 @@ always available.
    +-------------------------+------------------------------------------------+
 
    Thus ``2.1.0a3`` is hexversion ``0x020100a3``.
+
+
+.. data:: implementation
+
+   An object containing information about the implementation of the
+   currently running Python interpreter.  The following attributes are
+   required to exist in all Python implementations.
+
+   *name* is the implementation's identifier, e.g. ``'cpython'``.  The actual
+   string is defined by the Python implementation, but it is guaranteed to be
+   lower case.
+
+   *version* is a named tuple, in the same format as
+   :data:`sys.version_info`.  It represents the version of the Python
+   *implementation*.  This has a distinct meaning from the specific
+   version of the Python *language* to which the currently running
+   interpreter conforms, which ``sys.version_info`` represents.  For
+   example, for PyPy 1.8 ``sys.implementation.version`` might be
+   ``sys.version_info(1, 8, 0, 'final', 0)``, whereas ``sys.version_info``
+   would be ``sys.version_info(2, 7, 2, 'final', 0)``.  For CPython they
+   are the same value, since it is the reference implementation.
+
+   *hexversion* is the implementation version in hexadecimal format, like
+   :data:`sys.hexversion`.
+
+   *cache_tag* is the tag used by the import machinery in the filenames of
+   cached modules.  By convention, it would be a composite of the
+   implementation's name and version, like ``'cpython-33'``.  However, a
+   Python implementation may use some other value if appropriate.  If
+   ``cache_tag`` is set to ``None``, it indicates that module caching should
+   be disabled.
+
+   :data:`sys.implementation` may contain additional attributes specific to
+   the Python implementation.  These non-standard attributes must start with
+   an underscore, and are not described here.  Regardless of its contents,
+   :data:`sys.implementation` will not change during a run of the interpreter,
+   nor between implementation versions.  (It may change between Python
+   language versions, however.)  See `PEP 421` for more information.
+
+   .. versionadded:: 3.3
+
 
 .. data:: int_info
 
@@ -774,6 +866,11 @@ always available.
    while the platform independent header files (all except :file:`pyconfig.h`) are
    stored in :file:`{prefix}/include/python{X.Y}`, where *X.Y* is the version
    number of Python, for example ``3.2``.
+
+   .. note:: If a :ref:`virtual environment <venv-def>` is in effect, this
+      value will be changed in ``site.py`` to point to the virtual
+      environment. The value for the Python installation will still be
+      available, via :data:`base_prefix`.
 
 
 .. data:: ps1

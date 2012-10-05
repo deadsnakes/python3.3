@@ -22,11 +22,11 @@ combine the components back into a URL string, and to convert a "relative URL"
 to an absolute URL given a "base URL."
 
 The module has been designed to match the Internet RFC on Relative Uniform
-Resource Locators (and discovered a bug in an earlier draft!). It supports the
-following URL schemes: ``file``, ``ftp``, ``gopher``, ``hdl``, ``http``,
-``https``, ``imap``, ``mailto``, ``mms``, ``news``, ``nntp``, ``prospero``,
-``rsync``, ``rtsp``, ``rtspu``, ``sftp``, ``shttp``, ``sip``, ``sips``,
-``snews``, ``svn``, ``svn+ssh``, ``telnet``, ``wais``.
+Resource Locators. It supports the following URL schemes: ``file``, ``ftp``,
+``gopher``, ``hdl``, ``http``, ``https``, ``imap``, ``mailto``, ``mms``,
+``news``, ``nntp``, ``prospero``, ``rsync``, ``rtsp``, ``rtspu``, ``sftp``,
+``shttp``, ``sip``, ``sips``, ``snews``, ``svn``, ``svn+ssh``, ``telnet``,
+``wais``.
 
 The :mod:`urllib.parse` module defines functions that fall into two broad
 categories: URL parsing and URL quoting. These are covered in detail in
@@ -81,8 +81,7 @@ or on combining URL components into a URL string.
    this argument is the empty string.
 
    If the *allow_fragments* argument is false, fragment identifiers are not
-   allowed, even if the URL's addressing scheme normally does support them.  The
-   default value for this argument is :const:`True`.
+   allowed.  The default value for this argument is :const:`True`.
 
    The return value is actually an instance of a subclass of :class:`tuple`.  This
    class has the following additional read-only convenience attributes:
@@ -118,6 +117,11 @@ or on combining URL components into a URL string.
 
    .. versionchanged:: 3.2
       Added IPv6 URL parsing capabilities.
+
+   .. versionchanged:: 3.3
+      The fragment is now parsed for all URL schemes (unless *allow_fragment* is
+      false), in accordance with :rfc:`3986`.  Previously, a whitelist of
+      schemes that support fragments existed.
 
 
 .. function:: parse_qs(qs, keep_blank_values=False, strict_parsing=False, encoding='utf-8', errors='replace')

@@ -23,8 +23,8 @@ __all__ = [
     'Manager', 'Pipe', 'cpu_count', 'log_to_stderr', 'get_logger',
     'allow_connection_pickling', 'BufferTooShort', 'TimeoutError',
     'Lock', 'RLock', 'Semaphore', 'BoundedSemaphore', 'Condition',
-    'Event', 'Queue', 'SimpleQueue', 'JoinableQueue', 'Pool', 'Value', 'Array',
-    'RawValue', 'RawArray', 'SUBDEBUG', 'SUBWARNING',
+    'Event', 'Barrier', 'Queue', 'SimpleQueue', 'JoinableQueue', 'Pool',
+    'Value', 'Array', 'RawValue', 'RawArray', 'SUBDEBUG', 'SUBWARNING',
     ]
 
 __author__ = 'R. Oudkerk (r.m.oudkerk@gmail.com)'
@@ -186,6 +186,13 @@ def Event():
     from multiprocessing.synchronize import Event
     return Event()
 
+def Barrier(parties, action=None, timeout=None):
+    '''
+    Returns a barrier object
+    '''
+    from multiprocessing.synchronize import Barrier
+    return Barrier(parties, action, timeout)
+
 def Queue(maxsize=0):
     '''
     Returns a queue object
@@ -228,19 +235,19 @@ def RawArray(typecode_or_type, size_or_initializer):
     from multiprocessing.sharedctypes import RawArray
     return RawArray(typecode_or_type, size_or_initializer)
 
-def Value(typecode_or_type, *args, **kwds):
+def Value(typecode_or_type, *args, lock=True):
     '''
     Returns a synchronized shared object
     '''
     from multiprocessing.sharedctypes import Value
-    return Value(typecode_or_type, *args, **kwds)
+    return Value(typecode_or_type, *args, lock=lock)
 
-def Array(typecode_or_type, size_or_initializer, **kwds):
+def Array(typecode_or_type, size_or_initializer, *, lock=True):
     '''
     Returns a synchronized shared array
     '''
     from multiprocessing.sharedctypes import Array
-    return Array(typecode_or_type, size_or_initializer, **kwds)
+    return Array(typecode_or_type, size_or_initializer, lock=lock)
 
 #
 #

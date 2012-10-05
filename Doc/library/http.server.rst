@@ -201,7 +201,8 @@ of which this module provides three different variants:
       specifying its value. Note that, after the send_header calls are done,
       :meth:`end_headers` MUST BE called in order to complete the operation.
 
-      .. versionchanged:: 3.2 Headers are stored in an internal buffer.
+      .. versionchanged:: 3.2
+         Headers are stored in an internal buffer.
 
 
    .. method:: send_response_only(code, message=None)
@@ -400,3 +401,9 @@ the previous example, this serves files relative to the current directory. ::
 
    Note that CGI scripts will be run with UID of user nobody, for security
    reasons.  Problems with the CGI script will be translated to error 403.
+
+:class:`CGIHTTPRequestHandler` can be enabled in the command line by passing
+the ``--cgi`` option.::
+
+        python -m http.server --cgi 8000
+

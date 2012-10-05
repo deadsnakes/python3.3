@@ -1058,7 +1058,7 @@ winapi_WaitForMultipleObjects(PyObject* self, PyObject* args)
     if (!PySequence_Check(handle_seq)) {
         PyErr_Format(PyExc_TypeError,
                      "sequence type expected, got '%s'",
-                     Py_TYPE(handle_seq)->tp_doc);
+                     Py_TYPE(handle_seq)->tp_name);
         return NULL;
     }
     nhandles = PySequence_Length(handle_seq);
@@ -1287,11 +1287,9 @@ PyInit__winapi(void)
     WINAPI_CONSTANT(F_DWORD, ERROR_MORE_DATA);
     WINAPI_CONSTANT(F_DWORD, ERROR_NETNAME_DELETED);
     WINAPI_CONSTANT(F_DWORD, ERROR_NO_SYSTEM_RESOURCES);
-    WINAPI_CONSTANT(F_DWORD, ERROR_NETNAME_DELETED);
-    WINAPI_CONSTANT(F_DWORD, ERROR_NO_SYSTEM_RESOURCES);
-    WINAPI_CONSTANT(F_DWORD, ERROR_IO_PENDING);
     WINAPI_CONSTANT(F_DWORD, ERROR_MORE_DATA);
     WINAPI_CONSTANT(F_DWORD, ERROR_NETNAME_DELETED);
+    WINAPI_CONSTANT(F_DWORD, ERROR_NO_DATA);
     WINAPI_CONSTANT(F_DWORD, ERROR_NO_SYSTEM_RESOURCES);
     WINAPI_CONSTANT(F_DWORD, ERROR_OPERATION_ABORTED);
     WINAPI_CONSTANT(F_DWORD, ERROR_PIPE_BUSY);

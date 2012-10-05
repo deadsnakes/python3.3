@@ -1,4 +1,4 @@
-Building Python using VC++ 9.0
+Building Python using VC++ 10.0
 ------------------------------
 
 This directory is used to build Python for Win32 and x64 platforms, e.g. 
@@ -62,17 +62,11 @@ PC/VS8.0/
 C RUNTIME
 ---------
 
-Visual Studio 2008 uses version 9 of the C runtime (MSVCRT9).  The executables
-are linked to a CRT "side by side" assembly which must be present on the target
-machine.  This is avalible under the VC/Redist folder of your visual studio
-distribution. On XP and later operating systems that support
-side-by-side assemblies it is not enough to have the msvcrt90.dll present,
-it has to be there as a whole assembly, that is, a folder with the .dll
-and a .manifest.  Also, a check is made for the correct version.
-Therefore, one should distribute this assembly with the dlls, and keep
-it in the same directory.  For compatibility with older systems, one should
-also set the PATH to this directory so that the dll can be found.
-For more info, see the Readme in the VC/Redist folder.
+Visual Studio 2010 uses version 10 of the C runtime (MSVCRT9).  The executables
+no longer use the "Side by Side" assemblies used in previous versions of the
+compiler.  This simplifies distribution of applications.
+The run time libraries are avalible under the VC/Redist folder of your visual studio
+distribution. For more info, see the Readme in the VC/Redist folder.
 
 SUBPROJECTS
 -----------
@@ -121,21 +115,21 @@ _bz2
     Download the source from the python.org copy into the dist
     directory:
 
-    svn export http://svn.python.org/projects/external/bzip2-1.0.5
+    svn export http://svn.python.org/projects/external/bzip2-1.0.6
 
     ** NOTE: if you use the Tools\buildbot\external(-amd64).bat approach for
     obtaining external sources then you don't need to manually get the source
     above via subversion. **
 
     A custom pre-link step in the bz2 project settings should manage to
-    build bzip2-1.0.5\libbz2.lib by magic before bz2.pyd (or bz2_d.pyd) is
+    build bzip2-1.0.6\libbz2.lib by magic before bz2.pyd (or bz2_d.pyd) is
     linked in PCbuild\.
     However, the bz2 project is not smart enough to remove anything under
-    bzip2-1.0.5\ when you do a clean, so if you want to rebuild bzip2.lib
-    you need to clean up bzip2-1.0.5\ by hand.
+    bzip2-1.0.6\ when you do a clean, so if you want to rebuild bzip2.lib
+    you need to clean up bzip2-1.0.6\ by hand.
 
     All of this managed to build libbz2.lib in 
-    bzip2-1.0.5\$platform-$configuration\, which the Python project links in.
+    bzip2-1.0.6\$platform-$configuration\, which the Python project links in.
 _lzma
     Python wrapper for the liblzma compression library.
 
@@ -148,7 +142,7 @@ _ssl
 
     Get the source code through
 
-    svn export http://svn.python.org/projects/external/openssl-1.0.0a
+    svn export http://svn.python.org/projects/external/openssl-1.0.1c
 
     ** NOTE: if you use the Tools\buildbot\external(-amd64).bat approach for
     obtaining external sources then you don't need to manually get the source

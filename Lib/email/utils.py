@@ -37,10 +37,7 @@ from email._parseaddr import quote
 from email._parseaddr import AddressList as _AddressList
 from email._parseaddr import mktime_tz
 
-# We need wormarounds for bugs in these methods in older Pythons (see below)
-from email._parseaddr import parsedate as _parsedate
-from email._parseaddr import parsedate_tz as _parsedate_tz
-from email._parseaddr import _parsedate_tz as __parsedate_tz
+from email._parseaddr import parsedate, parsedate_tz, _parsedate_tz
 
 from quopri import decodestring as _qdecode
 
@@ -57,6 +54,17 @@ TICK = "'"
 specialsre = re.compile(r'[][\\()<>@,:;".]')
 escapesre = re.compile(r'[\\"]')
 
+# How to figure out if we are processing strings that come from a byte
+# source with undecodable characters.
+_has_surrogates = re.compile(
+    '([^\ud800-\udbff]|\A)[\udc00-\udfff]([^\udc00-\udfff]|\Z)').search
+
+# How to deal with a string containing bytes before handing it to the
+# application through the 'normal' interface.
+def _sanitize(string):
+    # Turn any escaped bytes into unicode 'unknown' char.
+    original_bytes = string.encode('ascii', 'surrogateescape')
+    return original_bytes.decode('ascii', 'replace')
 
 
 # Helpers
@@ -211,25 +219,8 @@ def make_msgid(idstring=None, domain=None):
     return msgid
 
 
-
-# These functions are in the standalone mimelib version only because they've
-# subsequently been fixed in the latest Python versions.  We use this to worm
-# around broken older Pythons.
-def parsedate(data):
-    if not data:
-        return None
-    return _parsedate(data)
-
-
-def parsedate_tz(data):
-    if not data:
-        return None
-    return _parsedate_tz(data)
-
 def parsedate_to_datetime(data):
-    if not data:
-        return None
-    *dtuple, tz = __parsedate_tz(data)
+    *dtuple, tz = _parsedate_tz(data)
     if tz is None:
         return datetime.datetime(*dtuple[:6])
     return datetime.datetime(*dtuple[:6],
@@ -352,3 +343,49 @@ def collapse_rfc2231_value(value, errors='replace',
     except LookupError:
         # charset is not a known codec.
         return unquote(text)
+
+
+#
+# datetime doesn't provide a localtime function yet, so provide one.  Code
+# adapted from the patch in issue 9527.  This may not be perfect, but it is
+# better than not having it.
+#
+
+def localtime(dt=None, isdst=-1):
+    """Return local time as an aware datetime object.
+
+    If called without arguments, return current time.  Otherwise *dt*
+    argument should be a datetime instance, and it is converted to the
+    local time zone according to the system time zone database.  If *dt* is
+    naive (that is, dt.tzinfo is None), it is assumed to be in local time.
+    In this case, a positive or zero value for *isdst* causes localtime to
+    presume initially that summer time (for example, Daylight Saving Time)
+    is or is not (respectively) in effect for the specified time.  A
+    negative value for *isdst* causes the localtime() function to attempt
+    to divine whether summer time is in effect for the specified time.
+
+    """
+    if dt is None:
+        return datetime.datetime.now(datetime.timezone.utc).astimezone()
+    if dt.tzinfo is not None:
+        return dt.astimezone()
+    # We have a naive datetime.  Convert to a (localtime) timetuple and pass to
+    # system mktime together with the isdst hint.  System mktime will return
+    # seconds since epoch.
+    tm = dt.timetuple()[:-1] + (isdst,)
+    seconds = time.mktime(tm)
+    localtm = time.localtime(seconds)
+    try:
+        delta = datetime.timedelta(seconds=localtm.tm_gmtoff)
+        tz = datetime.timezone(delta, localtm.tm_zone)
+    except AttributeError:
+        # Compute UTC offset and compare with the value implied by tm_isdst.
+        # If the values match, use the zone name implied by tm_isdst.
+        delta = dt - datetime.datetime(*time.gmtime(seconds)[:6])
+        dst = time.daylight and localtm.tm_isdst > 0
+        gmtoff = -(time.altzone if dst else time.timezone)
+        if delta == datetime.timedelta(seconds=gmtoff):
+            tz = datetime.timezone(delta, time.tzname[dst])
+        else:
+            tz = datetime.timezone(delta)
+    return dt.replace(tzinfo=tz)

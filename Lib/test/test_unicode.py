@@ -572,6 +572,7 @@ class UnicodeTest(string_tests.CommonTest,
         self.assertEqual('ﬁ'.casefold(), 'fi')
         self.assertEqual('\u03a3'.casefold(), '\u03c3')
         self.assertEqual('A\u0345\u03a3'.casefold(), 'a\u03b9\u03c3')
+        self.assertEqual('\u00b5'.casefold(), '\u03bc')
 
     def test_upper(self):
         string_tests.CommonTest.test_upper(self)
@@ -1064,6 +1065,10 @@ class UnicodeTest(string_tests.CommonTest,
         self.assertEqual('%f' % INF, 'inf')
         self.assertEqual('%F' % INF, 'INF')
 
+        # PEP 393
+        self.assertEqual('%.1s' % "a\xe9\u20ac", 'a')
+        self.assertEqual('%.2s' % "a\xe9\u20ac", 'a\xe9')
+
     def test_startswith_endswith_errors(self):
         for meth in ('foo'.startswith, 'foo'.endswith):
             with self.assertRaises(TypeError) as cm:
@@ -1418,14 +1423,6 @@ class UnicodeTest(string_tests.CommonTest,
         self.assertRaises(TypeError, str, b"hello", "test.unicode2")
         self.assertRaises(TypeError, "hello".encode, "test.unicode1")
         self.assertRaises(TypeError, "hello".encode, "test.unicode2")
-        # executes PyUnicode_Encode()
-        import imp
-        self.assertRaises(
-            ImportError,
-            imp.find_module,
-            "non-existing module",
-            ["non-existing dir"]
-        )
 
         # Error handling (wrong arguments)
         self.assertRaises(TypeError, "hello".encode, 42, 42, 42)

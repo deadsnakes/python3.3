@@ -152,20 +152,16 @@ class TestMailbox(TestBase):
             f.write(_bytes_sample_message)
             f.seek(0)
             key = self._box.add(f)
-        # See issue 11062
-        if not isinstance(self._box, mailbox.Babyl):
-            self.assertEqual(self._box.get_bytes(key).split(b'\n'),
-                _bytes_sample_message.split(b'\n'))
+        self.assertEqual(self._box.get_bytes(key).split(b'\n'),
+            _bytes_sample_message.split(b'\n'))
 
     def test_add_binary_nonascii_file(self):
         with tempfile.TemporaryFile('wb+') as f:
             f.write(self._non_latin_bin_msg)
             f.seek(0)
             key = self._box.add(f)
-        # See issue 11062
-        if not isinstance(self._box, mailbox.Babyl):
-            self.assertEqual(self._box.get_bytes(key).split(b'\n'),
-                self._non_latin_bin_msg.split(b'\n'))
+        self.assertEqual(self._box.get_bytes(key).split(b'\n'),
+            self._non_latin_bin_msg.split(b'\n'))
 
     def test_add_text_file_warns(self):
         with tempfile.TemporaryFile('w+') as f:
@@ -173,10 +169,8 @@ class TestMailbox(TestBase):
             f.seek(0)
             with self.assertWarns(DeprecationWarning):
                 key = self._box.add(f)
-        # See issue 11062
-        if not isinstance(self._box, mailbox.Babyl):
-            self.assertEqual(self._box.get_bytes(key).split(b'\n'),
-                _bytes_sample_message.split(b'\n'))
+        self.assertEqual(self._box.get_bytes(key).split(b'\n'),
+            _bytes_sample_message.split(b'\n'))
 
     def test_add_StringIO_warns(self):
         with self.assertWarns(DeprecationWarning):
@@ -503,6 +497,17 @@ class TestMailbox(TestBase):
     def test_flush(self):
         # Write changes to disk
         self._test_flush_or_close(self._box.flush, True)
+
+    def test_popitem_and_flush_twice(self):
+        # See #15036.
+        self._box.add(self._template % 0)
+        self._box.add(self._template % 1)
+        self._box.flush()
+
+        self._box.popitem()
+        self._box.flush()
+        self._box.popitem()
+        self._box.flush()
 
     def test_lock_unlock(self):
         # Lock and unlock the mailbox
@@ -934,7 +939,49 @@ class TestMaildir(TestMailbox, unittest.TestCase):
         self._box._refresh()
         self.assertTrue(refreshed())
 
-class _TestMboxMMDF(TestMailbox):
+
+class _TestSingleFile(TestMailbox):
+    '''Common tests for single-file mailboxes'''
+
+    def test_add_doesnt_rewrite(self):
+        # When only adding messages, flush() should not rewrite the
+        # mailbox file. See issue #9559.
+
+        # Inode number changes if the contents are written to another
+        # file which is then renamed over the original file. So we
+        # must check that the inode number doesn't change.
+        inode_before = os.stat(self._path).st_ino
+
+        self._box.add(self._template % 0)
+        self._box.flush()
+
+        inode_after = os.stat(self._path).st_ino
+        self.assertEqual(inode_before, inode_after)
+
+        # Make sure the message was really added
+        self._box.close()
+        self._box = self._factory(self._path)
+        self.assertEqual(len(self._box), 1)
+
+    def test_permissions_after_flush(self):
+        # See issue #5346
+
+        # Make the mailbox world writable. It's unlikely that the new
+        # mailbox file would have these permissions after flush(),
+        # because umask usually prevents it.
+        mode = os.stat(self._path).st_mode | 0o666
+        os.chmod(self._path, mode)
+
+        self._box.add(self._template % 0)
+        i = self._box.add(self._template % 1)
+        # Need to remove one message to make flush() create a new file
+        self._box.remove(i)
+        self._box.flush()
+
+        self.assertEqual(os.stat(self._path).st_mode, mode)
+
+
+class _TestMboxMMDF(_TestSingleFile):
 
     def tearDown(self):
         super().tearDown()
@@ -1209,7 +1256,7 @@ class TestMH(TestMailbox, unittest.TestCase):
         return os.path.join(self._path, '.mh_sequences.lock')
 
 
-class TestBabyl(TestMailbox, unittest.TestCase):
+class TestBabyl(_TestSingleFile, unittest.TestCase):
 
     _factory = lambda self, path, factory=None: mailbox.Babyl(path, factory)
 
