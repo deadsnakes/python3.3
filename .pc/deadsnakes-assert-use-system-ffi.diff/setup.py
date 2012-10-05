@@ -520,8 +520,6 @@ class PyBuildExt(build_ext):
                 '/lib', '/usr/lib',
                 ]
             inc_dirs = self.compiler.include_dirs + ['/usr/include']
-            gnu_triplet = os.popen('dpkg-architecture -qDEB_HOST_GNU_TYPE').readline()[:-1]; print('XXX', gnu_triplet)
-            inc_dirs.append(os.path.join('/usr/include', gnu_triplet))
         exts = []
         missing = []
 
@@ -2035,10 +2033,6 @@ class PyBuildInstall(install):
                     ('install_headers', install.has_headers),
                     ('install_scripts', install.has_scripts),
                     ('install_data', install.has_data)]
-
-        if not self.use_system_libffi:
-            print("Error: not using system libffi", file=sys.stderr)
-            sys.exit(1)
 
 
 class PyBuildInstallLib(install_lib):

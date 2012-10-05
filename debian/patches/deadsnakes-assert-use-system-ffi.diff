@@ -1,0 +1,15 @@
+# We always want the system libffi for the Ubuntu package.
+
+--- a/setup.py
++++ b/setup.py
+@@ -1937,6 +1937,10 @@
+                     ('install_scripts', install.has_scripts),
+                     ('install_data', install.has_data)]
+ 
++        if not self.use_system_libffi:
++            print("Error: not using system libffi", file=sys.stderr)
++            sys.exit(1)
++
+ 
+ class PyBuildInstallLib(install_lib):
+     # Do exactly what install_lib does but make sure correct access modes get
