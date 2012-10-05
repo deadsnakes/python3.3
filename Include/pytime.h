@@ -25,8 +25,8 @@ typedef struct {
 /* Structure used by time.get_clock_info() */
 typedef struct {
     const char *implementation;
-    int is_monotonic;
-    int is_adjusted;
+    int monotonic;
+    int adjustable;
     double resolution;
 } _Py_clock_info_t;
 
@@ -61,6 +61,10 @@ PyAPI_FUNC(int) _PyTime_ObjectToTime_t(
 /* Convert a time_t to a PyLong. */
 PyAPI_FUNC(PyObject *) _PyLong_FromTime_t(
     time_t sec);
+
+/* Convert a PyLong to a time_t. */
+PyAPI_FUNC(time_t) _PyLong_AsTime_t(
+    PyObject *obj);
 
 /* Convert a number of seconds, int or float, to a timeval structure.
    usec is in the range [0; 999999] and rounded towards zero.

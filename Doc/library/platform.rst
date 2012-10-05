@@ -3,7 +3,7 @@
 
 .. module:: platform
    :synopsis: Retrieves as much platform identifying data as possible.
-.. moduleauthor:: Marc-Andre Lemburg <mal@egenix.com>
+.. moduleauthor:: Marc-André Lemburg <mal@egenix.com>
 .. sectionauthor:: Bjorn Pettersen <bpettersen@corp.fairisaac.com>
 
 **Source code:** :source:`Lib/platform.py`
@@ -30,8 +30,8 @@ Cross Platform
    returned as strings.
 
    Values that cannot be determined are returned as given by the parameter presets.
-   If bits is given as ``''``, the :c:func:`sizeof(pointer)` (or
-   :c:func:`sizeof(long)` on Python version < 1.5.2) is used as indicator for the
+   If bits is given as ``''``, the ``sizeof(pointer)`` (or
+   ``sizeof(long)`` on Python version < 1.5.2) is used as indicator for the
    supported pointer size.
 
    The function relies on the system's :file:`file` command to do the actual work.
@@ -158,13 +158,19 @@ Cross Platform
 
 .. function:: uname()
 
-   Fairly portable uname interface. Returns a tuple of strings ``(system, node,
-   release, version, machine, processor)`` identifying the underlying platform.
+   Fairly portable uname interface. Returns a :func:`~collections.namedtuple`
+   containing six attributes: :attr:`system`, :attr:`node`, :attr:`release`,
+   :attr:`version`, :attr:`machine`, and :attr:`processor`.
 
-   Note that unlike the :func:`os.uname` function this also returns possible
-   processor information as additional tuple entry.
+   Note that this adds a sixth attribute (:attr:`processor`) not present
+   in the :func:`os.uname` result.  Also, the attribute names are different
+   for the first two attributes; :func:`os.uname` names them
+   :attr:`sysname` and :attr:`nodename`.
 
    Entries which cannot be determined are set to ``''``.
+
+   .. versionchanged:: 3.3
+      Result changed from a tuple to a namedtuple.
 
 
 Java Platform

@@ -1,5 +1,5 @@
-:mod:`email`: Generating MIME documents
----------------------------------------
+:mod:`email.generator`: Generating MIME documents
+-------------------------------------------------
 
 .. module:: email.generator
    :synopsis: Generate flat text email messages from a message structure.
@@ -17,10 +17,10 @@ yourself.  However the bundled generator knows how to generate most email in a
 standards-compliant way, should handle MIME and non-MIME email messages just
 fine, and is designed so that the transformation from flat text, to a message
 structure via the :class:`~email.parser.Parser` class, and back to flat text,
-is idempotent (the input is identical to the output).  On the other hand, using
-the Generator on a :class:`~email.message.Message` constructed by program may
-result in changes to the :class:`~email.message.Message` object as defaults are
-filled in.
+is idempotent (the input is identical to the output) [#]_.  On the other hand,
+using the Generator on a :class:`~email.message.Message` constructed by program
+may result in changes to the :class:`~email.message.Message` object as defaults
+are filled in.
 
 :class:`bytes` output can be generated using the :class:`BytesGenerator` class.
 If the message object structure contains non-ASCII bytes, this generator's
@@ -32,8 +32,7 @@ Here are the public methods of the :class:`Generator` class, imported from the
 :mod:`email.generator` module:
 
 
-.. class:: Generator(outfp, mangle_from_=True, maxheaderlen=78, *, \
-                     policy=policy.default)
+.. class:: Generator(outfp, mangle_from_=True, maxheaderlen=78, *, policy=None)
 
    The constructor for the :class:`Generator` class takes a :term:`file-like object`
    called *outfp* for an argument.  *outfp* must support the :meth:`write` method
@@ -55,8 +54,9 @@ Here are the public methods of the :class:`Generator` class, imported from the
    The default is 78, as recommended (but not required) by :rfc:`2822`.
 
    The *policy* keyword specifies a :mod:`~email.policy` object that controls a
-   number of aspects of the generator's operation.  The default policy
-   maintains backward compatibility.
+   number of aspects of the generator's operation.  If no *policy* is specified,
+   then the *policy* attached to the message object passed to :attr:`flatten`
+   is used.
 
    .. versionchanged:: 3.3 Added the *policy* keyword.
 
@@ -80,19 +80,19 @@ Here are the public methods of the :class:`Generator` class, imported from the
 
       Optional *linesep* specifies the line separator character used to
       terminate lines in the output.  If specified it overrides the value
-      specified by the ``Generator``\'s ``policy``.
+      specified by the *msg*\'s or ``Generator``\'s ``policy``.
 
-      Because strings cannot represent non-ASCII bytes, ``Generator`` ignores
-      the value of the :attr:`~email.policy.Policy.must_be_7bit`
-      :mod:`~email.policy` setting and operates as if it were set ``True``.
-      This means that messages parsed with a Bytes parser that have a
-      :mailheader:`Content-Transfer-Encoding` of 8bit will be converted to a
-      use a 7bit Content-Transfer-Encoding.  Non-ASCII bytes in the headers
-      will be :rfc:`2047` encoded with a charset of `unknown-8bit`.
+      Because strings cannot represent non-ASCII bytes, if the policy that
+      applies when ``flatten`` is run has :attr:`~email.policy.Policy.cte_type`
+      set to ``8bit``, ``Generator`` will operate as if it were set to
+      ``7bit``.  This means that messages parsed with a Bytes parser that have
+      a :mailheader:`Content-Transfer-Encoding` of ``8bit`` will be converted
+      to a use a ``7bit`` Content-Transfer-Encoding.  Non-ASCII bytes in the
+      headers will be :rfc:`2047` encoded with a charset of ``unknown-8bit``.
 
       .. versionchanged:: 3.2
-         Added support for re-encoding 8bit message bodies, and the *linesep*
-         argument.
+         Added support for re-encoding ``8bit`` message bodies, and the
+         *linesep* argument.
 
    .. method:: clone(fp)
 
@@ -149,13 +149,13 @@ formatted string representation of a message object.  For more detail, see
       at *msg* to the output file specified when the :class:`BytesGenerator`
       instance was created.  Subparts are visited depth-first and the resulting
       text will be properly MIME encoded.  If the :mod:`~email.policy` option
-      :attr:`~email.policy.Policy.must_be_7bit` is ``False`` (the default),
+      :attr:`~email.policy.Policy.cte_type` is ``8bit`` (the default),
       then any bytes with the high bit set in the original parsed message that
       have not been modified will be copied faithfully to the output.  If
-      ``must_be_7bit`` is true, the bytes will be converted as needed using an
-      ASCII content-transfer-encoding.  In particular, RFC-invalid non-ASCII
-      bytes in headers will be encoded using the MIME ``unknown-8bit``
-      character set, thus rendering them RFC-compliant.
+      ``cte_type`` is ``7bit``, the bytes will be converted as needed
+      using an ASCII-compatible Content-Transfer-Encoding.  In particular,
+      RFC-invalid non-ASCII bytes in headers will be encoded using the MIME
+      ``unknown-8bit`` character set, thus rendering them RFC-compliant.
 
       .. XXX: There should be a complementary option that just does the RFC
          compliance transformation but leaves CTE 8bit parts alone.
@@ -197,7 +197,7 @@ except that non-\ :mimetype:`text` parts are substituted with a format string
 representing the part.
 
 
-.. class:: DecodedGenerator(outfp[, mangle_from_=True, maxheaderlen=78, fmt=None)
+.. class:: DecodedGenerator(outfp, mangle_from_=True, maxheaderlen=78, fmt=None)
 
    This class, derived from :class:`Generator` walks through all the subparts of a
    message.  If the subpart is of main type :mimetype:`text`, then it prints the
@@ -223,3 +223,12 @@ representing the part.
    The default value for *fmt* is ``None``, meaning ::
 
       [Non-text (%(type)s) part of message omitted, filename %(filename)s]
+
+
+.. rubric:: Footnotes
+
+.. [#] This statement assumes that you use the appropriate setting for the
+       ``unixfrom`` argument, and that you set maxheaderlen=0 (which will
+       preserve whatever the input line lengths were).  It is also not strictly
+       true, since in many cases runs of whitespace in headers are collapsed
+       into single blanks.  The latter is a bug that will eventually be fixed.

@@ -13,7 +13,7 @@ import signal
 
 from multiprocessing import util, process
 
-__all__ = ['Popen', 'assert_spawning', 'exit', 'duplicate', 'close', 'ForkingPickler']
+__all__ = ['Popen', 'assert_spawning', 'duplicate', 'close', 'ForkingPickler']
 
 #
 # Check that the current thread is spawning a child process
@@ -75,12 +75,8 @@ else:
 #
 
 if sys.platform != 'win32':
-    import select
-
-    exit = os._exit
     duplicate = os.dup
     close = os.close
-    _select = util._eintr_retry(select.select)
 
     #
     # We define a Popen class similar to the one from subprocess, but
@@ -130,10 +126,10 @@ if sys.platform != 'win32':
         def wait(self, timeout=None):
             if self.returncode is None:
                 if timeout is not None:
-                    r = _select([self.sentinel], [], [], timeout)[0]
-                    if not r:
+                    from .connection import wait
+                    if not wait([self.sentinel], timeout):
                         return None
-                # This shouldn't block if select() returned successfully.
+                # This shouldn't block if wait() returned successfully.
                 return self.poll(os.WNOHANG if timeout == 0.0 else 0)
             return self.returncode
 
@@ -171,7 +167,6 @@ else:
     WINEXE = (sys.platform == 'win32' and getattr(sys, 'frozen', False))
     WINSERVICE = sys.executable.lower().endswith("pythonservice.exe")
 
-    exit = _winapi.ExitProcess
     close = _winapi.CloseHandle
 
     #
@@ -212,6 +207,9 @@ else:
         _tls = _thread._local()
 
         def __init__(self, process_obj):
+            cmd = ' '.join('"%s"' % x for x in get_command_line())
+            prep_data = get_preparation_data(process_obj._name)
+
             # create pipe for communication with child
             rfd, wfd = os.pipe()
 
@@ -219,31 +217,30 @@ else:
             rhandle = duplicate(msvcrt.get_osfhandle(rfd), inheritable=True)
             os.close(rfd)
 
-            # start process
-            cmd = get_command_line() + [rhandle]
-            cmd = ' '.join('"%s"' % x for x in cmd)
-            hp, ht, pid, tid = _winapi.CreateProcess(
-                _python_exe, cmd, None, None, 1, 0, None, None, None
-                )
-            _winapi.CloseHandle(ht)
-            close(rhandle)
+            with open(wfd, 'wb', closefd=True) as to_child:
+                # start process
+                try:
+                    hp, ht, pid, tid = _winapi.CreateProcess(
+                        _python_exe, cmd + (' %s' % rhandle),
+                        None, None, 1, 0, None, None, None
+                        )
+                    _winapi.CloseHandle(ht)
+                finally:
+                    close(rhandle)
 
-            # set attributes of self
-            self.pid = pid
-            self.returncode = None
-            self._handle = hp
-            self.sentinel = int(hp)
+                # set attributes of self
+                self.pid = pid
+                self.returncode = None
+                self._handle = hp
+                self.sentinel = int(hp)
 
-            # send information to child
-            prep_data = get_preparation_data(process_obj._name)
-            to_child = os.fdopen(wfd, 'wb')
-            Popen._tls.process_handle = int(hp)
-            try:
-                dump(prep_data, to_child, HIGHEST_PROTOCOL)
-                dump(process_obj, to_child, HIGHEST_PROTOCOL)
-            finally:
-                del Popen._tls.process_handle
-                to_child.close()
+                # send information to child
+                Popen._tls.process_handle = int(hp)
+                try:
+                    dump(prep_data, to_child, HIGHEST_PROTOCOL)
+                    dump(process_obj, to_child, HIGHEST_PROTOCOL)
+                finally:
+                    del Popen._tls.process_handle
 
         @staticmethod
         def thread_is_spawning():
@@ -276,8 +273,8 @@ else:
             if self.returncode is None:
                 try:
                     _winapi.TerminateProcess(int(self._handle), TERMINATE)
-                except WindowsError:
-                    if self.wait(timeout=0.1) is None:
+                except OSError:
+                    if self.wait(timeout=1.0) is None:
                         raise
 
     #
@@ -308,7 +305,7 @@ else:
         '''
         Returns prefix of command line used for spawning a child process
         '''
-        if process.current_process()._identity==() and is_forking(sys.argv):
+        if getattr(process.current_process(), '_inheriting', False):
             raise RuntimeError('''
             Attempt to start a new process before the current process
             has finished its bootstrapping phase.
@@ -327,7 +324,8 @@ else:
             return [sys.executable, '--multiprocessing-fork']
         else:
             prog = 'from multiprocessing.forking import main; main()'
-            return [_python_exe, '-c', prog, '--multiprocessing-fork']
+            opts = util._args_from_interpreter_flags()
+            return [_python_exe] + opts + ['-c', prog, '--multiprocessing-fork']
 
 
     def main():
@@ -349,7 +347,7 @@ else:
         from_parent.close()
 
         exitcode = self._bootstrap()
-        exit(exitcode)
+        sys.exit(exitcode)
 
 
     def get_preparation_data(name):

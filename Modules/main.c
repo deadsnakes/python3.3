@@ -604,7 +604,7 @@ Py_Main(int argc, wchar_t **argv)
        script. */
     if ((p = Py_GETENV("PYTHONEXECUTABLE")) && *p != '\0') {
         wchar_t* buffer;
-        size_t len = strlen(p);
+        size_t len = strlen(p) + 1;
 
         buffer = malloc(len * sizeof(wchar_t));
         if (buffer == NULL) {
@@ -616,7 +616,29 @@ Py_Main(int argc, wchar_t **argv)
         Py_SetProgramName(buffer);
         /* buffer is now handed off - do not free */
     } else {
+#ifdef WITH_NEXT_FRAMEWORK
+        char* pyvenv_launcher = getenv("__PYVENV_LAUNCHER__");
+
+        if (pyvenv_launcher && *pyvenv_launcher) {
+            /* Used by Mac/Tools/pythonw.c to forward
+             * the argv0 of the stub executable
+             */
+            wchar_t* wbuf = _Py_char2wchar(pyvenv_launcher, NULL);
+
+            if (wbuf == NULL) {
+                Py_FatalError("Cannot decode __PYVENV_LAUNCHER__");
+            }
+            Py_SetProgramName(wbuf);
+
+            /* Don't free wbuf, the argument to Py_SetProgramName
+             * must remain valid until the Py_Finalize is called.
+             */
+        } else {
+            Py_SetProgramName(argv[0]);
+        }
+#else
         Py_SetProgramName(argv[0]);
+#endif
     }
 #else
     Py_SetProgramName(argv[0]);
@@ -660,7 +682,7 @@ Py_Main(int argc, wchar_t **argv)
         sts = run_command(command, &cf);
         free(command);
     } else if (module) {
-        sts = RunModule(module, 1);
+        sts = (RunModule(module, 1) != 0);
     }
     else {
 

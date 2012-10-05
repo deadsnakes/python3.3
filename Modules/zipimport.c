@@ -259,6 +259,29 @@ enum zi_module_info {
     MI_PACKAGE
 };
 
+/* Does this path represent a directory?
+   on error, return < 0
+   if not a dir, return 0
+   if a dir, return 1
+*/
+static int
+check_is_directory(ZipImporter *self, PyObject* prefix, PyObject *path)
+{
+    PyObject *dirpath;
+    int res;
+
+    /* See if this is a "directory". If so, it's eligible to be part
+       of a namespace package. We test by seeing if the name, with an
+       appended path separator, exists. */
+    dirpath = PyUnicode_FromFormat("%U%U%c", prefix, path, SEP);
+    if (dirpath == NULL)
+        return -1;
+    /* If dirpath is present in self->files, we have a directory. */
+    res = PyDict_Contains(self->files, dirpath);
+    Py_DECREF(dirpath);
+    return res;
+}
+
 /* Return some information about a module. */
 static enum zi_module_info
 get_module_info(ZipImporter *self, PyObject *fullname)
@@ -296,6 +319,53 @@ get_module_info(ZipImporter *self, PyObject *fullname)
     return MI_NOT_FOUND;
 }
 
+typedef enum {
+    FL_ERROR,
+    FL_NOT_FOUND,
+    FL_MODULE_FOUND,
+    FL_NS_FOUND
+} find_loader_result;
+
+/* The guts of "find_loader" and "find_module". Return values:
+   -1: error
+    0: no loader or namespace portions found
+    1: module/package found
+    2: namespace portion found: *namespace_portion will point to the name
+*/
+static find_loader_result
+find_loader(ZipImporter *self, PyObject *fullname, PyObject **namespace_portion)
+{
+    enum zi_module_info mi;
+
+    *namespace_portion = NULL;
+
+    mi = get_module_info(self, fullname);
+    if (mi == MI_ERROR)
+        return FL_ERROR;
+    if (mi == MI_NOT_FOUND) {
+        /* Not a module or regular package. See if this is a directory, and
+           therefore possibly a portion of a namespace package. */
+        int is_dir = check_is_directory(self, self->prefix, fullname);
+        if (is_dir < 0)
+            return -1;
+        if (is_dir) {
+            /* This is possibly a portion of a namespace
+               package. Return the string representing its path,
+               without a trailing separator. */
+            *namespace_portion = PyUnicode_FromFormat("%U%c%U%U",
+                                                      self->archive, SEP,
+                                                      self->prefix, fullname);
+            if (*namespace_portion == NULL)
+                return FL_ERROR;
+            return FL_NS_FOUND;
+        }
+        return FL_NOT_FOUND;
+    }
+    /* This is a module or package. */
+    return FL_MODULE_FOUND;
+}
+
+
 /* Check whether we can satisfy the import of the module named by
    'fullname'. Return self if we can, None if we can't. */
 static PyObject *
@@ -304,21 +374,63 @@ zipimporter_find_module(PyObject *obj, PyObject *args)
     ZipImporter *self = (ZipImporter *)obj;
     PyObject *path = NULL;
     PyObject *fullname;
-    enum zi_module_info mi;
+    PyObject *namespace_portion = NULL;
+    PyObject *result = NULL;
 
-    if (!PyArg_ParseTuple(args, "U|O:zipimporter.find_module",
-                          &fullname, &path))
+    if (!PyArg_ParseTuple(args, "U|O:zipimporter.find_module", &fullname, &path))
         return NULL;
 
-    mi = get_module_info(self, fullname);
-    if (mi == MI_ERROR)
+    switch (find_loader(self, fullname, &namespace_portion)) {
+    case FL_ERROR:
         return NULL;
-    if (mi == MI_NOT_FOUND) {
-        Py_INCREF(Py_None);
-        return Py_None;
+    case FL_NS_FOUND:
+        /* A namespace portion is not allowed via find_module, so return None. */
+        Py_DECREF(namespace_portion);
+        /* FALL THROUGH */
+    case FL_NOT_FOUND:
+        result = Py_None;
+        break;
+    case FL_MODULE_FOUND:
+        result = (PyObject *)self;
+        break;
     }
-    Py_INCREF(self);
-    return (PyObject *)self;
+    Py_INCREF(result);
+    return result;
+}
+
+
+/* Check whether we can satisfy the import of the module named by
+   'fullname', or whether it could be a portion of a namespace
+   package. Return self if we can load it, a string containing the
+   full path if it's a possible namespace portion, None if we
+   can't load it. */
+static PyObject *
+zipimporter_find_loader(PyObject *obj, PyObject *args)
+{
+    ZipImporter *self = (ZipImporter *)obj;
+    PyObject *path = NULL;
+    PyObject *fullname;
+    PyObject *result = NULL;
+    PyObject *namespace_portion = NULL;
+
+    if (!PyArg_ParseTuple(args, "U|O:zipimporter.find_module", &fullname, &path))
+        return NULL;
+
+    switch (find_loader(self, fullname, &namespace_portion)) {
+    case FL_ERROR:
+        return NULL;
+    case FL_NOT_FOUND:        /* Not found, return (None, []) */
+        result = Py_BuildValue("O[]", Py_None);
+        break;
+    case FL_MODULE_FOUND:     /* Return (self, []) */
+        result = Py_BuildValue("O[]", self);
+        break;
+    case FL_NS_FOUND:         /* Return (None, [namespace_portion]) */
+        result = Py_BuildValue("O[O]", Py_None, namespace_portion);
+        Py_DECREF(namespace_portion);
+        return result;
+    }
+    return result;
 }
 
 /* Load and return the module named by 'fullname'. */
@@ -558,6 +670,16 @@ instance itself if the module was found, or None if it wasn't.\n\
 The optional 'path' argument is ignored -- it's there for compatibility\n\
 with the importer protocol.");
 
+PyDoc_STRVAR(doc_find_loader,
+"find_loader(fullname, path=None) -> self, str or None.\n\
+\n\
+Search for a module specified by 'fullname'. 'fullname' must be the\n\
+fully qualified (dotted) module name. It returns the zipimporter\n\
+instance itself if the module was found, a string containing the\n\
+full path name if it's possibly a portion of a namespace package,\n\
+or None otherwise. The optional 'path' argument is ignored -- it's\n\
+ there for compatibility with the importer protocol.");
+
 PyDoc_STRVAR(doc_load_module,
 "load_module(fullname) -> module.\n\
 \n\
@@ -599,6 +721,8 @@ Return the filename for the specified module.");
 static PyMethodDef zipimporter_methods[] = {
     {"find_module", zipimporter_find_module, METH_VARARGS,
      doc_find_module},
+    {"find_loader", zipimporter_find_loader, METH_VARARGS,
+     doc_find_loader},
     {"load_module", zipimporter_load_module, METH_VARARGS,
      doc_load_module},
     {"get_data", zipimporter_get_data, METH_VARARGS,
@@ -823,8 +947,6 @@ read_directory(PyObject *archive)
         else
             charset = "cp437";
         nameobj = PyUnicode_Decode(name, name_size, charset, NULL);
-        if (PyUnicode_READY(nameobj) == -1)
-            goto error;
         if (nameobj == NULL) {
             if (bootstrap)
                 PyErr_Format(PyExc_NotImplementedError,
@@ -833,6 +955,8 @@ read_directory(PyObject *archive)
                     PY_MAJOR_VERSION, PY_MINOR_VERSION);
             goto error;
         }
+        if (PyUnicode_READY(nameobj) == -1)
+            goto error;
         path = PyUnicode_FromFormat("%U%c%U", archive, SEP, nameobj);
         if (path == NULL)
             goto error;

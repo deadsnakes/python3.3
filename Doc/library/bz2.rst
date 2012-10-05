@@ -14,7 +14,8 @@ decompressing data using the bzip2 compression algorithm.
 
 The :mod:`bz2` module contains:
 
-* The :class:`BZ2File` class for reading and writing compressed files.
+* The :func:`.open` function and :class:`BZ2File` class for reading and
+  writing compressed files.
 * The :class:`BZ2Compressor` and :class:`BZ2Decompressor` classes for
   incremental (de)compression.
 * The :func:`compress` and :func:`decompress` functions for one-shot
@@ -26,16 +27,47 @@ All of the classes in this module may safely be accessed from multiple threads.
 (De)compression of files
 ------------------------
 
-.. class:: BZ2File(filename=None, mode='r', buffering=None, compresslevel=9, \*, fileobj=None)
+.. function:: open(filename, mode='r', compresslevel=9, encoding=None, errors=None, newline=None)
 
-   Open a bzip2-compressed file.
+   Open a bzip2-compressed file in binary or text mode, returning a :term:`file
+   object`.
 
-   The :class:`BZ2File` can wrap an existing :term:`file object` (given by
-   *fileobj*), or operate directly on a named file (named by *filename*).
-   Exactly one of these two parameters should be provided.
+   As with the constructor for :class:`BZ2File`, the *filename* argument can be
+   an actual filename (a :class:`str` or :class:`bytes` object), or an existing
+   file object to read from or write to.
+
+   The *mode* argument can be any of ``'r'``, ``'rb'``, ``'w'``, ``'wb'``,
+   ``'a'``, or ``'ab'`` for binary mode, or ``'rt'``, ``'wt'``, or ``'at'`` for
+   text mode. The default is ``'rb'``.
+
+   The *compresslevel* argument is an integer from 1 to 9, as for the
+   :class:`BZ2File` constructor.
+
+   For binary mode, this function is equivalent to the :class:`BZ2File`
+   constructor: ``BZ2File(filename, mode, compresslevel=compresslevel)``. In
+   this case, the *encoding*, *errors* and *newline* arguments must not be
+   provided.
+
+   For text mode, a :class:`BZ2File` object is created, and wrapped in an
+   :class:`io.TextIOWrapper` instance with the specified encoding, error
+   handling behavior, and line ending(s).
+
+   .. versionadded:: 3.3
+
+
+.. class:: BZ2File(filename, mode='r', buffering=None, compresslevel=9)
+
+   Open a bzip2-compressed file in binary mode.
+
+   If *filename* is a :class:`str` or :class:`bytes` object, open the named file
+   directly. Otherwise, *filename* should be a :term:`file object`, which will
+   be used to read or write the compressed data.
 
    The *mode* argument can be either ``'r'`` for reading (default), ``'w'`` for
-   overwriting, or ``'a'`` for appending. If *fileobj* is provided, a mode of
+   overwriting, or ``'a'`` for appending. These can equivalently be given as
+   ``'rb'``, ``'wb'``, and ``'ab'`` respectively.
+
+   If *filename* is a file object (rather than an actual file name), a mode of
    ``'w'`` does not truncate the file, and is instead equivalent to ``'a'``.
 
    The *buffering* argument is ignored. Its use is deprecated.
@@ -69,7 +101,8 @@ All of the classes in this module may safely be accessed from multiple threads.
       :meth:`read1` and :meth:`readinto` methods were added.
 
    .. versionchanged:: 3.3
-      The *fileobj* argument to the constructor was added.
+      Support was added for *filename* being a :term:`file object` instead of an
+      actual filename.
 
    .. versionchanged:: 3.3
       The ``'a'`` (append) mode was added, along with support for reading

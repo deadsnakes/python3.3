@@ -163,10 +163,8 @@ builtin___build_class__(PyObject *self, PyObject *args, PyObject *kwds)
             cls = PyEval_CallObjectWithKeywords(meta, margs, mkw);
             Py_DECREF(margs);
         }
-        if (cls != NULL && PyCell_Check(cell)) {
-            Py_INCREF(cls);
-            PyCell_SET(cell, cls);
-        }
+        if (cls != NULL && PyCell_Check(cell))
+            PyCell_Set(cell, cls);
         Py_DECREF(cell);
     }
     Py_DECREF(ns);
@@ -197,7 +195,7 @@ builtin___import__(PyObject *self, PyObject *args, PyObject *kwds)
 }
 
 PyDoc_STRVAR(import_doc,
-"__import__(name, globals={}, locals={}, fromlist=[], level=-1) -> module\n\
+"__import__(name, globals=None, locals=None, fromlist=(), level=0) -> module\n\
 \n\
 Import a module. Because this function is meant for use by the Python\n\
 interpreter and not for general use it is better to use\n\
@@ -210,8 +208,7 @@ empty list to emulate ``import name''.\n\
 When importing a module from a package, note that __import__('A.B', ...)\n\
 returns package A when fromlist is empty, but its submodule B when\n\
 fromlist is not empty.  Level is used to determine whether to perform \n\
-absolute or relative imports.  -1 is the original strategy of attempting\n\
-both absolute and relative imports, 0 is absolute, a positive number\n\
+absolute or relative imports. 0 is absolute while a positive number\n\
 is the number of parent directories to search relative to the current module.");
 
 
@@ -432,9 +429,11 @@ filter_next(filterobject *lz)
             ok = PyObject_IsTrue(good);
             Py_DECREF(good);
         }
-        if (ok)
+        if (ok > 0)
             return item;
         Py_DECREF(item);
+        if (ok < 0)
+            return NULL;
     }
 }
 
@@ -640,6 +639,8 @@ builtin_compile(PyObject *self, PyObject *args, PyObject *kwds)
             mod_ty mod;
 
             arena = PyArena_New();
+            if (arena == NULL)
+                goto error;
             mod = PyAST_obj2mod(cmd, arena, mode);
             if (mod == NULL) {
                 PyArena_Free(arena);
@@ -1492,13 +1493,7 @@ PyDoc_VAR(ord_doc) = PyDoc_STR(
 "ord(c) -> integer\n\
 \n\
 Return the integer ordinal of a one-character string."
-)
-#ifndef Py_UNICODE_WIDE
-PyDoc_STR(
-"\nA valid surrogate pair is also accepted."
-)
-#endif
-;
+);
 
 
 static PyObject *
@@ -1599,13 +1594,14 @@ builtin_print(PyObject *self, PyObject *args, PyObject *kwds)
 }
 
 PyDoc_STRVAR(print_doc,
-"print(value, ..., sep=' ', end='\\n', file=sys.stdout)\n\
+"print(value, ..., sep=' ', end='\\n', file=sys.stdout, flush=False)\n\
 \n\
 Prints the values to a stream, or to sys.stdout by default.\n\
 Optional keyword arguments:\n\
-file: a file-like object (stream); defaults to the current sys.stdout.\n\
-sep:  string inserted between values, default a space.\n\
-end:  string appended after the last value, default a newline.");
+file:  a file-like object (stream); defaults to the current sys.stdout.\n\
+sep:   string inserted between values, default a space.\n\
+end:   string appended after the last value, default a newline.\n\
+flush: whether to forcibly flush the stream.");
 
 
 static PyObject *

@@ -612,6 +612,20 @@ static void
 ast_dealloc(AST_object *self)
 {
     Py_CLEAR(self->dict);
+    Py_TYPE(self)->tp_free(self);
+}
+
+static int
+ast_traverse(AST_object *self, visitproc visit, void *arg)
+{
+    Py_VISIT(self->dict);
+    return 0;
+}
+
+static void
+ast_clear(AST_object *self)
+{
+    Py_CLEAR(self->dict);
 }
 
 static int
@@ -717,10 +731,10 @@ static PyTypeObject AST_type = {
     PyObject_GenericGetAttr, /* tp_getattro */
     PyObject_GenericSetAttr, /* tp_setattro */
     0,                       /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC, /* tp_flags */
     0,                       /* tp_doc */
-    0,                       /* tp_traverse */
-    0,                       /* tp_clear */
+    (traverseproc)ast_traverse, /* tp_traverse */
+    (inquiry)ast_clear,      /* tp_clear */
     0,                       /* tp_richcompare */
     0,                       /* tp_weaklistoffset */
     0,                       /* tp_iter */
@@ -736,7 +750,7 @@ static PyTypeObject AST_type = {
     (initproc)ast_type_init, /* tp_init */
     PyType_GenericAlloc,     /* tp_alloc */
     PyType_GenericNew,       /* tp_new */
-    PyObject_Del,            /* tp_free */
+    PyObject_GC_Del,         /* tp_free */
 };
 
 
@@ -784,7 +798,7 @@ static int add_attributes(PyTypeObject* type, char**attrs, int num_fields)
 
 static PyObject* ast2obj_list(asdl_seq *seq, PyObject* (*func)(void*))
 {
-    int i, n = asdl_seq_LEN(seq);
+    Py_ssize_t i, n = asdl_seq_LEN(seq);
     PyObject *result = PyList_New(n);
     PyObject *value;
     if (!result)
@@ -1106,7 +1120,7 @@ class ObjVisitor(PickleVisitor):
                 # While the sequence elements are stored as void*,
                 # ast2obj_cmpop expects an enum
                 self.emit("{", depth)
-                self.emit("int i, n = asdl_seq_LEN(%s);" % value, depth+1)
+                self.emit("Py_ssize_t i, n = asdl_seq_LEN(%s);" % value, depth+1)
                 self.emit("value = PyList_New(n);", depth+1)
                 self.emit("if (!value) goto failed;", depth+1)
                 self.emit("for(i = 0; i < n; i++)", depth+1)

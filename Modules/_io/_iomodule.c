@@ -112,8 +112,9 @@ PyDoc_STRVAR(open_doc,
 "'a' for appending (which on some Unix systems, means that all writes\n"
 "append to the end of the file regardless of the current seek position).\n"
 "In text mode, if encoding is not specified the encoding used is platform\n"
-"dependent. (For reading and writing raw bytes use binary mode and leave\n"
-"encoding unspecified.) The available modes are:\n"
+"dependent: locale.getpreferredencoding(False) is called to get the\n"
+"current locale encoding. (For reading and writing raw bytes use binary\n"
+"mode and leave encoding unspecified.) The available modes are:\n"
 "\n"
 "========= ===============================================================\n"
 "Character Meaning\n"
@@ -184,9 +185,9 @@ PyDoc_STRVAR(open_doc,
 "\n"
 "* On output, if newline is None, any '\\n' characters written are\n"
 "  translated to the system default line separator, os.linesep. If\n"
-"  newline is '', no translation takes place. If newline is any of the\n"
-"  other legal values, any '\\n' characters written are translated to\n"
-"  the given string.\n"
+"  newline is '' or '\n', no translation takes place. If newline is any\n"
+"  of the other legal values, any '\\n' characters written are translated\n"
+"  to the given string.\n"
 "\n"
 "If closefd is False, the underlying file descriptor will be kept open\n"
 "when the file is closed. This does not work when a file name is given\n"
@@ -228,7 +229,7 @@ io_open(PyObject *self, PyObject *args, PyObject *kwds)
     int creating = 0, reading = 0, writing = 0, appending = 0, updating = 0;
     int text = 0, binary = 0, universal = 0;
 
-    char rawmode[5], *m;
+    char rawmode[6], *m;
     int line_buffering, isatty;
 
     PyObject *raw, *modeobj = NULL, *buffer = NULL, *wrapper = NULL;

@@ -1015,6 +1015,19 @@ class BaseTest(unittest.TestCase):
         a = array.array('H', b"1234")
         self.assertEqual(len(a) * a.itemsize, 4)
 
+    @support.cpython_only
+    def test_sizeof_with_buffer(self):
+        a = array.array(self.typecode, self.example)
+        basesize = support.calcvobjsize('Pn2Pi')
+        buffer_size = a.buffer_info()[1] * a.itemsize
+        support.check_sizeof(self, a, basesize + buffer_size)
+
+    @support.cpython_only
+    def test_sizeof_without_buffer(self):
+        a = array.array(self.typecode)
+        basesize = support.calcvobjsize('Pn2Pi')
+        support.check_sizeof(self, a, basesize)
+
 
 class StringTest(BaseTest):
 
@@ -1029,9 +1042,19 @@ class UnicodeTest(StringTest):
     smallerexample = '\x01\u263a\x00\ufefe'
     biggerexample = '\x01\u263a\x01\ufeff'
     outside = str('\x33')
-    minitemsize = 4
+    minitemsize = 2
 
     def test_unicode(self):
+        try:
+            import ctypes
+            sizeof_wchar = ctypes.sizeof(ctypes.c_wchar)
+        except ImportError:
+            import sys
+            if sys.platform == 'win32':
+                sizeof_wchar = 2
+            else:
+                sizeof_wchar = 4
+
         self.assertRaises(TypeError, array.array, 'b', 'foo')
 
         a = array.array('u', '\xa0\xc2\u1234')
@@ -1041,7 +1064,7 @@ class UnicodeTest(StringTest):
         a.fromunicode('\x11abc\xff\u1234')
         s = a.tounicode()
         self.assertEqual(s, '\xa0\xc2\u1234 \x11abc\xff\u1234')
-        self.assertEqual(a.itemsize, 4)
+        self.assertEqual(a.itemsize, sizeof_wchar)
 
         s = '\x00="\'a\\b\x80\xff\u0000\u0001\u1234'
         a = array.array('u', s)

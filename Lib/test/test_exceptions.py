@@ -10,6 +10,15 @@ import errno
 from test.support import (TESTFN, unlink, run_unittest, captured_output,
                           gc_collect, cpython_only, no_tracing)
 
+class NaiveException(Exception):
+    def __init__(self, x):
+        self.x = x
+
+class SlottedNaiveException(Exception):
+    __slots__ = ('x',)
+    def __init__(self, x):
+        self.x = x
+
 # XXX This is not really enough, each *operation* should be tested!
 
 class ExceptionTests(unittest.TestCase):
@@ -207,14 +216,14 @@ class ExceptionTests(unittest.TestCase):
             self.assertEqual(w.winerror, 3)
             self.assertEqual(w.strerror, 'foo')
             self.assertEqual(w.filename, 'bar')
-            self.assertEqual(str(w), "[Error 3] foo: 'bar'")
+            self.assertEqual(str(w), "[WinError 3] foo: 'bar'")
             # Unknown win error becomes EINVAL (22)
             w = OSError(0, 'foo', None, 1001)
             self.assertEqual(w.errno, 22)
             self.assertEqual(w.winerror, 1001)
             self.assertEqual(w.strerror, 'foo')
             self.assertEqual(w.filename, None)
-            self.assertEqual(str(w), "[Error 1001] foo")
+            self.assertEqual(str(w), "[WinError 1001] foo")
             # Non-numeric "errno"
             w = OSError('bar', 'foo')
             self.assertEqual(w.errno, 'bar')
@@ -296,6 +305,10 @@ class ExceptionTests(unittest.TestCase):
                 {'args' : ('\u3042', 0, 1, 'ouch'),
                  'object' : '\u3042', 'reason' : 'ouch',
                  'start' : 0, 'end' : 1}),
+            (NaiveException, ('foo',),
+                {'args': ('foo',), 'x': 'foo'}),
+            (SlottedNaiveException, ('foo',),
+                {'args': ('foo',), 'x': 'foo'}),
         ]
         try:
             # More tests are in test_WindowsError
@@ -316,7 +329,8 @@ class ExceptionTests(unittest.TestCase):
                 raise
             else:
                 # Verify module name
-                self.assertEqual(type(e).__module__, 'builtins')
+                if not type(e).__name__.endswith('NaiveException'):
+                    self.assertEqual(type(e).__module__, 'builtins')
                 # Verify no ref leaks in Exc_str()
                 s = str(e)
                 for checkArgName in expected:
@@ -388,18 +402,18 @@ class ExceptionTests(unittest.TestCase):
     def testChainingAttrs(self):
         e = Exception()
         self.assertIsNone(e.__context__)
-        self.assertIs(e.__cause__, Ellipsis)
+        self.assertIsNone(e.__cause__)
 
         e = TypeError()
         self.assertIsNone(e.__context__)
-        self.assertIs(e.__cause__, Ellipsis)
+        self.assertIsNone(e.__cause__)
 
         class MyException(EnvironmentError):
             pass
 
         e = MyException()
         self.assertIsNone(e.__context__)
-        self.assertIs(e.__cause__, Ellipsis)
+        self.assertIsNone(e.__cause__)
 
     def testChainingDescriptors(self):
         try:
@@ -408,15 +422,16 @@ class ExceptionTests(unittest.TestCase):
             e = exc
 
         self.assertIsNone(e.__context__)
-        self.assertIs(e.__cause__, Ellipsis)
+        self.assertIsNone(e.__cause__)
+        self.assertFalse(e.__suppress_context__)
 
         e.__context__ = NameError()
         e.__cause__ = None
         self.assertIsInstance(e.__context__, NameError)
         self.assertIsNone(e.__cause__)
-
-        e.__cause__ = Ellipsis
-        self.assertIs(e.__cause__, Ellipsis)
+        self.assertTrue(e.__suppress_context__)
+        e.__suppress_context__ = False
+        self.assertFalse(e.__suppress_context__)
 
     def testKeywordArgs(self):
         # test that builtin exception don't take keyword args,
@@ -922,6 +937,11 @@ class ImportErrorTests(unittest.TestCase):
         self.assertEqual(exc.name, 'somename')
         self.assertEqual(exc.path, 'somepath')
 
+    def test_non_str_argument(self):
+        # Issue #15778
+        arg = b'abc'
+        exc = ImportError(arg)
+        self.assertEqual(str(arg), str(exc))
 
 
 def test_main():

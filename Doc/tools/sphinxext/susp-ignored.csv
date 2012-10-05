@@ -30,6 +30,44 @@ howto/curses,,:magenta,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:m
 howto/curses,,:red,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
 howto/curses,,:white,"7:white."
 howto/curses,,:yellow,"They are: 0:black, 1:red, 2:green, 3:yellow, 4:blue, 5:magenta, 6:cyan, and"
+howto/ipaddress,,:DB8,>>> ipaddress.ip_address('2001:DB8::1')
+howto/ipaddress,,::,>>> ipaddress.ip_address('2001:DB8::1')
+howto/ipaddress,,:db8,IPv6Address('2001:db8::1')
+howto/ipaddress,,::,IPv6Address('2001:db8::1')
+howto/ipaddress,,:db8,IPv6Address('2001:db8::1')
+howto/ipaddress,,::,IPv6Address('2001:db8::1')
+howto/ipaddress,,::,IPv6Address('::1')
+howto/ipaddress,,:db8,>>> ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,::,>>> ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,:db8,IPv6Network('2001:db8::/96')
+howto/ipaddress,,::,IPv6Network('2001:db8::/96')
+howto/ipaddress,,:db8,IPv6Network('2001:db8::/128')
+howto/ipaddress,,::,IPv6Network('2001:db8::/128')
+howto/ipaddress,,:db8,>>> ipaddress.ip_network('2001:db8::1/96')
+howto/ipaddress,,::,>>> ipaddress.ip_network('2001:db8::1/96')
+howto/ipaddress,,:db8,IPv6Interface('2001:db8::1/96')
+howto/ipaddress,,::,IPv6Interface('2001:db8::1/96')
+howto/ipaddress,,:db8,>>> addr6 = ipaddress.ip_address('2001:db8::1')
+howto/ipaddress,,::,>>> addr6 = ipaddress.ip_address('2001:db8::1')
+howto/ipaddress,,:db8,>>> host6 = ipaddress.ip_interface('2001:db8::1/96')
+howto/ipaddress,,::,>>> host6 = ipaddress.ip_interface('2001:db8::1/96')
+howto/ipaddress,,:db8,IPv6Network('2001:db8::/96')
+howto/ipaddress,,::,IPv6Network('2001:db8::/96')
+howto/ipaddress,,:db8,>>> net6 = ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,::,>>> net6 = ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,:db8,>>> net6 = ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,::,>>> net6 = ipaddress.ip_network('2001:db8::0/96')
+howto/ipaddress,,:ffff,IPv6Address('ffff:ffff:ffff:ffff:ffff:ffff::')
+howto/ipaddress,,::,IPv6Address('ffff:ffff:ffff:ffff:ffff:ffff::')
+howto/ipaddress,,::,IPv6Address('::ffff:ffff')
+howto/ipaddress,,:ffff,IPv6Address('::ffff:ffff')
+howto/ipaddress,,::,IPv6Address('2001::1')
+howto/ipaddress,,::,IPv6Address('2001::ffff:ffff')
+howto/ipaddress,,:ffff,IPv6Address('2001::ffff:ffff')
+howto/ipaddress,,:db8,'2001:db8::'
+howto/ipaddress,,::,'2001:db8::'
+howto/ipaddress,,:db8,'2001:db8::/96'
+howto/ipaddress,,::,'2001:db8::/96'
 howto/logging,,:And,"WARNING:And this, too"
 howto/logging,,:And,"WARNING:root:And this, too"
 howto/logging,,:Doing,INFO:root:Doing something
@@ -91,6 +129,49 @@ library/http.cookies,,`,!#$%&'*+-.^_`|~:
 library/httplib,,:port,host:port
 library/imaplib,,:MM,"""DD-Mmm-YYYY HH:MM:SS"
 library/imaplib,,:SS,"""DD-Mmm-YYYY HH:MM:SS"
+library/inspect,,:int,">>> def foo(a, *, b:int, **kwargs):"
+library/inspect,,:int,"'(a, *, b:int, **kwargs)'"
+library/inspect,,:int,'b:int'
+library/ipaddress,,:db8,>>> ipaddress.ip_address('2001:db8::')
+library/ipaddress,,::,>>> ipaddress.ip_address('2001:db8::')
+library/ipaddress,,:db8,IPv6Address('2001:db8::')
+library/ipaddress,,::,IPv6Address('2001:db8::')
+library/ipaddress,,:db8,>>> ipaddress.IPv6Address('2001:db8::1000')
+library/ipaddress,,::,>>> ipaddress.IPv6Address('2001:db8::1000')
+library/ipaddress,,:db8,IPv6Address('2001:db8::1000')
+library/ipaddress,,::,IPv6Address('2001:db8::1000')
+library/ipaddress,,:db8,>>> ipaddress.IPv6Interface('2001:db8::1000/96')
+library/ipaddress,,::,>>> ipaddress.IPv6Interface('2001:db8::1000/96')
+library/ipaddress,,:db8,IPv6Interface('2001:db8::1000/96')
+library/ipaddress,,::,IPv6Interface('2001:db8::1000/96')
+library/ipaddress,,:db8,>>> ipaddress.IPv6Interface('2001:db8::1000/96').network
+library/ipaddress,,::,>>> ipaddress.IPv6Interface('2001:db8::1000/96').network
+library/ipaddress,,:db8,IPv6Network('2001:db8::/96')
+library/ipaddress,,::,IPv6Network('2001:db8::/96')
+library/ipaddress,,:db8,>>> ipaddress.IPv6Network('2001:db8::/96')
+library/ipaddress,,::,>>> ipaddress.IPv6Network('2001:db8::/96')
+library/ipaddress,,:db8,IPv6Network('2001:db8::/96')
+library/ipaddress,,::,IPv6Network('2001:db8::/96')
+library/ipaddress,,:db8,>>> ipaddress.IPv6Network('2001:db8::/96').netmask
+library/ipaddress,,::,>>> ipaddress.IPv6Network('2001:db8::/96').netmask
+library/ipaddress,,:ffff,IPv6Address('ffff:ffff:ffff:ffff:ffff:ffff::')
+library/ipaddress,,::,IPv6Address('ffff:ffff:ffff:ffff:ffff:ffff::')
+library/ipaddress,,:db8,">>> ipaddress.IPv6Network('2001:db8::1000/96', strict=False)"
+library/ipaddress,,::,">>> ipaddress.IPv6Network('2001:db8::1000/96', strict=False)"
+library/ipaddress,,::,"""::abc:7:def"""
+library/ipaddress,,:def,"""::abc:7:def"""
+library/ipaddress,,::,::FFFF/96
+library/ipaddress,,::,2002::/16
+library/ipaddress,,::,2001::/32
+library/ipaddress,,::,>>> str(ipaddress.IPv6Address('::1'))
+library/ipaddress,,::,'::1'
+library/ipaddress,,::,>>> int(ipaddress.IPv6Address('::1'))
+library/ipaddress,,:ff00,ffff:ff00::
+library/ipaddress,,:db00,2001:db00::0/24
+library/ipaddress,,::,2001:db00::0/24
+library/ipaddress,,:db00,2001:db00::0/ffff:ff00::
+library/ipaddress,,::,2001:db00::0/ffff:ff00::
+library/ipaddress,,:ff00,2001:db00::0/ffff:ff00::
 library/itertools,,:step,elements from seq[start:stop:step]
 library/itertools,,:stop,elements from seq[start:stop:step]
 library/linecache,,:sys,"sys:x:3:3:sys:/dev:/bin/sh"
@@ -181,6 +262,7 @@ library/stdtypes,,:end,s[start:end]
 library/stdtypes,,::,>>> hash(v[::-2]) == hash(b'abcefg'[::-2])
 library/stdtypes,,:len,s[len(s):len(s)]
 library/stdtypes,,::,>>> y = m[::2]
+library/stdtypes,,::,>>> z = y[::-2]
 library/string,,:end,s[start:end]
 library/subprocess,,`,"output=`dmesg | grep hda`"
 library/subprocess,,`,"output=`mycmd myarg`"
@@ -209,28 +291,6 @@ license,,`,THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AN
 license,,`,* THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
 license,,`,THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
 license,,:zooko,mailto:zooko@zooko.com
-packaging/examples,,`,This is the description of the ``foobar`` project.
-packaging/setupcfg,,::,Development Status :: 3 - Alpha
-packaging/setupcfg,,::,License :: OSI Approved :: Mozilla Public License 1.1 (MPL 1.1)
-packaging/setupscript,,::,"'Development Status :: 4 - Beta',"
-packaging/setupscript,,::,"'Environment :: Console',"
-packaging/setupscript,,::,"'Environment :: Web Environment',"
-packaging/setupscript,,::,"'Intended Audience :: Developers',"
-packaging/setupscript,,::,"'Intended Audience :: End Users/Desktop',"
-packaging/setupscript,,::,"'Intended Audience :: System Administrators',"
-packaging/setupscript,,::,"'License :: OSI Approved :: Python Software Foundation License',"
-packaging/setupscript,,::,"'Operating System :: MacOS :: MacOS X',"
-packaging/setupscript,,::,"'Operating System :: Microsoft :: Windows',"
-packaging/setupscript,,::,"'Operating System :: POSIX',"
-packaging/setupscript,,::,"'Programming Language :: Python',"
-packaging/setupscript,,::,"'Topic :: Communications :: Email',"
-packaging/setupscript,,::,"'Topic :: Office/Business',"
-packaging/setupscript,,::,"'Topic :: Software Development :: Bug Tracking',"
-packaging/tutorial,,::,1) License :: OSI Approved :: GNU General Public License (GPL)
-packaging/tutorial,,::,2) License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)
-packaging/tutorial,,::,classifier = Development Status :: 3 - Alpha
-packaging/tutorial,,::,License :: OSI Approved :: GNU General Public License (GPL)
-packaging/tutorial,,::,Type the number of the license you wish to use or ? to try again:: 1
 reference/datamodel,,:max,
 reference/datamodel,,:step,a[i:j:step]
 reference/expressions,,:datum,{key:datum...}

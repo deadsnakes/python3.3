@@ -36,25 +36,25 @@
    live in the same directory.  E.g. foomodule.cpython-32.so
 */
 
-const struct filedescr _PyImport_DynLoadFiletab[] = {
+const char *_PyImport_DynLoadFiletab[] = {
 #ifdef __CYGWIN__
-    {".dll", "rb", C_EXTENSION},
+    ".dll",
 #else  /* !__CYGWIN__ */
 #if defined(PYOS_OS2) && defined(PYCC_GCC)
-    {".pyd", "rb", C_EXTENSION},
-    {".dll", "rb", C_EXTENSION},
+    ".pyd",
+    ".dll",
 #else  /* !(defined(PYOS_OS2) && defined(PYCC_GCC)) */
 #ifdef __VMS
-    {".exe", "rb", C_EXTENSION},
-    {".EXE", "rb", C_EXTENSION},
+    ".exe",
+    ".EXE",
 #else  /* !__VMS */
-    {"." SOABI ".so", "rb", C_EXTENSION},
-    {".abi" PYTHON_ABI_STRING ".so", "rb", C_EXTENSION},
-    {".so", "rb", C_EXTENSION},
+    "." SOABI ".so",
+    ".abi" PYTHON_ABI_STRING ".so",
+    ".so",
 #endif  /* __VMS */
 #endif  /* defined(PYOS_OS2) && defined(PYCC_GCC) */
 #endif  /* __CYGWIN__ */
-    {0, 0}
+    NULL,
 };
 
 static struct {
@@ -139,9 +139,9 @@ dl_funcptr _PyImport_GetDynLoadFunc(const char *shortname,
         path = PyUnicode_FromString(pathname);
         mod_name = PyUnicode_FromString(shortname);
         PyErr_SetImportError(error_ob, mod_name, path);
-        Py_DECREF(error_ob);
-        Py_DECREF(path);
-        Py_DECREF(mod_name);
+        Py_XDECREF(error_ob);
+        Py_XDECREF(path);
+        Py_XDECREF(mod_name);
         return NULL;
     }
     if (fp != NULL && nhandles < 128)

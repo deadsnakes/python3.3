@@ -245,8 +245,8 @@ def calc_chksums(buf):
        the high bit set. So we calculate two checksums, unsigned and
        signed.
     """
-    unsigned_chksum = 256 + sum(struct.unpack("148B", buf[:148]) + struct.unpack("356B", buf[156:512]))
-    signed_chksum = 256 + sum(struct.unpack("148b", buf[:148]) + struct.unpack("356b", buf[156:512]))
+    unsigned_chksum = 256 + sum(struct.unpack_from("148B8x356B", buf))
+    signed_chksum = 256 + sum(struct.unpack_from("148b8x356b", buf))
     return unsigned_chksum, signed_chksum
 
 def copyfileobj(src, dst, length=None):
@@ -274,47 +274,13 @@ def copyfileobj(src, dst, length=None):
         dst.write(buf)
     return
 
-filemode_table = (
-    ((S_IFLNK,      "l"),
-     (S_IFREG,      "-"),
-     (S_IFBLK,      "b"),
-     (S_IFDIR,      "d"),
-     (S_IFCHR,      "c"),
-     (S_IFIFO,      "p")),
-
-    ((TUREAD,       "r"),),
-    ((TUWRITE,      "w"),),
-    ((TUEXEC|TSUID, "s"),
-     (TSUID,        "S"),
-     (TUEXEC,       "x")),
-
-    ((TGREAD,       "r"),),
-    ((TGWRITE,      "w"),),
-    ((TGEXEC|TSGID, "s"),
-     (TSGID,        "S"),
-     (TGEXEC,       "x")),
-
-    ((TOREAD,       "r"),),
-    ((TOWRITE,      "w"),),
-    ((TOEXEC|TSVTX, "t"),
-     (TSVTX,        "T"),
-     (TOEXEC,       "x"))
-)
-
 def filemode(mode):
-    """Convert a file's mode to a string of the form
-       -rwxrwxrwx.
-       Used by TarFile.list()
-    """
-    perm = []
-    for table in filemode_table:
-        for bit, char in table:
-            if mode & bit == bit:
-                perm.append(char)
-                break
-        else:
-            perm.append("-")
-    return "".join(perm)
+    """Deprecated in this location; use stat.filemode."""
+    import warnings
+    warnings.warn("deprecated in favor of stat.filemode",
+                  DeprecationWarning, 2)
+    return stat.filemode(mode)
+
 
 class TarError(Exception):
     """Base exception."""
@@ -668,6 +634,8 @@ class _FileInFile(object):
         self.offset = offset
         self.size = size
         self.position = 0
+        self.name = getattr(fileobj, "name", None)
+        self.closed = False
 
         if blockinfo is None:
             blockinfo = [(0, size)]
@@ -686,10 +654,16 @@ class _FileInFile(object):
         if lastpos < self.size:
             self.map.append((False, lastpos, self.size, None))
 
+    def flush(self):
+        pass
+
+    def readable(self):
+        return True
+
+    def writable(self):
+        return False
+
     def seekable(self):
-        if not hasattr(self.fileobj, "seekable"):
-            # XXX gzip.GzipFile and bz2.BZ2File
-            return True
         return self.fileobj.seekable()
 
     def tell(self):
@@ -697,10 +671,21 @@ class _FileInFile(object):
         """
         return self.position
 
-    def seek(self, position):
+    def seek(self, position, whence=io.SEEK_SET):
         """Seek to a position in the file.
         """
-        self.position = position
+        if whence == io.SEEK_SET:
+            self.position = min(max(position, 0), self.size)
+        elif whence == io.SEEK_CUR:
+            if position < 0:
+                self.position = max(self.position + position, 0)
+            else:
+                self.position = min(self.position + position, self.size)
+        elif whence == io.SEEK_END:
+            self.position = max(min(self.size + position, self.size), 0)
+        else:
+            raise ValueError("Invalid argument")
+        return self.position
 
     def read(self, size=None):
         """Read data from the file.
@@ -729,145 +714,22 @@ class _FileInFile(object):
             size -= length
             self.position += length
         return buf
-#class _FileInFile
 
-
-class ExFileObject(object):
-    """File-like object for reading an archive member.
-       Is returned by TarFile.extractfile().
-    """
-    blocksize = 1024
-
-    def __init__(self, tarfile, tarinfo):
-        self.fileobj = _FileInFile(tarfile.fileobj,
-                                   tarinfo.offset_data,
-                                   tarinfo.size,
-                                   tarinfo.sparse)
-        self.name = tarinfo.name
-        self.mode = "r"
-        self.closed = False
-        self.size = tarinfo.size
-
-        self.position = 0
-        self.buffer = b""
-
-    def readable(self):
-        return True
-
-    def writable(self):
-        return False
-
-    def seekable(self):
-        return self.fileobj.seekable()
-
-    def read(self, size=None):
-        """Read at most size bytes from the file. If size is not
-           present or None, read all data until EOF is reached.
-        """
-        if self.closed:
-            raise ValueError("I/O operation on closed file")
-
-        buf = b""
-        if self.buffer:
-            if size is None:
-                buf = self.buffer
-                self.buffer = b""
-            else:
-                buf = self.buffer[:size]
-                self.buffer = self.buffer[size:]
-
-        if size is None:
-            buf += self.fileobj.read()
-        else:
-            buf += self.fileobj.read(size - len(buf))
-
-        self.position += len(buf)
-        return buf
-
-    # XXX TextIOWrapper uses the read1() method.
-    read1 = read
-
-    def readline(self, size=-1):
-        """Read one entire line from the file. If size is present
-           and non-negative, return a string with at most that
-           size, which may be an incomplete line.
-        """
-        if self.closed:
-            raise ValueError("I/O operation on closed file")
-
-        pos = self.buffer.find(b"\n") + 1
-        if pos == 0:
-            # no newline found.
-            while True:
-                buf = self.fileobj.read(self.blocksize)
-                self.buffer += buf
-                if not buf or b"\n" in buf:
-                    pos = self.buffer.find(b"\n") + 1
-                    if pos == 0:
-                        # no newline found.
-                        pos = len(self.buffer)
-                    break
-
-        if size != -1:
-            pos = min(size, pos)
-
-        buf = self.buffer[:pos]
-        self.buffer = self.buffer[pos:]
-        self.position += len(buf)
-        return buf
-
-    def readlines(self):
-        """Return a list with all remaining lines.
-        """
-        result = []
-        while True:
-            line = self.readline()
-            if not line: break
-            result.append(line)
-        return result
-
-    def tell(self):
-        """Return the current file position.
-        """
-        if self.closed:
-            raise ValueError("I/O operation on closed file")
-
-        return self.position
-
-    def seek(self, pos, whence=io.SEEK_SET):
-        """Seek to a position in the file.
-        """
-        if self.closed:
-            raise ValueError("I/O operation on closed file")
-
-        if whence == io.SEEK_SET:
-            self.position = min(max(pos, 0), self.size)
-        elif whence == io.SEEK_CUR:
-            if pos < 0:
-                self.position = max(self.position + pos, 0)
-            else:
-                self.position = min(self.position + pos, self.size)
-        elif whence == io.SEEK_END:
-            self.position = max(min(self.size + pos, self.size), 0)
-        else:
-            raise ValueError("Invalid argument")
-
-        self.buffer = b""
-        self.fileobj.seek(self.position)
+    def readinto(self, b):
+        buf = self.read(len(b))
+        b[:len(buf)] = buf
+        return len(buf)
 
     def close(self):
-        """Close the file object.
-        """
         self.closed = True
+#class _FileInFile
 
-    def __iter__(self):
-        """Get an iterator over the file's lines.
-        """
-        while True:
-            line = self.readline()
-            if not line:
-                break
-            yield line
+class ExFileObject(io.BufferedReader):
+
+    def __init__(self, tarfile, tarinfo):
+        fileobj = _FileInFile(tarfile.fileobj, tarinfo.offset_data,
+                tarinfo.size, tarinfo.sparse)
+        super().__init__(fileobj)
 #class ExFileObject
 
 #------------------
@@ -1554,7 +1416,7 @@ class TarFile(object):
 
     tarinfo = TarInfo           # The default TarInfo class to use.
 
-    fileobject = ExFileObject   # The default ExFileObject class to use.
+    fileobject = ExFileObject   # The file-object for extractfile().
 
     def __init__(self, name=None, mode="r", fileobj=None, format=None,
             tarinfo=None, dereference=None, ignore_zeros=None, encoding=None,
@@ -1795,8 +1657,8 @@ class TarFile(object):
         except ImportError:
             raise CompressionError("bz2 module is not available")
 
-        fileobj = bz2.BZ2File(filename=name if fileobj is None else None,
-                mode=mode, fileobj=fileobj, compresslevel=compresslevel)
+        fileobj = bz2.BZ2File(fileobj or name, mode,
+                              compresslevel=compresslevel)
 
         try:
             t = cls.taropen(name, mode, fileobj, **kwargs)
@@ -1819,8 +1681,7 @@ class TarFile(object):
         except ImportError:
             raise CompressionError("lzma module is not available")
 
-        fileobj = lzma.LZMAFile(filename=name if fileobj is None else None,
-                mode=mode, fileobj=fileobj, preset=preset)
+        fileobj = lzma.LZMAFile(fileobj or name, mode, preset=preset)
 
         try:
             t = cls.taropen(name, mode, fileobj, **kwargs)
@@ -1995,7 +1856,7 @@ class TarFile(object):
 
         for tarinfo in self:
             if verbose:
-                print(filemode(tarinfo.mode), end=' ')
+                print(stat.filemode(tarinfo.mode), end=' ')
                 print("%s/%s" % (tarinfo.uname or tarinfo.uid,
                                  tarinfo.gname or tarinfo.gid), end=' ')
                 if tarinfo.ischr() or tarinfo.isblk():
@@ -2178,12 +2039,9 @@ class TarFile(object):
 
     def extractfile(self, member):
         """Extract a member from the archive as a file object. `member' may be
-           a filename or a TarInfo object. If `member' is a regular file, a
-           file-like object is returned. If `member' is a link, a file-like
-           object is constructed from the link's target. If `member' is none of
-           the above, None is returned.
-           The file-like object is read-only and provides the following
-           methods: read(), readline(), readlines(), seek() and tell()
+           a filename or a TarInfo object. If `member' is a regular file or a
+           link, an io.BufferedReader object is returned. Otherwise, None is
+           returned.
         """
         self._check("r")
 
@@ -2192,12 +2050,8 @@ class TarFile(object):
         else:
             tarinfo = member
 
-        if tarinfo.isreg():
-            return self.fileobject(self, tarinfo)
-
-        elif tarinfo.type not in SUPPORTED_TYPES:
-            # If a member's type is unknown, it is treated as a
-            # regular file.
+        if tarinfo.isreg() or tarinfo.type not in SUPPORTED_TYPES:
+            # Members with unknown types are treated as regular files.
             return self.fileobject(self, tarinfo)
 
         elif tarinfo.islnk() or tarinfo.issym():

@@ -358,11 +358,11 @@ class TempFile:
 class FileTestCase(unittest.TestCase):
 
     def test_init(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             pass
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             pass
-        with LZMAFile(fileobj=BytesIO(), mode="a") as f:
+        with LZMAFile(BytesIO(), "a") as f:
             pass
 
     def test_init_with_filename(self):
@@ -374,90 +374,101 @@ class FileTestCase(unittest.TestCase):
             with LZMAFile(TESTFN, "a") as f:
                 pass
 
+    def test_init_mode(self):
+        with TempFile(TESTFN):
+            with LZMAFile(TESTFN, "r"):
+                pass
+            with LZMAFile(TESTFN, "rb"):
+                pass
+            with LZMAFile(TESTFN, "w"):
+                pass
+            with LZMAFile(TESTFN, "wb"):
+                pass
+            with LZMAFile(TESTFN, "a"):
+                pass
+            with LZMAFile(TESTFN, "ab"):
+                pass
+
     def test_init_bad_mode(self):
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode=(3, "x"))
+            LZMAFile(BytesIO(COMPRESSED_XZ), (3, "x"))
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="x")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "x")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="rb")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "rt")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="r+")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "r+")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="wb")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "wt")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="w+")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "w+")
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="rw")
+            LZMAFile(BytesIO(COMPRESSED_XZ), "rw")
 
     def test_init_bad_check(self):
         with self.assertRaises(TypeError):
-            LZMAFile(fileobj=BytesIO(), mode="w", check=b"asd")
+            LZMAFile(BytesIO(), "w", check=b"asd")
         # CHECK_UNKNOWN and anything above CHECK_ID_MAX should be invalid.
         with self.assertRaises(LZMAError):
-            LZMAFile(fileobj=BytesIO(), mode="w", check=lzma.CHECK_UNKNOWN)
+            LZMAFile(BytesIO(), "w", check=lzma.CHECK_UNKNOWN)
         with self.assertRaises(LZMAError):
-            LZMAFile(fileobj=BytesIO(), mode="w", check=lzma.CHECK_ID_MAX + 3)
+            LZMAFile(BytesIO(), "w", check=lzma.CHECK_ID_MAX + 3)
         # Cannot specify a check with mode="r".
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), check=lzma.CHECK_NONE)
+            LZMAFile(BytesIO(COMPRESSED_XZ), check=lzma.CHECK_NONE)
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), check=lzma.CHECK_CRC32)
+            LZMAFile(BytesIO(COMPRESSED_XZ), check=lzma.CHECK_CRC32)
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), check=lzma.CHECK_CRC64)
+            LZMAFile(BytesIO(COMPRESSED_XZ), check=lzma.CHECK_CRC64)
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), check=lzma.CHECK_SHA256)
+            LZMAFile(BytesIO(COMPRESSED_XZ), check=lzma.CHECK_SHA256)
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), check=lzma.CHECK_UNKNOWN)
+            LZMAFile(BytesIO(COMPRESSED_XZ), check=lzma.CHECK_UNKNOWN)
 
     def test_init_bad_preset(self):
         with self.assertRaises(TypeError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset=4.39)
+            LZMAFile(BytesIO(), "w", preset=4.39)
         with self.assertRaises(LZMAError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset=10)
+            LZMAFile(BytesIO(), "w", preset=10)
         with self.assertRaises(LZMAError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset=23)
+            LZMAFile(BytesIO(), "w", preset=23)
         with self.assertRaises(OverflowError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset=-1)
+            LZMAFile(BytesIO(), "w", preset=-1)
         with self.assertRaises(OverflowError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset=-7)
+            LZMAFile(BytesIO(), "w", preset=-7)
         with self.assertRaises(TypeError):
-            LZMAFile(fileobj=BytesIO(), mode="w", preset="foo")
+            LZMAFile(BytesIO(), "w", preset="foo")
         # Cannot specify a preset with mode="r".
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), preset=3)
+            LZMAFile(BytesIO(COMPRESSED_XZ), preset=3)
 
     def test_init_bad_filter_spec(self):
         with self.assertRaises(TypeError):
-            LZMAFile(fileobj=BytesIO(), mode="w", filters=[b"wobsite"])
+            LZMAFile(BytesIO(), "w", filters=[b"wobsite"])
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w", filters=[{"xyzzy": 3}])
+            LZMAFile(BytesIO(), "w", filters=[{"xyzzy": 3}])
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w", filters=[{"id": 98765}])
+            LZMAFile(BytesIO(), "w", filters=[{"id": 98765}])
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w",
+            LZMAFile(BytesIO(), "w",
                      filters=[{"id": lzma.FILTER_LZMA2, "foo": 0}])
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w",
+            LZMAFile(BytesIO(), "w",
                      filters=[{"id": lzma.FILTER_DELTA, "foo": 0}])
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w",
+            LZMAFile(BytesIO(), "w",
                      filters=[{"id": lzma.FILTER_X86, "foo": 0}])
 
     def test_init_with_preset_and_filters(self):
         with self.assertRaises(ValueError):
-            LZMAFile(fileobj=BytesIO(), mode="w", format=lzma.FORMAT_RAW,
-                     preset=6,  filters=FILTERS_RAW_1)
-
-    def test_init_with_filename_and_fileobj(self):
-        with self.assertRaises(ValueError):
-            LZMAFile("/dev/null", fileobj=BytesIO())
+            LZMAFile(BytesIO(), "w", format=lzma.FORMAT_RAW,
+                     preset=6, filters=FILTERS_RAW_1)
 
     def test_close(self):
         with BytesIO(COMPRESSED_XZ) as src:
-            f = LZMAFile(fileobj=src)
+            f = LZMAFile(src)
             f.close()
             # LZMAFile.close() should not close the underlying file object.
             self.assertFalse(src.closed)
@@ -476,7 +487,7 @@ class FileTestCase(unittest.TestCase):
             f.close()
 
     def test_closed(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         try:
             self.assertFalse(f.closed)
             f.read()
@@ -485,7 +496,7 @@ class FileTestCase(unittest.TestCase):
             f.close()
         self.assertTrue(f.closed)
 
-        f = LZMAFile(fileobj=BytesIO(), mode="w")
+        f = LZMAFile(BytesIO(), "w")
         try:
             self.assertFalse(f.closed)
         finally:
@@ -493,7 +504,7 @@ class FileTestCase(unittest.TestCase):
         self.assertTrue(f.closed)
 
     def test_fileno(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         try:
             self.assertRaises(UnsupportedOperation, f.fileno)
         finally:
@@ -509,7 +520,7 @@ class FileTestCase(unittest.TestCase):
         self.assertRaises(ValueError, f.fileno)
 
     def test_seekable(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         try:
             self.assertTrue(f.seekable())
             f.read()
@@ -518,7 +529,7 @@ class FileTestCase(unittest.TestCase):
             f.close()
         self.assertRaises(ValueError, f.seekable)
 
-        f = LZMAFile(fileobj=BytesIO(), mode="w")
+        f = LZMAFile(BytesIO(), "w")
         try:
             self.assertFalse(f.seekable())
         finally:
@@ -527,7 +538,7 @@ class FileTestCase(unittest.TestCase):
 
         src = BytesIO(COMPRESSED_XZ)
         src.seekable = lambda: False
-        f = LZMAFile(fileobj=src)
+        f = LZMAFile(src)
         try:
             self.assertFalse(f.seekable())
         finally:
@@ -535,7 +546,7 @@ class FileTestCase(unittest.TestCase):
         self.assertRaises(ValueError, f.seekable)
 
     def test_readable(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         try:
             self.assertTrue(f.readable())
             f.read()
@@ -544,7 +555,7 @@ class FileTestCase(unittest.TestCase):
             f.close()
         self.assertRaises(ValueError, f.readable)
 
-        f = LZMAFile(fileobj=BytesIO(), mode="w")
+        f = LZMAFile(BytesIO(), "w")
         try:
             self.assertFalse(f.readable())
         finally:
@@ -552,7 +563,7 @@ class FileTestCase(unittest.TestCase):
         self.assertRaises(ValueError, f.readable)
 
     def test_writable(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         try:
             self.assertFalse(f.writable())
             f.read()
@@ -561,7 +572,7 @@ class FileTestCase(unittest.TestCase):
             f.close()
         self.assertRaises(ValueError, f.writable)
 
-        f = LZMAFile(fileobj=BytesIO(), mode="w")
+        f = LZMAFile(BytesIO(), "w")
         try:
             self.assertTrue(f.writable())
         finally:
@@ -569,50 +580,46 @@ class FileTestCase(unittest.TestCase):
         self.assertRaises(ValueError, f.writable)
 
     def test_read(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_ALONE)) as f:
             self.assertEqual(f.read(), INPUT)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ),
-                      format=lzma.FORMAT_XZ) as f:
-            self.assertEqual(f.read(), INPUT)
-            self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE),
-                      format=lzma.FORMAT_ALONE) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ), format=lzma.FORMAT_XZ) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_1),
+        with LZMAFile(BytesIO(COMPRESSED_ALONE), format=lzma.FORMAT_ALONE) as f:
+            self.assertEqual(f.read(), INPUT)
+            self.assertEqual(f.read(), b"")
+        with LZMAFile(BytesIO(COMPRESSED_RAW_1),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_1) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_2),
+        with LZMAFile(BytesIO(COMPRESSED_RAW_2),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_2) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_3),
+        with LZMAFile(BytesIO(COMPRESSED_RAW_3),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_3) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_4),
+        with LZMAFile(BytesIO(COMPRESSED_RAW_4),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_4) as f:
             self.assertEqual(f.read(), INPUT)
             self.assertEqual(f.read(), b"")
 
     def test_read_0(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertEqual(f.read(0), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_ALONE)) as f:
             self.assertEqual(f.read(0), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ),
-                      format=lzma.FORMAT_XZ) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ), format=lzma.FORMAT_XZ) as f:
             self.assertEqual(f.read(0), b"")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE),
-                      format=lzma.FORMAT_ALONE) as f:
+        with LZMAFile(BytesIO(COMPRESSED_ALONE), format=lzma.FORMAT_ALONE) as f:
             self.assertEqual(f.read(0), b"")
 
     def test_read_10(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             chunks = []
             while True:
                 result = f.read(10)
@@ -623,11 +630,11 @@ class FileTestCase(unittest.TestCase):
             self.assertEqual(b"".join(chunks), INPUT)
 
     def test_read_multistream(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ * 5)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ * 5)) as f:
             self.assertEqual(f.read(), INPUT * 5)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ + COMPRESSED_ALONE)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ + COMPRESSED_ALONE)) as f:
             self.assertEqual(f.read(), INPUT * 2)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_3 * 4),
+        with LZMAFile(BytesIO(COMPRESSED_RAW_3 * 4),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_3) as f:
             self.assertEqual(f.read(), INPUT * 4)
 
@@ -637,7 +644,7 @@ class FileTestCase(unittest.TestCase):
         saved_buffer_size = lzma._BUFFER_SIZE
         lzma._BUFFER_SIZE = len(COMPRESSED_XZ)
         try:
-            with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ *  5)) as f:
+            with LZMAFile(BytesIO(COMPRESSED_XZ *  5)) as f:
                 self.assertEqual(f.read(), INPUT * 5)
         finally:
             lzma._BUFFER_SIZE = saved_buffer_size
@@ -648,21 +655,31 @@ class FileTestCase(unittest.TestCase):
                 self.assertEqual(f.read(), INPUT)
                 self.assertEqual(f.read(), b"")
 
+    def test_read_from_file_with_bytes_filename(self):
+        try:
+            bytes_filename = TESTFN.encode("ascii")
+        except UnicodeEncodeError:
+            self.skipTest("Temporary file name needs to be ASCII")
+        with TempFile(TESTFN, COMPRESSED_XZ):
+            with LZMAFile(bytes_filename) as f:
+                self.assertEqual(f.read(), INPUT)
+                self.assertEqual(f.read(), b"")
+
     def test_read_incomplete(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ[:128])) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ[:128])) as f:
             self.assertRaises(EOFError, f.read)
 
     def test_read_bad_args(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         f.close()
         self.assertRaises(ValueError, f.read)
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             self.assertRaises(ValueError, f.read)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertRaises(TypeError, f.read, None)
 
     def test_read1(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             blocks = []
             while True:
                 result = f.read1()
@@ -673,11 +690,11 @@ class FileTestCase(unittest.TestCase):
             self.assertEqual(f.read1(), b"")
 
     def test_read1_0(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertEqual(f.read1(0), b"")
 
     def test_read1_10(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             blocks = []
             while True:
                 result = f.read1(10)
@@ -688,7 +705,7 @@ class FileTestCase(unittest.TestCase):
             self.assertEqual(f.read1(), b"")
 
     def test_read1_multistream(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ * 5)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ * 5)) as f:
             blocks = []
             while True:
                 result = f.read1()
@@ -699,78 +716,76 @@ class FileTestCase(unittest.TestCase):
             self.assertEqual(f.read1(), b"")
 
     def test_read1_bad_args(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         f.close()
         self.assertRaises(ValueError, f.read1)
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             self.assertRaises(ValueError, f.read1)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertRaises(TypeError, f.read1, None)
 
     def test_peek(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             result = f.peek()
             self.assertGreater(len(result), 0)
             self.assertTrue(INPUT.startswith(result))
             self.assertEqual(f.read(), INPUT)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             result = f.peek(10)
             self.assertGreater(len(result), 0)
             self.assertTrue(INPUT.startswith(result))
             self.assertEqual(f.read(), INPUT)
 
     def test_peek_bad_args(self):
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             self.assertRaises(ValueError, f.peek)
 
     def test_iterator(self):
         with BytesIO(INPUT) as f:
             lines = f.readlines()
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertListEqual(list(iter(f)), lines)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_ALONE)) as f:
             self.assertListEqual(list(iter(f)), lines)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ),
-                      format=lzma.FORMAT_XZ) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ), format=lzma.FORMAT_XZ) as f:
             self.assertListEqual(list(iter(f)), lines)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_ALONE),
-                      format=lzma.FORMAT_ALONE) as f:
+        with LZMAFile(BytesIO(COMPRESSED_ALONE), format=lzma.FORMAT_ALONE) as f:
             self.assertListEqual(list(iter(f)), lines)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_RAW_2),
+        with LZMAFile(BytesIO(COMPRESSED_RAW_2),
                       format=lzma.FORMAT_RAW, filters=FILTERS_RAW_2) as f:
             self.assertListEqual(list(iter(f)), lines)
 
     def test_readline(self):
         with BytesIO(INPUT) as f:
             lines = f.readlines()
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             for line in lines:
                 self.assertEqual(f.readline(), line)
 
     def test_readlines(self):
         with BytesIO(INPUT) as f:
             lines = f.readlines()
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertListEqual(f.readlines(), lines)
 
     def test_write(self):
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w") as f:
+            with LZMAFile(dst, "w") as f:
                 f.write(INPUT)
             expected = lzma.compress(INPUT)
             self.assertEqual(dst.getvalue(), expected)
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w", format=lzma.FORMAT_XZ) as f:
+            with LZMAFile(dst, "w", format=lzma.FORMAT_XZ) as f:
                 f.write(INPUT)
             expected = lzma.compress(INPUT, format=lzma.FORMAT_XZ)
             self.assertEqual(dst.getvalue(), expected)
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w", format=lzma.FORMAT_ALONE) as f:
+            with LZMAFile(dst, "w", format=lzma.FORMAT_ALONE) as f:
                 f.write(INPUT)
             expected = lzma.compress(INPUT, format=lzma.FORMAT_ALONE)
             self.assertEqual(dst.getvalue(), expected)
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w", format=lzma.FORMAT_RAW,
+            with LZMAFile(dst, "w", format=lzma.FORMAT_RAW,
                           filters=FILTERS_RAW_2) as f:
                 f.write(INPUT)
             expected = lzma.compress(INPUT, format=lzma.FORMAT_RAW,
@@ -779,7 +794,7 @@ class FileTestCase(unittest.TestCase):
 
     def test_write_10(self):
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w") as f:
+            with LZMAFile(dst, "w") as f:
                 for start in range(0, len(INPUT), 10):
                     f.write(INPUT[start:start+10])
             expected = lzma.compress(INPUT)
@@ -791,17 +806,31 @@ class FileTestCase(unittest.TestCase):
         part3 = INPUT[1536:]
         expected = b"".join(lzma.compress(x) for x in (part1, part2, part3))
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w") as f:
+            with LZMAFile(dst, "w") as f:
                 f.write(part1)
-            with LZMAFile(fileobj=dst, mode="a") as f:
+            with LZMAFile(dst, "a") as f:
                 f.write(part2)
-            with LZMAFile(fileobj=dst, mode="a") as f:
+            with LZMAFile(dst, "a") as f:
                 f.write(part3)
             self.assertEqual(dst.getvalue(), expected)
 
     def test_write_to_file(self):
         try:
             with LZMAFile(TESTFN, "w") as f:
+                f.write(INPUT)
+            expected = lzma.compress(INPUT)
+            with open(TESTFN, "rb") as f:
+                self.assertEqual(f.read(), expected)
+        finally:
+            unlink(TESTFN)
+
+    def test_write_to_file_with_bytes_filename(self):
+        try:
+            bytes_filename = TESTFN.encode("ascii")
+        except UnicodeEncodeError:
+            self.skipTest("Temporary file name needs to be ASCII")
+        try:
+            with LZMAFile(bytes_filename, "w") as f:
                 f.write(INPUT)
             expected = lzma.compress(INPUT)
             with open(TESTFN, "rb") as f:
@@ -827,12 +856,12 @@ class FileTestCase(unittest.TestCase):
             unlink(TESTFN)
 
     def test_write_bad_args(self):
-        f = LZMAFile(fileobj=BytesIO(), mode="w")
+        f = LZMAFile(BytesIO(), "w")
         f.close()
         self.assertRaises(ValueError, f.write, b"foo")
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ), mode="r") as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ), "r") as f:
             self.assertRaises(ValueError, f.write, b"bar")
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             self.assertRaises(TypeError, f.write, None)
             self.assertRaises(TypeError, f.write, "text")
             self.assertRaises(TypeError, f.write, 789)
@@ -841,75 +870,75 @@ class FileTestCase(unittest.TestCase):
         with BytesIO(INPUT) as f:
             lines = f.readlines()
         with BytesIO() as dst:
-            with LZMAFile(fileobj=dst, mode="w") as f:
+            with LZMAFile(dst, "w") as f:
                 f.writelines(lines)
             expected = lzma.compress(INPUT)
             self.assertEqual(dst.getvalue(), expected)
 
     def test_seek_forward(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.seek(555)
             self.assertEqual(f.read(), INPUT[555:])
 
     def test_seek_forward_across_streams(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ * 2)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ * 2)) as f:
             f.seek(len(INPUT) + 123)
             self.assertEqual(f.read(), INPUT[123:])
 
     def test_seek_forward_relative_to_current(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.read(100)
             f.seek(1236, 1)
             self.assertEqual(f.read(), INPUT[1336:])
 
     def test_seek_forward_relative_to_end(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.seek(-555, 2)
             self.assertEqual(f.read(), INPUT[-555:])
 
     def test_seek_backward(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.read(1001)
             f.seek(211)
             self.assertEqual(f.read(), INPUT[211:])
 
     def test_seek_backward_across_streams(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ * 2)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ * 2)) as f:
             f.read(len(INPUT) + 333)
             f.seek(737)
             self.assertEqual(f.read(), INPUT[737:] + INPUT)
 
     def test_seek_backward_relative_to_end(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.seek(-150, 2)
             self.assertEqual(f.read(), INPUT[-150:])
 
     def test_seek_past_end(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.seek(len(INPUT) + 9001)
             self.assertEqual(f.tell(), len(INPUT))
             self.assertEqual(f.read(), b"")
 
     def test_seek_past_start(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             f.seek(-88)
             self.assertEqual(f.tell(), 0)
             self.assertEqual(f.read(), INPUT)
 
     def test_seek_bad_args(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         f.close()
         self.assertRaises(ValueError, f.seek, 0)
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             self.assertRaises(ValueError, f.seek, 0)
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             self.assertRaises(ValueError, f.seek, 0, 3)
             self.assertRaises(ValueError, f.seek, 9, ())
             self.assertRaises(TypeError, f.seek, None)
             self.assertRaises(TypeError, f.seek, b"derp")
 
     def test_tell(self):
-        with LZMAFile(fileobj=BytesIO(COMPRESSED_XZ)) as f:
+        with LZMAFile(BytesIO(COMPRESSED_XZ)) as f:
             pos = 0
             while True:
                 self.assertEqual(f.tell(), pos)
@@ -918,16 +947,116 @@ class FileTestCase(unittest.TestCase):
                     break
                 pos += len(result)
             self.assertEqual(f.tell(), len(INPUT))
-        with LZMAFile(fileobj=BytesIO(), mode="w") as f:
+        with LZMAFile(BytesIO(), "w") as f:
             for pos in range(0, len(INPUT), 144):
                 self.assertEqual(f.tell(), pos)
                 f.write(INPUT[pos:pos+144])
             self.assertEqual(f.tell(), len(INPUT))
 
     def test_tell_bad_args(self):
-        f = LZMAFile(fileobj=BytesIO(COMPRESSED_XZ))
+        f = LZMAFile(BytesIO(COMPRESSED_XZ))
         f.close()
         self.assertRaises(ValueError, f.tell)
+
+
+class OpenTestCase(unittest.TestCase):
+
+    def test_binary_modes(self):
+        with lzma.open(BytesIO(COMPRESSED_XZ), "rb") as f:
+            self.assertEqual(f.read(), INPUT)
+        with BytesIO() as bio:
+            with lzma.open(bio, "wb") as f:
+                f.write(INPUT)
+            file_data = lzma.decompress(bio.getvalue())
+            self.assertEqual(file_data, INPUT)
+            with lzma.open(bio, "ab") as f:
+                f.write(INPUT)
+            file_data = lzma.decompress(bio.getvalue())
+            self.assertEqual(file_data, INPUT * 2)
+
+    def test_text_modes(self):
+        uncompressed = INPUT.decode("ascii")
+        uncompressed_raw = uncompressed.replace("\n", os.linesep)
+        with lzma.open(BytesIO(COMPRESSED_XZ), "rt") as f:
+            self.assertEqual(f.read(), uncompressed)
+        with BytesIO() as bio:
+            with lzma.open(bio, "wt") as f:
+                f.write(uncompressed)
+            file_data = lzma.decompress(bio.getvalue()).decode("ascii")
+            self.assertEqual(file_data, uncompressed_raw)
+            with lzma.open(bio, "at") as f:
+                f.write(uncompressed)
+            file_data = lzma.decompress(bio.getvalue()).decode("ascii")
+            self.assertEqual(file_data, uncompressed_raw * 2)
+
+    def test_filename(self):
+        with TempFile(TESTFN):
+            with lzma.open(TESTFN, "wb") as f:
+                f.write(INPUT)
+            with open(TESTFN, "rb") as f:
+                file_data = lzma.decompress(f.read())
+                self.assertEqual(file_data, INPUT)
+            with lzma.open(TESTFN, "rb") as f:
+                self.assertEqual(f.read(), INPUT)
+            with lzma.open(TESTFN, "ab") as f:
+                f.write(INPUT)
+            with lzma.open(TESTFN, "rb") as f:
+                self.assertEqual(f.read(), INPUT * 2)
+
+    def test_bad_params(self):
+        # Test invalid parameter combinations.
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "")
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "x")
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "rbt")
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "rb", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "rb", errors="ignore")
+        with self.assertRaises(ValueError):
+            lzma.open(TESTFN, "rb", newline="\n")
+
+    def test_format_and_filters(self):
+        # Test non-default format and filter chain.
+        options = {"format": lzma.FORMAT_RAW, "filters": FILTERS_RAW_1}
+        with lzma.open(BytesIO(COMPRESSED_RAW_1), "rb", **options) as f:
+            self.assertEqual(f.read(), INPUT)
+        with BytesIO() as bio:
+            with lzma.open(bio, "wb", **options) as f:
+                f.write(INPUT)
+            file_data = lzma.decompress(bio.getvalue(), **options)
+            self.assertEqual(file_data, INPUT)
+
+    def test_encoding(self):
+        # Test non-default encoding.
+        uncompressed = INPUT.decode("ascii")
+        uncompressed_raw = uncompressed.replace("\n", os.linesep)
+        with BytesIO() as bio:
+            with lzma.open(bio, "wt", encoding="utf-16-le") as f:
+                f.write(uncompressed)
+            file_data = lzma.decompress(bio.getvalue()).decode("utf-16-le")
+            self.assertEqual(file_data, uncompressed_raw)
+            bio.seek(0)
+            with lzma.open(bio, "rt", encoding="utf-16-le") as f:
+                self.assertEqual(f.read(), uncompressed)
+
+    def test_encoding_error_handler(self):
+        # Test wih non-default encoding error handler.
+        with BytesIO(lzma.compress(b"foo\xffbar")) as bio:
+            with lzma.open(bio, "rt", encoding="ascii", errors="ignore") as f:
+                self.assertEqual(f.read(), "foobar")
+
+    def test_newline(self):
+        # Test with explicit newline (universal newline mode disabled).
+        text = INPUT.decode("ascii")
+        with BytesIO() as bio:
+            with lzma.open(bio, "wt", newline="\n") as f:
+                f.write(text)
+            bio.seek(0)
+            with lzma.open(bio, "rt", newline="\r") as f:
+                self.assertEqual(f.readlines(), [text])
 
 
 class MiscellaneousTestCase(unittest.TestCase):
@@ -935,14 +1064,57 @@ class MiscellaneousTestCase(unittest.TestCase):
     def test_is_check_supported(self):
         # CHECK_NONE and CHECK_CRC32 should always be supported,
         # regardless of the options liblzma was compiled with.
-        self.assertTrue(lzma.check_is_supported(lzma.CHECK_NONE))
-        self.assertTrue(lzma.check_is_supported(lzma.CHECK_CRC32))
+        self.assertTrue(lzma.is_check_supported(lzma.CHECK_NONE))
+        self.assertTrue(lzma.is_check_supported(lzma.CHECK_CRC32))
 
         # The .xz format spec cannot store check IDs above this value.
-        self.assertFalse(lzma.check_is_supported(lzma.CHECK_ID_MAX + 1))
+        self.assertFalse(lzma.is_check_supported(lzma.CHECK_ID_MAX + 1))
 
         # This value should not be a valid check ID.
-        self.assertFalse(lzma.check_is_supported(lzma.CHECK_UNKNOWN))
+        self.assertFalse(lzma.is_check_supported(lzma.CHECK_UNKNOWN))
+
+    def test__encode_filter_properties(self):
+        with self.assertRaises(TypeError):
+            lzma._encode_filter_properties(b"not a dict")
+        with self.assertRaises(ValueError):
+            lzma._encode_filter_properties({"id": 0x100})
+        with self.assertRaises(ValueError):
+            lzma._encode_filter_properties({"id": lzma.FILTER_LZMA2, "junk": 12})
+        with self.assertRaises(lzma.LZMAError):
+            lzma._encode_filter_properties({"id": lzma.FILTER_DELTA,
+                                           "dist": 9001})
+
+        # Test with parameters used by zipfile module.
+        props = lzma._encode_filter_properties({
+                "id": lzma.FILTER_LZMA1,
+                "pb": 2,
+                "lp": 0,
+                "lc": 3,
+                "dict_size": 8 << 20,
+            })
+        self.assertEqual(props, b"]\x00\x00\x80\x00")
+
+    def test__decode_filter_properties(self):
+        with self.assertRaises(TypeError):
+            lzma._decode_filter_properties(lzma.FILTER_X86, {"should be": bytes})
+        with self.assertRaises(lzma.LZMAError):
+            lzma._decode_filter_properties(lzma.FILTER_DELTA, b"too long")
+
+        # Test with parameters used by zipfile module.
+        filterspec = lzma._decode_filter_properties(
+                lzma.FILTER_LZMA1, b"]\x00\x00\x80\x00")
+        self.assertEqual(filterspec["id"], lzma.FILTER_LZMA1)
+        self.assertEqual(filterspec["pb"], 2)
+        self.assertEqual(filterspec["lp"], 0)
+        self.assertEqual(filterspec["lc"], 3)
+        self.assertEqual(filterspec["dict_size"], 8 << 20)
+
+    def test_filter_properties_roundtrip(self):
+        spec1 = lzma._decode_filter_properties(
+                lzma.FILTER_LZMA1, b"]\x00\x00\x80\x00")
+        reencoded = lzma._encode_filter_properties(spec1)
+        spec2 = lzma._decode_filter_properties(lzma.FILTER_LZMA1, reencoded)
+        self.assertEqual(spec1, spec2)
 
 
 # Test data:
@@ -1337,6 +1509,7 @@ def test_main():
         CompressorDecompressorTestCase,
         CompressDecompressFunctionTestCase,
         FileTestCase,
+        OpenTestCase,
         MiscellaneousTestCase,
     )
 

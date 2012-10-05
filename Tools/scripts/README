@@ -28,6 +28,7 @@ ftpmirror.py            FTP mirror script
 google.py               Open a webbrowser with Google
 gprof2html.py           Transform gprof(1) output into useful HTML
 h2py.py                 Translate #define's into Python assignments
+highlight.py            Python syntax highlighting with HTML output
 idle3                   Main program to start IDLE
 ifdef.py                Remove #if(n)def groups from C sources
 lfcr.py                 Change LF line endings to CRLF (Unix to Windows)

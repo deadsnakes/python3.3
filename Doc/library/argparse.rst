@@ -12,6 +12,12 @@
 
 --------------
 
+.. sidebar:: Tutorial
+
+   This page contains the API reference information. For a more gentle
+   introduction to Python command-line parsing, have a look at the
+   :ref:`argparse tutorial <argparse-tutorial>`.
+
 The :mod:`argparse` module makes it easy to write user-friendly command-line
 interfaces. The program defines what arguments it requires, and :mod:`argparse`
 will figure out how to parse those out of :data:`sys.argv`.  The :mod:`argparse`
@@ -760,7 +766,7 @@ the Action API.  The easiest way to do this is to extend
 
 * ``values`` - The associated command-line arguments, with any type conversions
   applied.  (Type conversions are specified with the type_ keyword argument to
-  :meth:`~ArgumentParser.add_argument`.
+  :meth:`~ArgumentParser.add_argument`.)
 
 * ``option_string`` - The option string that was used to invoke this action.
   The ``option_string`` argument is optional, and will be absent if the action
@@ -1094,6 +1100,9 @@ specifiers include the program name, ``%(prog)s`` and most keyword arguments to
 
    optional arguments:
     -h, --help  show this help message and exit
+
+As the help string supports %-formatting, if you want a literal ``%`` to appear
+in the help string, you must escape it as ``%%``.
 
 :mod:`argparse` supports silencing the help entry for certain options, by
 setting the ``help`` value to ``argparse.SUPPRESS``::

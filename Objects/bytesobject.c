@@ -2577,6 +2577,12 @@ PyBytes_FromObject(PyObject *x)
         PyErr_BadInternalCall();
         return NULL;
     }
+
+    if (PyBytes_CheckExact(x)) {
+        Py_INCREF(x);
+        return x;
+    }
+
     /* Use the modern buffer interface */
     if (PyObject_CheckBuffer(x)) {
         Py_buffer view;
@@ -2585,7 +2591,6 @@ PyBytes_FromObject(PyObject *x)
         new = PyBytes_FromStringAndSize(NULL, view.len);
         if (!new)
             goto fail;
-        /* XXX(brett.cannon): Better way to get to internal buffer? */
         if (PyBuffer_ToContiguous(((PyBytesObject *)new)->ob_sval,
                                   &view, view.len, 'C') < 0)
             goto fail;

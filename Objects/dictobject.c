@@ -255,19 +255,37 @@ PyDict_ClearFreeList(void)
     return ret;
 }
 
+/* Print summary info about the state of the optimized allocator */
+void
+_PyDict_DebugMallocStats(FILE *out)
+{
+    _PyDebugAllocatorStats(out,
+                           "free PyDictObject", numfree, sizeof(PyDictObject));
+}
+
+
 void
 PyDict_Fini(void)
 {
     PyDict_ClearFreeList();
 }
 
-#define DK_INCREF(dk) (++(dk)->dk_refcnt)
-#define DK_DECREF(dk) if ((--(dk)->dk_refcnt) == 0) free_keys_object(dk)
+#define DK_DEBUG_INCREF _Py_INC_REFTOTAL _Py_REF_DEBUG_COMMA
+#define DK_DEBUG_DECREF _Py_DEC_REFTOTAL _Py_REF_DEBUG_COMMA
+
+#define DK_INCREF(dk) (DK_DEBUG_INCREF ++(dk)->dk_refcnt)
+#define DK_DECREF(dk) if (DK_DEBUG_DECREF (--(dk)->dk_refcnt) == 0) free_keys_object(dk)
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_MASK(dk) (((dk)->dk_size)-1)
 #define IS_POWER_OF_2(x) (((x) & (x-1)) == 0)
 
-/* USABLE_FRACTION must obey the following:
+/* USABLE_FRACTION is the maximum dictionary load.
+ * Currently set to (2n+1)/3. Increasing this ratio makes dictionaries more
+ * dense resulting in more collisions.  Decreasing it improves sparseness
+ * at the expense of spreading entries over more cache lines and at the
+ * cost of total memory consumed.
+ *
+ * USABLE_FRACTION must obey the following:
  *     (0 < USABLE_FRACTION(n) < n) for all n >= 2
  *
  * USABLE_FRACTION should be very quick to calculate.
@@ -287,6 +305,14 @@ PyDict_Fini(void)
  * #define USABLE_FRACTION(n) (((n) >> 1) + ((n) >> 2) - ((n) >> 3))
 */
 
+/* GROWTH_RATE. Growth rate upon hitting maximum load.  Currently set to *2.
+ * Raising this to *4 doubles memory consumption depending on the size of
+ * the dictionary, but results in half the number of resizes, less effort to
+ * resize and better sparseness for some (but not all dict sizes).
+ * Setting to *4 eliminates every other resize step.
+ * GROWTH_RATE was set to *4 up to version 3.2.
+ */
+#define GROWTH_RATE(x) ((x) * 2)
 
 #define ENSURE_ALLOWS_DELETIONS(d) \
     if ((d)->ma_keys->dk_lookup == lookdict_unicode_nodummy) { \
@@ -324,7 +350,7 @@ static PyDictKeysObject *new_keys_object(Py_ssize_t size)
         PyErr_NoMemory();
         return NULL;
     }
-    dk->dk_refcnt = 1;
+    DK_DEBUG_INCREF dk->dk_refcnt = 1;
     dk->dk_size = size;
     dk->dk_usable = USABLE_FRACTION(size);
     ep0 = &dk->dk_entries[0];
@@ -436,12 +462,15 @@ lookdict(PyDictObject *mp, PyObject *key,
     register size_t i;
     register size_t perturb;
     register PyDictKeyEntry *freeslot;
-    register size_t mask = DK_MASK(mp->ma_keys);
-    PyDictKeyEntry *ep0 = &mp->ma_keys->dk_entries[0];
+    register size_t mask;
+    PyDictKeyEntry *ep0;
     register PyDictKeyEntry *ep;
     register int cmp;
     PyObject *startkey;
 
+top:
+    mask = DK_MASK(mp->ma_keys);
+    ep0 = &mp->ma_keys->dk_entries[0];
     i = (size_t)hash & mask;
     ep = &ep0[i];
     if (ep->me_key == NULL || ep->me_key == key) {
@@ -465,9 +494,8 @@ lookdict(PyDictObject *mp, PyObject *key,
                 }
             }
             else {
-                PyErr_SetString(PyExc_RuntimeError,
-                                "dictionary changed size during lookup");
-                return NULL;
+                /* The dict was mutated, restart */
+                goto top;
             }
         }
         freeslot = NULL;
@@ -507,9 +535,8 @@ lookdict(PyDictObject *mp, PyObject *key,
                 }
             }
             else {
-                PyErr_SetString(PyExc_RuntimeError,
-                                "dictionary changed size during lookup");
-                return NULL;
+                /* The dict was mutated, restart */
+                goto top;
             }
         }
         else if (ep->me_key == dummy && freeslot == NULL)
@@ -763,13 +790,7 @@ find_empty_slot(PyDictObject *mp, PyObject *key, Py_hash_t hash,
 static int
 insertion_resize(PyDictObject *mp)
 {
-    /*
-    * Double the size of the dict,
-    * Previous versions quadrupled size, but doing so may result in excessive
-    * memory use. Doubling keeps the number of resizes low without wasting
-    * too much memory.
-    */
-    return dictresize(mp, 2 * mp->ma_used);
+    return dictresize(mp, GROWTH_RATE(mp->ma_used));
 }
 
 /*
@@ -959,7 +980,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minused)
             }
         }
         assert(oldkeys->dk_refcnt == 1);
-        PyMem_FREE(oldkeys);
+        DK_DEBUG_DECREF PyMem_FREE(oldkeys);
     }
     return 0;
 }
@@ -1259,7 +1280,7 @@ PyDict_Clear(PyObject *op)
     }
     else {
        assert(oldkeys->dk_refcnt == 1);
-       free_keys_object(oldkeys);
+       DK_DECREF(oldkeys);
     }
 }
 
@@ -1367,7 +1388,8 @@ dict_dealloc(PyDictObject *mp)
         DK_DECREF(keys);
     }
     else {
-        free_keys_object(keys);
+        assert(keys->dk_refcnt == 1);
+        DK_DECREF(keys);
     }
     if (numfree < PyDict_MAXFREELIST && Py_TYPE(mp) == &PyDict_Type)
         free_list[numfree++] = mp;

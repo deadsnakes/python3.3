@@ -80,7 +80,7 @@ Bookkeeping functions:
 
    *state* should have been obtained from a previous call to :func:`getstate`, and
    :func:`setstate` restores the internal state of the generator to what it was at
-   the time :func:`setstate` was called.
+   the time :func:`getstate` was called.
 
 
 .. function:: getrandbits(k)
@@ -149,6 +149,9 @@ Functions for sequences:
    To choose a sample from a range of integers, use an :func:`range` object as an
    argument.  This is especially fast and space efficient for sampling from a large
    population:  ``sample(range(10000000), 60)``.
+
+   If the sample size is larger than the population size, a :exc:`ValueError`
+   is raised.
 
 The following functions generate specific real-valued distributions. Function
 parameters are named after the corresponding variables in the distribution's
