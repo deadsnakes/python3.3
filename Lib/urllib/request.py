@@ -135,16 +135,19 @@ __version__ = sys.version[:3]
 
 _opener = None
 def urlopen(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
-            *, cafile=None, capath=None):
+            *, cafile=None, capath=None, cadefault=False):
     global _opener
-    if cafile or capath:
+    if cafile or capath or cadefault:
         if not _have_ssl:
             raise ValueError('SSL support not available')
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         context.options |= ssl.OP_NO_SSLv2
-        if cafile or capath:
+        if cafile or capath or cadefault:
             context.verify_mode = ssl.CERT_REQUIRED
-            context.load_verify_locations(cafile, capath)
+            if cafile or capath:
+                context.load_verify_locations(cafile, capath)
+            else:
+                context.set_default_verify_paths()
             check_hostname = True
         else:
             check_hostname = False
@@ -782,8 +785,8 @@ class ProxyHandler(BaseHandler):
         self.proxies = proxies
         for type, url in proxies.items():
             setattr(self, '%s_open' % type,
-                    lambda r, proxy=url, type=type, meth=self.proxy_open: \
-                    meth(r, proxy, type))
+                    lambda r, proxy=url, type=type, meth=self.proxy_open:
+                        meth(r, proxy, type))
 
     def proxy_open(self, req, proxy, type):
         orig_type = req.type
@@ -895,7 +898,7 @@ class AbstractBasicAuthHandler:
     # allow for double- and single-quoted realm values
     # (single quotes are a violation of the RFC, but appear in the wild)
     rx = re.compile('(?:.*,)*[ \t]*([^ \t]+)[ \t]+'
-                    'realm=(["\'])(.*?)\\2', re.I)
+                    'realm=(["\']?)([^"\']*)\\2', re.I)
 
     # XXX could pre-emptively send auth info already accepted (RFC 2617,
     # end of section 2, and section 1.2 immediately after "credentials"
@@ -934,6 +937,9 @@ class AbstractBasicAuthHandler:
                 mo = AbstractBasicAuthHandler.rx.search(authreq)
                 if mo:
                     scheme, quote, realm = mo.groups()
+                    if quote not in ['"',"'"]:
+                        warnings.warn("Basic Auth Realm was unquoted",
+                                      UserWarning, 2)
                     if scheme.lower() == 'basic':
                         response = self.retry_http_basic_auth(host, req, realm)
                         if response and response.code != 401:
@@ -1172,8 +1178,8 @@ class AbstractHTTPHandler(BaseHandler):
         if request.data is not None:  # POST
             data = request.data
             if isinstance(data, str):
-                msg = "POST data should be bytes or an iterable of bytes."\
-                      "It cannot be str"
+                msg = "POST data should be bytes or an iterable of bytes. " \
+                      "It cannot be of type str."
                 raise TypeError(msg)
             if not request.has_header('Content-type'):
                 request.add_unredirected_header(
@@ -1570,7 +1576,7 @@ class URLopener:
 
     # Constructor
     def __init__(self, proxies=None, **x509):
-        msg = "%(class)s style of invoking requests is deprecated."\
+        msg = "%(class)s style of invoking requests is deprecated. " \
               "Use newer urlopen functions/methods" % {'class': self.__class__.__name__}
         warnings.warn(msg, DeprecationWarning, stacklevel=3)
         if proxies is None:

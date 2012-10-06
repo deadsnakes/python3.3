@@ -4,6 +4,7 @@ import subprocess
 import sys
 import signal
 import io
+import locale
 import os
 import errno
 import tempfile
@@ -14,6 +15,7 @@ import warnings
 import select
 import shutil
 import gc
+import textwrap
 
 try:
     import resource
@@ -189,6 +191,8 @@ class ProcessTestCase(BaseTestCase):
         p.wait()
         self.assertEqual(p.stderr, None)
 
+    @unittest.skipIf(sys.base_prefix != sys.prefix,
+                     'Test is not venv-compatible')
     def test_executable_with_cwd(self):
         python_dir = os.path.dirname(os.path.realpath(sys.executable))
         p = subprocess.Popen(["somethingyoudonthave", "-c",
@@ -197,6 +201,8 @@ class ProcessTestCase(BaseTestCase):
         p.wait()
         self.assertEqual(p.returncode, 47)
 
+    @unittest.skipIf(sys.base_prefix != sys.prefix,
+                     'Test is not venv-compatible')
     @unittest.skipIf(sysconfig.is_python_build(),
                      "need an installed Python. See #7774")
     def test_executable_without_cwd(self):
@@ -559,21 +565,22 @@ class ProcessTestCase(BaseTestCase):
     def test_universal_newlines(self):
         p = subprocess.Popen([sys.executable, "-c",
                               'import sys,os;' + SETBINARY +
-                              'sys.stdout.write(sys.stdin.readline());'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line2\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write(sys.stdin.read());'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line4\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line5\\r\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line6\\r");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("\\nline7");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("\\nline8");'],
+                              'buf = sys.stdout.buffer;'
+                              'buf.write(sys.stdin.readline().encode());'
+                              'buf.flush();'
+                              'buf.write(b"line2\\n");'
+                              'buf.flush();'
+                              'buf.write(sys.stdin.read().encode());'
+                              'buf.flush();'
+                              'buf.write(b"line4\\n");'
+                              'buf.flush();'
+                              'buf.write(b"line5\\r\\n");'
+                              'buf.flush();'
+                              'buf.write(b"line6\\r");'
+                              'buf.flush();'
+                              'buf.write(b"\\nline7");'
+                              'buf.flush();'
+                              'buf.write(b"\\nline8");'],
                              stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE,
                              universal_newlines=1)
@@ -593,24 +600,23 @@ class ProcessTestCase(BaseTestCase):
         # universal newlines through communicate()
         p = subprocess.Popen([sys.executable, "-c",
                               'import sys,os;' + SETBINARY +
-                              'sys.stdout.write("line2\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line4\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line5\\r\\n");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("line6\\r");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("\\nline7");'
-                              'sys.stdout.flush();'
-                              'sys.stdout.write("\\nline8");'],
+                              'buf = sys.stdout.buffer;'
+                              'buf.write(b"line2\\n");'
+                              'buf.flush();'
+                              'buf.write(b"line4\\n");'
+                              'buf.flush();'
+                              'buf.write(b"line5\\r\\n");'
+                              'buf.flush();'
+                              'buf.write(b"line6\\r");'
+                              'buf.flush();'
+                              'buf.write(b"\\nline7");'
+                              'buf.flush();'
+                              'buf.write(b"\\nline8");'],
                              stderr=subprocess.PIPE,
                              stdout=subprocess.PIPE,
                              universal_newlines=1)
         self.addCleanup(p.stdout.close)
         self.addCleanup(p.stderr.close)
-        # BUG: can't give a non-empty stdin because it breaks both the
-        # select- and poll-based communicate() implementations.
         (stdout, stderr) = p.communicate()
         self.assertEqual(stdout,
                          "line2\nline4\nline5\nline6\nline7\nline8")
@@ -618,16 +624,88 @@ class ProcessTestCase(BaseTestCase):
     def test_universal_newlines_communicate_stdin(self):
         # universal newlines through communicate(), with only stdin
         p = subprocess.Popen([sys.executable, "-c",
-                              'import sys,os;' + SETBINARY + '''\nif True:
-                                  s = sys.stdin.readline()
-                                  assert s == "line1\\n", repr(s)
-                                  s = sys.stdin.read()
-                                  assert s == "line3\\n", repr(s)
-                              '''],
+                              'import sys,os;' + SETBINARY + textwrap.dedent('''
+                               s = sys.stdin.readline()
+                               assert s == "line1\\n", repr(s)
+                               s = sys.stdin.read()
+                               assert s == "line3\\n", repr(s)
+                              ''')],
                              stdin=subprocess.PIPE,
                              universal_newlines=1)
         (stdout, stderr) = p.communicate("line1\nline3\n")
         self.assertEqual(p.returncode, 0)
+
+    def test_universal_newlines_communicate_input_none(self):
+        # Test communicate(input=None) with universal newlines.
+        #
+        # We set stdout to PIPE because, as of this writing, a different
+        # code path is tested when the number of pipes is zero or one.
+        p = subprocess.Popen([sys.executable, "-c", "pass"],
+                             stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE,
+                             universal_newlines=True)
+        p.communicate()
+        self.assertEqual(p.returncode, 0)
+
+    def test_universal_newlines_communicate_stdin_stdout_stderr(self):
+        # universal newlines through communicate(), with stdin, stdout, stderr
+        p = subprocess.Popen([sys.executable, "-c",
+                              'import sys,os;' + SETBINARY + textwrap.dedent('''
+                               s = sys.stdin.buffer.readline()
+                               sys.stdout.buffer.write(s)
+                               sys.stdout.buffer.write(b"line2\\r")
+                               sys.stderr.buffer.write(b"eline2\\n")
+                               s = sys.stdin.buffer.read()
+                               sys.stdout.buffer.write(s)
+                               sys.stdout.buffer.write(b"line4\\n")
+                               sys.stdout.buffer.write(b"line5\\r\\n")
+                               sys.stderr.buffer.write(b"eline6\\r")
+                               sys.stderr.buffer.write(b"eline7\\r\\nz")
+                              ''')],
+                             stdin=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             stdout=subprocess.PIPE,
+                             universal_newlines=True)
+        self.addCleanup(p.stdout.close)
+        self.addCleanup(p.stderr.close)
+        (stdout, stderr) = p.communicate("line1\nline3\n")
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual("line1\nline2\nline3\nline4\nline5\n", stdout)
+        # Python debug build push something like "[42442 refs]\n"
+        # to stderr at exit of subprocess.
+        # Don't use assertStderrEqual because it strips CR and LF from output.
+        self.assertTrue(stderr.startswith("eline2\neline6\neline7\n"))
+
+    def test_universal_newlines_communicate_encodings(self):
+        # Check that universal newlines mode works for various encodings,
+        # in particular for encodings in the UTF-16 and UTF-32 families.
+        # See issue #15595.
+        #
+        # UTF-16 and UTF-32-BE are sufficient to check both with BOM and
+        # without, and UTF-16 and UTF-32.
+        for encoding in ['utf-16', 'utf-32-be']:
+            old_getpreferredencoding = locale.getpreferredencoding
+            # Indirectly via io.TextIOWrapper, Popen() defaults to
+            # locale.getpreferredencoding(False) and earlier in Python 3.2 to
+            # locale.getpreferredencoding().
+            def getpreferredencoding(do_setlocale=True):
+                return encoding
+            code = ("import sys; "
+                    r"sys.stdout.buffer.write('1\r\n2\r3\n4'.encode('%s'))" %
+                    encoding)
+            args = [sys.executable, '-c', code]
+            try:
+                locale.getpreferredencoding = getpreferredencoding
+                # We set stdin to be non-None because, as of this writing,
+                # a different code path is used when the number of pipes is
+                # zero or one.
+                popen = subprocess.Popen(args, universal_newlines=True,
+                                         stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE)
+                stdout, stderr = popen.communicate(input='')
+            finally:
+                locale.getpreferredencoding = old_getpreferredencoding
+            self.assertEqual(stdout, '1\n2\n3\n4')
 
     def test_no_leaking(self):
         # Make sure we leak no resources

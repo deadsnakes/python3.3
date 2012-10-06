@@ -1,0 +1,5 @@
+# this is referenced by the html docs
+@PVER@-doc binary: extra-license-file
+
+# can't be bothered to split that out for all releases
+@PVER@-doc binary: embedded-javascript-library usr/share/doc/@PVER@/html/_static/underscore.js

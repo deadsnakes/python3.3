@@ -50,7 +50,6 @@ The module defines the following:
 
 
    .. versionchanged:: 3.3
-
       Added the *flags* parameter.
 
 
@@ -267,7 +266,7 @@ Edge and Level Trigger Polling (epoll) Objects
    Remove a registered file descriptor from the epoll object.
 
 
-.. method:: epoll.poll([timeout=-1[, maxevents=-1]])
+.. method:: epoll.poll(timeout=-1, maxevents=-1)
 
    Wait for events. timeout in seconds (float)
 

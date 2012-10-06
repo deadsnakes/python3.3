@@ -126,8 +126,10 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
     d = PyModule_GetDict((PyObject*)m);
     if (module->m_methods != NULL) {
         n = PyUnicode_FromString(name);
-        if (n == NULL)
+        if (n == NULL) {
+            Py_DECREF(m);
             return NULL;
+        }
         for (ml = module->m_methods; ml->ml_name != NULL; ml++) {
             if ((ml->ml_flags & METH_CLASS) ||
                 (ml->ml_flags & METH_STATIC)) {
@@ -135,16 +137,19 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
                                 "module functions cannot set"
                                 " METH_CLASS or METH_STATIC");
                 Py_DECREF(n);
+                Py_DECREF(m);
                 return NULL;
             }
             v = PyCFunction_NewEx(ml, (PyObject*)m, n);
             if (v == NULL) {
                 Py_DECREF(n);
+                Py_DECREF(m);
                 return NULL;
             }
             if (PyDict_SetItemString(d, ml->ml_name, v) != 0) {
                 Py_DECREF(v);
                 Py_DECREF(n);
+                Py_DECREF(m);
                 return NULL;
             }
             Py_DECREF(v);
@@ -155,6 +160,7 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
         v = PyUnicode_FromString(module->m_doc);
         if (v == NULL || PyDict_SetItemString(d, "__doc__", v) != 0) {
             Py_XDECREF(v);
+            Py_DECREF(m);
             return NULL;
         }
         Py_DECREF(v);
@@ -366,8 +372,28 @@ module_dealloc(PyModuleObject *m)
 static PyObject *
 module_repr(PyModuleObject *m)
 {
-    PyObject *name, *filename, *repr;
+    PyObject *name, *filename, *repr, *loader = NULL;
 
+    /* See if the module has an __loader__.  If it does, give the loader the
+     * first shot at producing a repr for the module.
+     */
+    if (m->md_dict != NULL) {
+        loader = PyDict_GetItemString(m->md_dict, "__loader__");
+    }
+    if (loader != NULL) {
+        repr = PyObject_CallMethod(loader, "module_repr", "(O)",
+                                   (PyObject *)m, NULL);
+        if (repr == NULL) {
+            PyErr_Clear();
+        }
+        else {
+            return repr;
+        }
+    }
+    /* __loader__.module_repr(m) did not provide us with a repr.  Next, see if
+     * the module has an __file__.  If it doesn't then use repr(__loader__) if
+     * it exists, otherwise, just use module.__name__.
+     */
     name = PyModule_GetNameObject((PyObject *)m);
     if (name == NULL) {
         PyErr_Clear();
@@ -378,8 +404,17 @@ module_repr(PyModuleObject *m)
     filename = PyModule_GetFilenameObject((PyObject *)m);
     if (filename == NULL) {
         PyErr_Clear();
-        repr = PyUnicode_FromFormat("<module %R (built-in)>", name);
+        /* There's no m.__file__, so if there was an __loader__, use that in
+         * the repr, otherwise, the only thing you can use is m.__name__
+         */
+        if (loader == NULL) {
+            repr = PyUnicode_FromFormat("<module %R>", name);
+        }
+        else {
+            repr = PyUnicode_FromFormat("<module %R (%R)>", name, loader);
+        }
     }
+    /* Finally, use m.__file__ */
     else {
         repr = PyUnicode_FromFormat("<module %R from %R>", name, filename);
         Py_DECREF(filename);

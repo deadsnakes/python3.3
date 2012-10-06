@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate Python documentation in HTML or text for interactive use.
 
-In the Python interpreter, do "from pydoc import help" to provide online
+In the Python interpreter, do "from pydoc import help" to provide
 help.  Calling help(thing) on a Python object documents the object.
 
 Or, at the shell command line outside of Python:
@@ -57,6 +57,7 @@ Richard Chamberlain, for the first implementation of textdoc.
 
 import builtins
 import imp
+import importlib.machinery
 import inspect
 import io
 import os
@@ -166,11 +167,11 @@ def _split_list(s, predicate):
 
 def visiblename(name, all=None, obj=None):
     """Decide whether to show documentation on a variable."""
-    # Certain special names are redundant.
-    if name in {'__builtins__', '__doc__', '__file__', '__path__',
-                     '__module__', '__name__', '__slots__', '__package__',
-                     '__cached__', '__author__', '__credits__', '__date__',
-                     '__version__', '__qualname__'}:
+    # Certain special names are redundant or internal.
+    if name in {'__author__', '__builtins__', '__cached__', '__credits__',
+                '__date__', '__doc__', '__file__', '__initializing__',
+                '__loader__', '__module__', '__name__', '__package__',
+                '__path__', '__qualname__', '__slots__', '__version__'}:
         return 0
     # Private names are hidden, but special names are displayed.
     if name.startswith('__') and name.endswith('__'): return 1
@@ -224,20 +225,34 @@ def synopsis(filename, cache={}):
     mtime = os.stat(filename).st_mtime
     lastupdate, result = cache.get(filename, (None, None))
     if lastupdate is None or lastupdate < mtime:
-        info = inspect.getmoduleinfo(filename)
         try:
             file = tokenize.open(filename)
         except IOError:
             # module can't be opened, so skip it
             return None
-        if info and 'b' in info[2]: # binary modules have to be imported
-            try: module = imp.load_module('__temp__', file, filename, info[1:])
-            except: return None
+        binary_suffixes = importlib.machinery.BYTECODE_SUFFIXES[:]
+        binary_suffixes += importlib.machinery.EXTENSION_SUFFIXES[:]
+        if any(filename.endswith(x) for x in binary_suffixes):
+            # binary modules have to be imported
+            file.close()
+            if any(filename.endswith(x) for x in
+                    importlib.machinery.BYTECODE_SUFFIXES):
+                loader = importlib.machinery.SourcelessFileLoader('__temp__',
+                                                                  filename)
+            else:
+                loader = importlib.machinery.ExtensionFileLoader('__temp__',
+                                                                 filename)
+            try:
+                module = loader.load_module('__temp__')
+            except:
+                return None
             result = (module.__doc__ or '').splitlines()[0]
             del sys.modules['__temp__']
-        else: # text modules can be directly examined
+        else:
+            # text modules can be directly examined
             result = source_synopsis(file)
             file.close()
+
         cache[filename] = (mtime, result)
     return result
 
@@ -358,7 +373,7 @@ class Doc:
 
         docloc = os.environ.get("PYTHONDOCS", self.PYTHONDOCS)
 
-        basedir = os.path.join(sys.exec_prefix, "lib",
+        basedir = os.path.join(sys.base_exec_prefix, "lib",
                                "python%d.%d" %  sys.version_info[:2])
         if (isinstance(object, type(os)) and
             (object.__name__ in ('errno', 'exceptions', 'gc', 'imp',
@@ -1827,7 +1842,7 @@ has the same effect as typing a particular string at the help> prompt.
 
     def intro(self):
         self.output.write('''
-Welcome to Python %s!  This is the online help utility.
+Welcome to Python %s!  This is the interactive help utility.
 
 If this is your first time using Python, you should definitely check out
 the tutorial on the Internet at http://docs.python.org/%s/tutorial/.
@@ -2018,14 +2033,6 @@ class ModuleScanner:
             if self.quit:
                 break
 
-            # XXX Skipping this file is a workaround for a bug
-            # that causes python to crash with a segfault.
-            # http://bugs.python.org/issue9319
-            #
-            # TODO Remove this once the bug is fixed.
-            if modname in {'test.badsyntax_pep3120', 'badsyntax_pep3120'}:
-                continue
-
             if key is None:
                 callback(None, modname, '')
             else:
@@ -2037,7 +2044,7 @@ class ModuleScanner:
                 if hasattr(loader, 'get_source'):
                     try:
                         source = loader.get_source(modname)
-                    except UnicodeDecodeError:
+                    except Exception:
                         if onerror:
                             onerror(modname)
                         continue

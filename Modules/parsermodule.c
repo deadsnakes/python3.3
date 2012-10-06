@@ -167,6 +167,7 @@ typedef struct {
 
 
 static void parser_free(PyST_Object *st);
+static PyObject* parser_sizeof(PyST_Object *, void *);
 static PyObject* parser_richcompare(PyObject *left, PyObject *right, int op);
 static PyObject* parser_compilest(PyST_Object *, PyObject *, PyObject *);
 static PyObject* parser_isexpr(PyST_Object *, PyObject *, PyObject *);
@@ -187,7 +188,8 @@ static PyMethodDef parser_methods[] = {
         PyDoc_STR("Creates a list-tree representation of this ST.")},
     {"totuple",         (PyCFunction)parser_st2tuple,   PUBLIC_METHOD_TYPE,
         PyDoc_STR("Creates a tuple-tree representation of this ST.")},
-
+    {"__sizeof__",      (PyCFunction)parser_sizeof,     METH_NOARGS,
+        PyDoc_STR("Returns size in memory, in bytes.")},
     {NULL, NULL, 0, NULL}
 };
 
@@ -361,6 +363,15 @@ parser_free(PyST_Object *st)
     PyObject_Del(st);
 }
 
+static PyObject *
+parser_sizeof(PyST_Object *st, void *unused)
+{
+    Py_ssize_t res;
+
+    res = sizeof(PyST_Object) + _PyNode_SizeOf(st->st_node);
+    return PyLong_FromSsize_t(res);
+}
+
 
 /*  parser_st2tuple(PyObject* self, PyObject* args, PyObject* kw)
  *
@@ -371,36 +382,28 @@ parser_free(PyST_Object *st)
 static PyObject*
 parser_st2tuple(PyST_Object *self, PyObject *args, PyObject *kw)
 {
-    PyObject *line_option = 0;
-    PyObject *col_option = 0;
+    int line_info = 0;
+    int col_info = 0;
     PyObject *res = 0;
     int ok;
 
     static char *keywords[] = {"st", "line_info", "col_info", NULL};
 
     if (self == NULL || PyModule_Check(self)) {
-        ok = PyArg_ParseTupleAndKeywords(args, kw, "O!|OO:st2tuple", keywords,
-                                         &PyST_Type, &self, &line_option,
-                                         &col_option);
+        ok = PyArg_ParseTupleAndKeywords(args, kw, "O!|pp:st2tuple", keywords,
+                                         &PyST_Type, &self, &line_info,
+                                         &col_info);
     }
     else
-        ok = PyArg_ParseTupleAndKeywords(args, kw, "|OO:totuple", &keywords[1],
-                                         &line_option, &col_option);
+        ok = PyArg_ParseTupleAndKeywords(args, kw, "|pp:totuple", &keywords[1],
+                                         &line_info, &col_info);
     if (ok != 0) {
-        int lineno = 0;
-        int col_offset = 0;
-        if (line_option != NULL) {
-            lineno = (PyObject_IsTrue(line_option) != 0) ? 1 : 0;
-        }
-        if (col_option != NULL) {
-            col_offset = (PyObject_IsTrue(col_option) != 0) ? 1 : 0;
-        }
         /*
          *  Convert ST into a tuple representation.  Use Guido's function,
          *  since it's known to work already.
          */
         res = node2tuple(((PyST_Object*)self)->st_node,
-                         PyTuple_New, PyTuple_SetItem, lineno, col_offset);
+                         PyTuple_New, PyTuple_SetItem, line_info, col_info);
     }
     return (res);
 }
@@ -415,35 +418,27 @@ parser_st2tuple(PyST_Object *self, PyObject *args, PyObject *kw)
 static PyObject*
 parser_st2list(PyST_Object *self, PyObject *args, PyObject *kw)
 {
-    PyObject *line_option = 0;
-    PyObject *col_option = 0;
+    int line_info = 0;
+    int col_info = 0;
     PyObject *res = 0;
     int ok;
 
     static char *keywords[] = {"st", "line_info", "col_info", NULL};
 
     if (self == NULL || PyModule_Check(self))
-        ok = PyArg_ParseTupleAndKeywords(args, kw, "O!|OO:st2list", keywords,
-                                         &PyST_Type, &self, &line_option,
-                                         &col_option);
+        ok = PyArg_ParseTupleAndKeywords(args, kw, "O!|pp:st2list", keywords,
+                                         &PyST_Type, &self, &line_info,
+                                         &col_info);
     else
-        ok = PyArg_ParseTupleAndKeywords(args, kw, "|OO:tolist", &keywords[1],
-                                         &line_option, &col_option);
+        ok = PyArg_ParseTupleAndKeywords(args, kw, "|pp:tolist", &keywords[1],
+                                         &line_info, &col_info);
     if (ok) {
-        int lineno = 0;
-        int col_offset = 0;
-        if (line_option != 0) {
-            lineno = PyObject_IsTrue(line_option) ? 1 : 0;
-        }
-        if (col_option != NULL) {
-            col_offset = (PyObject_IsTrue(col_option) != 0) ? 1 : 0;
-        }
         /*
          *  Convert ST into a tuple representation.  Use Guido's function,
          *  since it's known to work already.
          */
         res = node2tuple(self->st_node,
-                         PyList_New, PyList_SetItem, lineno, col_offset);
+                         PyList_New, PyList_SetItem, line_info, col_info);
     }
     return (res);
 }
@@ -1611,31 +1606,30 @@ validate_return_stmt(node *tree)
 }
 
 
+/*
+ *  raise_stmt:
+ *
+ *  'raise' [test ['from' test]]
+ */
 static int
 validate_raise_stmt(node *tree)
 {
     int nch = NCH(tree);
     int res = (validate_ntype(tree, raise_stmt)
-               && ((nch == 1) || (nch == 2) || (nch == 4) || (nch == 6)));
+               && ((nch == 1) || (nch == 2) || (nch == 4)));
+
+    if (!res && !PyErr_Occurred())
+        (void) validate_numnodes(tree, 2, "raise");
 
     if (res) {
         res = validate_name(CHILD(tree, 0), "raise");
         if (res && (nch >= 2))
             res = validate_test(CHILD(tree, 1));
-        if (res && nch > 2) {
-            res = (validate_comma(CHILD(tree, 2))
+        if (res && (nch == 4)) {
+            res = (validate_name(CHILD(tree, 2), "from")
                    && validate_test(CHILD(tree, 3)));
-            if (res && (nch > 4))
-                res = (validate_comma(CHILD(tree, 4))
-                       && validate_test(CHILD(tree, 5)));
         }
     }
-    else
-        (void) validate_numnodes(tree, 2, "raise");
-    if (res && (nch == 4))
-        res = (validate_comma(CHILD(tree, 2))
-               && validate_test(CHILD(tree, 3)));
-
     return (res);
 }
 
@@ -2420,16 +2414,12 @@ validate_atom(node *tree)
             break;
           case NAME:
           case NUMBER:
+          case ELLIPSIS:
             res = (nch == 1);
             break;
           case STRING:
             for (pos = 1; res && (pos < nch); ++pos)
                 res = validate_ntype(CHILD(tree, pos), STRING);
-            break;
-          case DOT:
-            res = (nch == 3 &&
-                   validate_ntype(CHILD(tree, 1), DOT) &&
-                   validate_ntype(CHILD(tree, 2), DOT));
             break;
           default:
             res = 0;
@@ -2896,34 +2886,92 @@ validate_exprlist(node *tree)
                                     validate_expr_or_star_expr, "exprlist"));
 }
 
-
+/*
+ *  dictorsetmaker:
+ *
+ *  (test ':' test (comp_for | (',' test ':' test)* [','])) |
+ *  (test (comp_for | (',' test)* [',']))
+ */
 static int
 validate_dictorsetmaker(node *tree)
 {
     int nch = NCH(tree);
-    int res = (validate_ntype(tree, dictorsetmaker)
-               && (nch >= 3)
-               && validate_test(CHILD(tree, 0))
-               && validate_colon(CHILD(tree, 1))
-               && validate_test(CHILD(tree, 2)));
+    int res;
+    int i = 0;
 
-    if (res && ((nch % 4) == 0))
-        res = validate_comma(CHILD(tree, --nch));
-    else if (res)
-        res = ((nch % 4) == 3);
+    res = validate_ntype(tree, dictorsetmaker);
+    if (!res)
+        return 0;
 
-    if (res && (nch > 3)) {
-        int pos = 3;
-        /*  ( ',' test ':' test )*  */
-        while (res && (pos < nch)) {
-            res = (validate_comma(CHILD(tree, pos))
-                   && validate_test(CHILD(tree, pos + 1))
-                   && validate_colon(CHILD(tree, pos + 2))
-                   && validate_test(CHILD(tree, pos + 3)));
-            pos += 4;
+    if (nch - i < 1) {
+        (void) validate_numnodes(tree, 1, "dictorsetmaker");
+        return 0;
+    }
+
+    res = validate_test(CHILD(tree, i++));
+    if (!res)
+        return 0;
+
+    if (nch - i >= 2 && TYPE(CHILD(tree, i)) == COLON) {
+        /* Dictionary display or dictionary comprehension. */
+        res = (validate_colon(CHILD(tree, i++))
+               && validate_test(CHILD(tree, i++)));
+        if (!res)
+            return 0;
+
+        if (nch - i >= 1 && TYPE(CHILD(tree, i)) == comp_for) {
+            /* Dictionary comprehension. */
+            res = validate_comp_for(CHILD(tree, i++));
+            if (!res)
+                return 0;
+        }
+        else {
+            /* Dictionary display. */
+            while (nch - i >= 4) {
+                res = (validate_comma(CHILD(tree, i++))
+                       && validate_test(CHILD(tree, i++))
+                       && validate_colon(CHILD(tree, i++))
+                       && validate_test(CHILD(tree, i++)));
+                if (!res)
+                    return 0;
+            }
+            if (nch - i == 1) {
+                res = validate_comma(CHILD(tree, i++));
+                if (!res)
+                    return 0;
+            }
         }
     }
-    return (res);
+    else {
+        /* Set display or set comprehension. */
+        if (nch - i >= 1 && TYPE(CHILD(tree, i)) == comp_for) {
+            /* Set comprehension. */
+            res = validate_comp_for(CHILD(tree, i++));
+            if (!res)
+                return 0;
+        }
+        else {
+            /* Set display. */
+            while (nch - i >= 2) {
+                res = (validate_comma(CHILD(tree, i++))
+                       && validate_test(CHILD(tree, i++)));
+                if (!res)
+                    return 0;
+            }
+            if (nch - i == 1) {
+                res = validate_comma(CHILD(tree, i++));
+                if (!res)
+                    return 0;
+            }
+        }
+    }
+
+    if (nch - i > 0) {
+        err_string("Illegal trailing nodes for dictorsetmaker.");
+        return 0;
+    }
+
+    return 1;
 }
 
 

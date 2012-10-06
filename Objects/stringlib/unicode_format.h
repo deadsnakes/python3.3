@@ -2,8 +2,6 @@
     unicode_format.h -- implementation of str.format().
 */
 
-#include "accu.h"
-
 /* Defines for more efficiently reallocating the string buffer */
 #define INITIAL_SIZE_INCREMENT 100
 #define SIZE_MULTIPLIER 2
@@ -110,33 +108,6 @@ autonumber_state_error(AutoNumberState state, int field_name_is_empty)
     return 0;
 }
 
-
-/************************************************************************/
-/***********    Output string management functions       ****************/
-/************************************************************************/
-
-/*
-    output_data dumps characters into our output string
-    buffer.
-
-    In some cases, it has to reallocate the string.
-
-    It returns a status:  0 for a failed reallocation,
-    1 for success.
-*/
-static int
-output_data(_PyAccu *acc, PyObject *s, Py_ssize_t start, Py_ssize_t end)
-{
-    PyObject *substring;
-    int r;
-
-    substring = PyUnicode_Substring(s, start, end);
-    if (substring == NULL)
-        return 0;
-    r = _PyAccu_Accumulate(acc, substring);
-    Py_DECREF(substring);
-    return r == 0;
-}
 
 /************************************************************************/
 /***********  Format string parsing -- integers and identifiers *********/
@@ -523,30 +494,31 @@ error:
     appends to the output.
 */
 static int
-render_field(PyObject *fieldobj, SubString *format_spec, _PyAccu *acc)
+render_field(PyObject *fieldobj, SubString *format_spec, _PyUnicodeWriter *writer)
 {
     int ok = 0;
     PyObject *result = NULL;
     PyObject *format_spec_object = NULL;
-    PyObject *(*formatter)(PyObject *, PyObject *, Py_ssize_t, Py_ssize_t) = NULL;
+    int (*formatter) (_PyUnicodeWriter*, PyObject *, PyObject *, Py_ssize_t, Py_ssize_t) = NULL;
+    int err;
 
     /* If we know the type exactly, skip the lookup of __format__ and just
        call the formatter directly. */
     if (PyUnicode_CheckExact(fieldobj))
-        formatter = _PyUnicode_FormatAdvanced;
+        formatter = _PyUnicode_FormatAdvancedWriter;
     else if (PyLong_CheckExact(fieldobj))
-        formatter =_PyLong_FormatAdvanced;
+        formatter = _PyLong_FormatAdvancedWriter;
     else if (PyFloat_CheckExact(fieldobj))
-        formatter = _PyFloat_FormatAdvanced;
-
-    /* XXX: for 2.6, convert format_spec to the appropriate type
-       (unicode, str) */
+        formatter = _PyFloat_FormatAdvancedWriter;
+    else if (PyComplex_CheckExact(fieldobj))
+        formatter = _PyComplex_FormatAdvancedWriter;
 
     if (formatter) {
         /* we know exactly which formatter will be called when __format__ is
            looked up, so call it directly, instead. */
-        result = formatter(fieldobj, format_spec->str,
-                           format_spec->start, format_spec->end);
+        err = formatter(writer, fieldobj, format_spec->str,
+                        format_spec->start, format_spec->end);
+        return (err == 0);
     }
     else {
         /* We need to create an object out of the pointers we have, because
@@ -562,11 +534,13 @@ render_field(PyObject *fieldobj, SubString *format_spec, _PyAccu *acc)
 
         result = PyObject_Format(fieldobj, format_spec_object);
     }
-    if (result == NULL || PyUnicode_READY(result) == -1)
+    if (result == NULL)
         goto done;
 
-    assert(PyUnicode_Check(result));
-    ok = output_data(acc, result, 0, PyUnicode_GET_LENGTH(result));
+    if (_PyUnicodeWriter_WriteStr(writer, result) == -1)
+        goto done;
+    ok = 1;
+
 done:
     Py_XDECREF(format_spec_object);
     Py_XDECREF(result);
@@ -831,7 +805,7 @@ do_conversion(PyObject *obj, Py_UCS4 conversion)
 static int
 output_markup(SubString *field_name, SubString *format_spec,
               int format_spec_needs_expanding, Py_UCS4 conversion,
-              _PyAccu *acc, PyObject *args, PyObject *kwargs,
+              _PyUnicodeWriter *writer, PyObject *args, PyObject *kwargs,
               int recursion_depth, AutoNumber *auto_number)
 {
     PyObject *tmp = NULL;
@@ -872,7 +846,7 @@ output_markup(SubString *field_name, SubString *format_spec,
     else
         actual_format_spec = format_spec;
 
-    if (render_field(fieldobj, actual_format_spec, acc) == 0)
+    if (render_field(fieldobj, actual_format_spec, writer) == 0)
         goto done;
 
     result = 1;
@@ -892,7 +866,7 @@ done:
 */
 static int
 do_markup(SubString *input, PyObject *args, PyObject *kwargs,
-          _PyAccu *acc, int recursion_depth, AutoNumber *auto_number)
+          _PyUnicodeWriter *writer, int recursion_depth, AutoNumber *auto_number)
 {
     MarkupIterator iter;
     int format_spec_needs_expanding;
@@ -901,20 +875,35 @@ do_markup(SubString *input, PyObject *args, PyObject *kwargs,
     SubString literal;
     SubString field_name;
     SubString format_spec;
-    Py_UCS4 conversion;
+    Py_UCS4 conversion, maxchar;
+    Py_ssize_t sublen;
+    int err;
 
     MarkupIterator_init(&iter, input->str, input->start, input->end);
     while ((result = MarkupIterator_next(&iter, &literal, &field_present,
                                          &field_name, &format_spec,
                                          &conversion,
                                          &format_spec_needs_expanding)) == 2) {
-        if (!output_data(acc, literal.str, literal.start, literal.end))
-            return 0;
-        if (field_present)
+        sublen = literal.end - literal.start;
+        if (sublen) {
+            maxchar = _PyUnicode_FindMaxChar(literal.str,
+                                             literal.start, literal.end);
+            err = _PyUnicodeWriter_Prepare(writer, sublen, maxchar);
+            if (err == -1)
+                return 0;
+            _PyUnicode_FastCopyCharacters(writer->buffer, writer->pos,
+                                          literal.str, literal.start, sublen);
+            writer->pos += sublen;
+        }
+
+        if (field_present) {
+            if (iter.str.start == iter.str.end)
+                writer->overallocate = 0;
             if (!output_markup(&field_name, &format_spec,
-                               format_spec_needs_expanding, conversion, acc,
+                               format_spec_needs_expanding, conversion, writer,
                                args, kwargs, recursion_depth, auto_number))
                 return 0;
+        }
     }
     return result;
 }
@@ -928,7 +917,8 @@ static PyObject *
 build_string(SubString *input, PyObject *args, PyObject *kwargs,
              int recursion_depth, AutoNumber *auto_number)
 {
-    _PyAccu acc;
+    _PyUnicodeWriter writer;
+    Py_ssize_t minlen;
 
     /* check the recursion level */
     if (recursion_depth <= 0) {
@@ -937,16 +927,16 @@ build_string(SubString *input, PyObject *args, PyObject *kwargs,
         return NULL;
     }
 
-    if (_PyAccu_Init(&acc))
-        return NULL;
+    minlen = PyUnicode_GET_LENGTH(input->str) + 100;
+    _PyUnicodeWriter_Init(&writer, minlen);
 
-    if (!do_markup(input, args, kwargs, &acc, recursion_depth,
+    if (!do_markup(input, args, kwargs, &writer, recursion_depth,
                    auto_number)) {
-        _PyAccu_Destroy(&acc);
+        _PyUnicodeWriter_Dealloc(&writer);
         return NULL;
     }
 
-    return _PyAccu_Finish(&acc);
+    return _PyUnicodeWriter_Finish(&writer);
 }
 
 /************************************************************************/

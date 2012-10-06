@@ -379,10 +379,12 @@ static int win32_can_symlink = 0;
 #undef STRUCT_STAT
 #if defined(MS_WIN64) || defined(MS_WINDOWS)
 #       define STAT win32_stat
+#       define LSTAT win32_lstat
 #       define FSTAT win32_fstat
 #       define STRUCT_STAT struct win32_stat
 #else
 #       define STAT stat
+#       define LSTAT lstat
 #       define FSTAT fstat
 #       define STRUCT_STAT struct stat
 #endif
@@ -397,6 +399,379 @@ static int win32_can_symlink = 0;
 #include <sys/mkdev.h>
 #endif
 #endif
+
+
+#ifdef MS_WINDOWS
+static int
+win32_warn_bytes_api()
+{
+    return PyErr_WarnEx(PyExc_DeprecationWarning,
+        "The Windows bytes API has been deprecated, "
+        "use Unicode filenames instead",
+        1);
+}
+#endif
+
+
+#ifdef AT_FDCWD
+#define DEFAULT_DIR_FD AT_FDCWD
+#else
+#define DEFAULT_DIR_FD (-100)
+#endif
+
+static int
+_fd_converter(PyObject *o, int *p, int default_value) {
+    long long_value;
+    if (o == Py_None) {
+        *p = default_value;
+        return 1;
+    }
+    if (PyFloat_Check(o)) {
+        PyErr_SetString(PyExc_TypeError,
+                        "integer argument expected, got float" );
+        return 0;
+    }
+    long_value = PyLong_AsLong(o);
+    if (long_value == -1 && PyErr_Occurred())
+        return 0;
+    if (long_value > INT_MAX) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "signed integer is greater than maximum");
+        return 0;
+    }
+    if (long_value < INT_MIN) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "signed integer is less than minimum");
+        return 0;
+    }
+    *p = (int)long_value;
+    return 1;
+}
+
+static int
+dir_fd_converter(PyObject *o, void *p) {
+    return _fd_converter(o, (int *)p, DEFAULT_DIR_FD);
+}
+
+
+
+/*
+ * A PyArg_ParseTuple "converter" function
+ * that handles filesystem paths in the manner
+ * preferred by the os module.
+ *
+ * path_converter accepts (Unicode) strings and their
+ * subclasses, and bytes and their subclasses.  What
+ * it does with the argument depends on the platform:
+ *
+ *   * On Windows, if we get a (Unicode) string we
+ *     extract the wchar_t * and return it; if we get
+ *     bytes we extract the char * and return that.
+ *
+ *   * On all other platforms, strings are encoded
+ *     to bytes using PyUnicode_FSConverter, then we
+ *     extract the char * from the bytes object and
+ *     return that.
+ *
+ * path_converter also optionally accepts signed
+ * integers (representing open file descriptors) instead
+ * of path strings.
+ *
+ * Input fields:
+ *   path.nullable
+ *     If nonzero, the path is permitted to be None.
+ *   path.allow_fd
+ *     If nonzero, the path is permitted to be a file handle
+ *     (a signed int) instead of a string.
+ *   path.function_name
+ *     If non-NULL, path_converter will use that as the name
+ *     of the function in error messages.
+ *     (If path.argument_name is NULL it omits the function name.)
+ *   path.argument_name
+ *     If non-NULL, path_converter will use that as the name
+ *     of the parameter in error messages.
+ *     (If path.argument_name is NULL it uses "path".)
+ *
+ * Output fields:
+ *   path.wide
+ *     Points to the path if it was expressed as Unicode
+ *     and was not encoded.  (Only used on Windows.)
+ *   path.narrow
+ *     Points to the path if it was expressed as bytes,
+ *     or it was Unicode and was encoded to bytes.
+ *   path.fd
+ *     Contains a file descriptor if path.accept_fd was true
+ *     and the caller provided a signed integer instead of any
+ *     sort of string.
+ *
+ *     WARNING: if your "path" parameter is optional, and is
+ *     unspecified, path_converter will never get called.
+ *     So if you set allow_fd, you *MUST* initialize path.fd = -1
+ *     yourself!
+ *   path.length
+ *     The length of the path in characters, if specified as
+ *     a string.
+ *   path.object
+ *     The original object passed in.
+ *   path.cleanup
+ *     For internal use only.  May point to a temporary object.
+ *     (Pay no attention to the man behind the curtain.)
+ *
+ *   At most one of path.wide or path.narrow will be non-NULL.
+ *   If path was None and path.nullable was set,
+ *     or if path was an integer and path.allow_fd was set,
+ *     both path.wide and path.narrow will be NULL
+ *     and path.length will be 0.
+ *
+ *   path_converter takes care to not write to the path_t
+ *   unless it's successful.  However it must reset the
+ *   "cleanup" field each time it's called.
+ *
+ * Use as follows:
+ *      path_t path;
+ *      memset(&path, 0, sizeof(path));
+ *      PyArg_ParseTuple(args, "O&", path_converter, &path);
+ *      // ... use values from path ...
+ *      path_cleanup(&path);
+ *
+ * (Note that if PyArg_Parse fails you don't need to call
+ * path_cleanup().  However it is safe to do so.)
+ */
+typedef struct {
+    char *function_name;
+    char *argument_name;
+    int nullable;
+    int allow_fd;
+    wchar_t *wide;
+    char *narrow;
+    int fd;
+    Py_ssize_t length;
+    PyObject *object;
+    PyObject *cleanup;
+} path_t;
+
+static void
+path_cleanup(path_t *path) {
+    if (path->cleanup) {
+        Py_DECREF(path->cleanup);
+        path->cleanup = NULL;
+    }
+}
+
+static int
+path_converter(PyObject *o, void *p) {
+    path_t *path = (path_t *)p;
+    PyObject *unicode, *bytes;
+    Py_ssize_t length;
+    char *narrow;
+
+#define FORMAT_EXCEPTION(exc, fmt) \
+    PyErr_Format(exc, "%s%s" fmt, \
+        path->function_name ? path->function_name : "", \
+        path->function_name ? ": "                : "", \
+        path->argument_name ? path->argument_name : "path")
+
+    /* Py_CLEANUP_SUPPORTED support */
+    if (o == NULL) {
+        path_cleanup(path);
+        return 1;
+    }
+
+    /* ensure it's always safe to call path_cleanup() */
+    path->cleanup = NULL;
+
+    if (o == Py_None) {
+        if (!path->nullable) {
+            FORMAT_EXCEPTION(PyExc_TypeError,
+                             "can't specify None for %s argument");
+            return 0;
+        }
+        path->wide = NULL;
+        path->narrow = NULL;
+        path->length = 0;
+        path->object = o;
+        path->fd = -1;
+        return 1;
+    }
+
+    unicode = PyUnicode_FromObject(o);
+    if (unicode) {
+#ifdef MS_WINDOWS
+        wchar_t *wide;
+        length = PyUnicode_GET_SIZE(unicode);
+        if (length > 32767) {
+            FORMAT_EXCEPTION(PyExc_ValueError, "%s too long for Windows");
+            Py_DECREF(unicode);
+            return 0;
+        }
+
+        wide = PyUnicode_AsUnicode(unicode);
+        if (!wide) {
+            Py_DECREF(unicode);
+            return 0;
+        }
+
+        path->wide = wide;
+        path->narrow = NULL;
+        path->length = length;
+        path->object = o;
+        path->fd = -1;
+        path->cleanup = unicode;
+        return Py_CLEANUP_SUPPORTED;
+#else
+        int converted = PyUnicode_FSConverter(unicode, &bytes);
+        Py_DECREF(unicode);
+        if (!converted)
+            bytes = NULL;
+#endif
+    }
+    else {
+        PyErr_Clear();
+        bytes = PyBytes_FromObject(o);
+        if (!bytes) {
+            PyErr_Clear();
+            if (path->allow_fd) {
+                int fd;
+                /*
+                 * note: _fd_converter always permits None.
+                 * but we've already done our None check.
+                 * so o cannot be None at this point.
+                 */
+                int result = _fd_converter(o, &fd, -1);
+                if (result) {
+                    path->wide = NULL;
+                    path->narrow = NULL;
+                    path->length = 0;
+                    path->object = o;
+                    path->fd = fd;
+                    return result;
+                }
+            }
+        }
+    }
+
+    if (!bytes) {
+        if (!PyErr_Occurred())
+            FORMAT_EXCEPTION(PyExc_TypeError, "illegal type for %s parameter");
+        return 0;
+    }
+
+#ifdef MS_WINDOWS
+    if (win32_warn_bytes_api()) {
+        Py_DECREF(bytes);
+        return 0;
+    }
+#endif
+
+    length = PyBytes_GET_SIZE(bytes);
+#ifdef MS_WINDOWS
+    if (length > MAX_PATH) {
+        FORMAT_EXCEPTION(PyExc_ValueError, "%s too long for Windows");
+        Py_DECREF(bytes);
+        return 0;
+    }
+#endif
+
+    narrow = PyBytes_AS_STRING(bytes);
+    if (length != strlen(narrow)) {
+        FORMAT_EXCEPTION(PyExc_ValueError, "embedded NUL character in %s");
+        Py_DECREF(bytes);
+        return 0;
+    }
+
+    path->wide = NULL;
+    path->narrow = narrow;
+    path->length = length;
+    path->object = o;
+    path->fd = -1;
+    path->cleanup = bytes;
+    return Py_CLEANUP_SUPPORTED;
+}
+
+static void
+argument_unavailable_error(char *function_name, char *argument_name) {
+    PyErr_Format(PyExc_NotImplementedError,
+        "%s%s%s unavailable on this platform",
+        (function_name != NULL) ? function_name : "",
+        (function_name != NULL) ? ": ": "",
+        argument_name);
+}
+
+static int
+dir_fd_unavailable(PyObject *o, void *p) {
+    int *dir_fd = (int *)p;
+    int return_value = _fd_converter(o, dir_fd, DEFAULT_DIR_FD);
+    if (!return_value)
+        return 0;
+    if (*dir_fd == DEFAULT_DIR_FD)
+        return 1;
+    argument_unavailable_error(NULL, "dir_fd");
+    return 0;
+}
+
+static int
+fd_specified(char *function_name, int fd) {
+    if (fd == -1)
+        return 0;
+
+    argument_unavailable_error(function_name, "fd");
+    return 1;
+}
+
+static int
+follow_symlinks_specified(char *function_name, int follow_symlinks) {
+    if (follow_symlinks)
+        return 0;
+
+    argument_unavailable_error(function_name, "follow_symlinks");
+    return 1;
+}
+
+static int
+path_and_dir_fd_invalid(char *function_name, path_t *path, int dir_fd) {
+    if (!path->narrow && !path->wide && (dir_fd != DEFAULT_DIR_FD)) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: can't specify dir_fd without matching path",
+                     function_name);
+        return 1;
+    }
+    return 0;
+}
+
+static int
+dir_fd_and_fd_invalid(char *function_name, int dir_fd, int fd) {
+    if ((dir_fd != DEFAULT_DIR_FD) && (fd != -1)) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: can't specify both dir_fd and fd",
+                     function_name);
+        return 1;
+    }
+    return 0;
+}
+
+static int
+fd_and_follow_symlinks_invalid(char *function_name, int fd,
+                               int follow_symlinks) {
+    if ((fd > 0) && (!follow_symlinks)) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: cannot use fd and follow_symlinks together",
+                     function_name);
+        return 1;
+    }
+    return 0;
+}
+
+static int
+dir_fd_and_follow_symlinks_invalid(char *function_name, int dir_fd,
+                                   int follow_symlinks) {
+    if ((dir_fd != DEFAULT_DIR_FD) && (!follow_symlinks)) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: cannot use dir_fd and follow_symlinks together",
+                     function_name);
+        return 1;
+    }
+    return 0;
+}
 
 /* A helper used by a number of POSIX-only functions */
 #ifndef MS_WINDOWS
@@ -566,33 +941,6 @@ win32_get_reparse_tag(HANDLE reparse_point_handle, ULONG *reparse_tag)
     return TRUE;
 }
 
-static int
-win32_warn_bytes_api()
-{
-    return PyErr_WarnEx(PyExc_DeprecationWarning,
-        "The Windows bytes API has been deprecated, "
-        "use Unicode filenames instead",
-        1);
-}
-
-static PyObject*
-win32_decode_filename(PyObject *obj)
-{
-    PyObject *unicode;
-    if (PyUnicode_Check(obj)) {
-        if (PyUnicode_READY(obj))
-            return NULL;
-        Py_INCREF(obj);
-        return obj;
-    }
-    if (!PyUnicode_FSDecoder(obj, &unicode))
-        return NULL;
-    if (win32_warn_bytes_api()) {
-        Py_DECREF(unicode);
-        return NULL;
-    }
-    return unicode;
-}
 #endif /* MS_WINDOWS */
 
 /* Return a dictionary corresponding to the POSIX environment table */
@@ -774,6 +1122,32 @@ win32_error_object(char* function, PyObject* filename)
 
 #endif /* MS_WINDOWS */
 
+/*
+ * Some functions return Win32 errors, others only ever use posix_error
+ * (this is for backwards compatibility with exceptions)
+ */
+static PyObject *
+path_posix_error(char *function_name, path_t *path)
+{
+    if (path->narrow)
+        return posix_error_with_filename(path->narrow);
+    return posix_error();
+}
+
+static PyObject *
+path_error(char *function_name, path_t *path)
+{
+#ifdef MS_WINDOWS
+    if (path->narrow)
+        return win32_error(function_name, path->narrow);
+    if (path->wide)
+        return win32_error_unicode(function_name, path->wide);
+    return win32_error(function_name, NULL);
+#else
+    return path_posix_error(function_name, path);
+#endif
+}
+
 #if defined(PYOS_OS2)
 /**********************************************************************
  *         Helper Function to Trim and Format OS/2 Messages
@@ -892,32 +1266,6 @@ posix_1str(PyObject *args, char *format, int (*func)(const char*))
     return Py_None;
 }
 
-static PyObject *
-posix_2str(PyObject *args,
-           char *format,
-           int (*func)(const char *, const char *))
-{
-    PyObject *opath1 = NULL, *opath2 = NULL;
-    char *path1, *path2;
-    int res;
-    if (!PyArg_ParseTuple(args, format,
-                          PyUnicode_FSConverter, &opath1,
-                          PyUnicode_FSConverter, &opath2)) {
-        return NULL;
-    }
-    path1 = PyBytes_AsString(opath1);
-    path2 = PyBytes_AsString(opath2);
-    Py_BEGIN_ALLOW_THREADS
-    res = (*func)(path1, path2);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath1);
-    Py_DECREF(opath2);
-    if (res != 0)
-        /* XXX how to report both path1 and path2??? */
-        return posix_error();
-    Py_INCREF(Py_None);
-    return Py_None;
-}
 
 #ifdef MS_WINDOWS
 static PyObject*
@@ -1481,7 +1829,10 @@ win32_fstat(int file_number, struct win32_stat *result)
     HANDLE h;
     int type;
 
-    h = (HANDLE)_get_osfhandle(file_number);
+    if (!_PyVerify_fd(file_number))
+        h = INVALID_HANDLE_VALUE;
+    else
+        h = (HANDLE)_get_osfhandle(file_number);
 
     /* Protocol violation: we explicitly clear errno, instead of
        setting it to a POSIX error. Callers should use GetLastError. */
@@ -1525,7 +1876,7 @@ win32_fstat(int file_number, struct win32_stat *result)
 #endif /* MS_WINDOWS */
 
 PyDoc_STRVAR(stat_result__doc__,
-"stat_result: Result from stat or lstat.\n\n\
+"stat_result: Result from stat, fstat, or lstat.\n\n\
 This object may be accessed either as a tuple of\n\
   (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime)\n\
 or via the attributes st_mode, st_ino, st_dev, st_nlink, st_uid, and so on.\n\
@@ -1721,6 +2072,10 @@ stat_float_times(PyObject* self, PyObject *args)
     int newval = -1;
     if (!PyArg_ParseTuple(args, "|i:stat_float_times", &newval))
         return NULL;
+    if (PyErr_WarnEx(PyExc_DeprecationWarning,
+                     "stat_float_times() is deprecated",
+                     1))
+        return NULL;
     if (newval == -1)
         /* Return old value */
         return PyBool_FromLong(_stat_float_times);
@@ -1875,132 +2230,238 @@ _pystat_fromstructstat(STRUCT_STAT *st)
     return v;
 }
 
-static PyObject *
-posix_do_stat(PyObject *self, PyObject *args,
-              char *format,
-#ifdef __VMS
-              int (*statfunc)(const char *, STRUCT_STAT *, ...),
-#else
-              int (*statfunc)(const char *, STRUCT_STAT *),
-#endif
-              char *wformat,
-              int (*wstatfunc)(const wchar_t *, STRUCT_STAT *))
-{
-    STRUCT_STAT st;
-    PyObject *opath;
-    char *path;
-    int res;
-    PyObject *result;
-
-#ifdef MS_WINDOWS
-    PyObject *po;
-    if (PyArg_ParseTuple(args, wformat, &po)) {
-        wchar_t *wpath = PyUnicode_AsUnicode(po);
-        if (wpath == NULL)
-            return NULL;
-
-        Py_BEGIN_ALLOW_THREADS
-        res = wstatfunc(wpath, &st);
-        Py_END_ALLOW_THREADS
-
-        if (res != 0)
-            return win32_error_object("stat", po);
-        return _pystat_fromstructstat(&st);
-    }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
-#endif
-
-    if (!PyArg_ParseTuple(args, format,
-                          PyUnicode_FSConverter, &opath))
-        return NULL;
-#ifdef MS_WINDOWS
-    if (win32_warn_bytes_api()) {
-        Py_DECREF(opath);
-        return NULL;
-    }
-#endif
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = (*statfunc)(path, &st);
-    Py_END_ALLOW_THREADS
-
-    if (res != 0) {
-#ifdef MS_WINDOWS
-        result = win32_error("stat", path);
-#else
-        result = posix_error_with_filename(path);
-#endif
-    }
-    else
-        result = _pystat_fromstructstat(&st);
-
-    Py_DECREF(opath);
-    return result;
-}
-
 /* POSIX methods */
 
-PyDoc_STRVAR(posix_access__doc__,
-"access(path, mode) -> True if granted, False otherwise\n\n\
-Use the real uid/gid to test for access to a path.  Note that most\n\
-operations will use the effective uid/gid, therefore this routine can\n\
-be used in a suid/sgid environment to test if the invoking user has the\n\
-specified access to the path.  The mode argument can be F_OK to test\n\
-existence, or the inclusive-OR of R_OK, W_OK, and X_OK.");
 
 static PyObject *
-posix_access(PyObject *self, PyObject *args)
+posix_do_stat(char *function_name, path_t *path,
+              int dir_fd, int follow_symlinks)
 {
-    const char *path;
+    STRUCT_STAT st;
+    int result;
+
+#if !defined(MS_WINDOWS) && !defined(HAVE_FSTATAT) && !defined(HAVE_LSTAT)
+    if (follow_symlinks_specified(function_name, follow_symlinks))
+        return NULL;
+#endif
+
+    if (path_and_dir_fd_invalid("stat", path, dir_fd) ||
+        dir_fd_and_fd_invalid("stat", dir_fd, path->fd) ||
+        fd_and_follow_symlinks_invalid("stat", path->fd, follow_symlinks))
+        return NULL;
+
+    Py_BEGIN_ALLOW_THREADS
+    if (path->fd != -1)
+        result = FSTAT(path->fd, &st);
+    else
+#ifdef MS_WINDOWS
+    if (path->wide) {
+        if (follow_symlinks)
+            result = win32_stat_w(path->wide, &st);
+        else
+            result = win32_lstat_w(path->wide, &st);
+    }
+    else
+#endif
+#if defined(HAVE_LSTAT) || defined(MS_WINDOWS)
+    if ((!follow_symlinks) && (dir_fd == DEFAULT_DIR_FD))
+        result = LSTAT(path->narrow, &st);
+    else
+#endif
+#ifdef HAVE_FSTATAT
+    if ((dir_fd != DEFAULT_DIR_FD) || !follow_symlinks)
+        result = fstatat(dir_fd, path->narrow, &st,
+                         follow_symlinks ? 0 : AT_SYMLINK_NOFOLLOW);
+    else
+#endif
+        result = STAT(path->narrow, &st);
+    Py_END_ALLOW_THREADS
+
+    if (result != 0)
+        return path_error("stat", path);
+
+    return _pystat_fromstructstat(&st);
+}
+
+PyDoc_STRVAR(posix_stat__doc__,
+"stat(path, *, dir_fd=None, follow_symlinks=True) -> stat result\n\n\
+Perform a stat system call on the given path.\n\
+\n\
+path may be specified as either a string or as an open file descriptor.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+  dir_fd may not be supported on your platform; if it is unavailable, using\n\
+  it will raise a NotImplementedError.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, stat will examine the symbolic link itself instead of the file the\n\
+  link points to.\n\
+It is an error to use dir_fd or follow_symlinks when specifying path as\n\
+  an open file descriptor.");
+
+static PyObject *
+posix_stat(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *keywords[] = {"path", "dir_fd", "follow_symlinks", NULL};
+    path_t path;
+    int dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 1;
+    PyObject *return_value;
+
+    memset(&path, 0, sizeof(path));
+    path.allow_fd = 1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|$O&p:stat", keywords,
+        path_converter, &path,
+#ifdef HAVE_FSTATAT
+        dir_fd_converter, &dir_fd,
+#else
+        dir_fd_unavailable, &dir_fd,
+#endif
+        &follow_symlinks))
+        return NULL;
+    return_value = posix_do_stat("stat", &path, dir_fd, follow_symlinks);
+    path_cleanup(&path);
+    return return_value;
+}
+
+PyDoc_STRVAR(posix_lstat__doc__,
+"lstat(path, *, dir_fd=None) -> stat result\n\n\
+Like stat(), but do not follow symbolic links.\n\
+Equivalent to stat(path, follow_symlinks=False).");
+
+static PyObject *
+posix_lstat(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *keywords[] = {"path", "dir_fd", NULL};
+    path_t path;
+    int dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 0;
+    PyObject *return_value;
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|$O&:lstat", keywords,
+        path_converter, &path,
+#ifdef HAVE_FSTATAT
+        dir_fd_converter, &dir_fd
+#else
+        dir_fd_unavailable, &dir_fd
+#endif
+        ))
+        return NULL;
+    return_value = posix_do_stat("stat", &path, dir_fd, follow_symlinks);
+    path_cleanup(&path);
+    return return_value;
+}
+
+PyDoc_STRVAR(posix_access__doc__,
+"access(path, mode, *, dir_fd=None, effective_ids=False,\
+ follow_symlinks=True)\n\n\
+Use the real uid/gid to test for access to a path.  Returns True if granted,\n\
+False otherwise.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+If effective_ids is True, access will use the effective uid/gid instead of\n\
+  the real uid/gid.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, access will examine the symbolic link itself instead of the file the\n\
+  link points to.\n\
+dir_fd, effective_ids, and follow_symlinks may not be implemented\n\
+  on your platform.  If they are unavailable, using them will raise a\n\
+  NotImplementedError.\n\
+\n\
+Note that most operations will use the effective uid/gid, therefore this\n\
+  routine can be used in a suid/sgid environment to test if the invoking user\n\
+  has the specified access to the path.\n\
+The mode argument can be F_OK to test existence, or the inclusive-OR\n\
+  of R_OK, W_OK, and X_OK.");
+
+static PyObject *
+posix_access(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    static char *keywords[] = {"path", "mode", "dir_fd", "effective_ids",
+                                "follow_symlinks", NULL};
+    path_t path;
     int mode;
+    int dir_fd = DEFAULT_DIR_FD;
+    int effective_ids = 0;
+    int follow_symlinks = 1;
+    PyObject *return_value = NULL;
 
 #ifdef MS_WINDOWS
     DWORD attr;
-    PyObject *po;
-    if (PyArg_ParseTuple(args, "Ui:access", &po, &mode)) {
-        wchar_t* wpath = PyUnicode_AsUnicode(po);
-        if (wpath == NULL)
-            return NULL;
-        Py_BEGIN_ALLOW_THREADS
-        attr = GetFileAttributesW(wpath);
-        Py_END_ALLOW_THREADS
-        goto finish;
-    }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
-    if (!PyArg_ParseTuple(args, "yi:access", &path, &mode))
-        return NULL;
-    if (win32_warn_bytes_api())
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS
-    attr = GetFileAttributesA(path);
-    Py_END_ALLOW_THREADS
-finish:
-    if (attr == 0xFFFFFFFF)
-        /* File does not exist, or cannot read attributes */
-        return PyBool_FromLong(0);
-    /* Access is possible if either write access wasn't requested, or
-       the file isn't read-only, or if it's a directory, as there are
-       no read-only directories on Windows. */
-    return PyBool_FromLong(!(mode & 2)
-                           || !(attr & FILE_ATTRIBUTE_READONLY)
-                           || (attr & FILE_ATTRIBUTE_DIRECTORY));
 #else
-    PyObject *opath;
-    int res;
-    if (!PyArg_ParseTuple(args, "O&i:access",
-                          PyUnicode_FSConverter, &opath, &mode))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = access(path, mode);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    return PyBool_FromLong(res == 0);
+    int result;
 #endif
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&i|$O&pp:access", keywords,
+        path_converter, &path, &mode,
+#ifdef HAVE_FACCESSAT
+        dir_fd_converter, &dir_fd,
+#else
+        dir_fd_unavailable, &dir_fd,
+#endif
+        &effective_ids, &follow_symlinks))
+        return NULL;
+
+#ifndef HAVE_FACCESSAT
+    if (follow_symlinks_specified("access", follow_symlinks))
+        goto exit;
+
+    if (effective_ids) {
+        argument_unavailable_error("access", "effective_ids");
+        goto exit;
+    }
+#endif
+
+#ifdef MS_WINDOWS
+    Py_BEGIN_ALLOW_THREADS
+    if (path.wide != NULL)
+        attr = GetFileAttributesW(path.wide);
+    else
+        attr = GetFileAttributesA(path.narrow);
+    Py_END_ALLOW_THREADS
+
+    /*
+     * Access is possible if
+     *   * we didn't get a -1, and
+     *     * write access wasn't requested,
+     *     * or the file isn't read-only,
+     *     * or it's a directory.
+     * (Directories cannot be read-only on Windows.)
+    */
+    return_value = PyBool_FromLong(
+        (attr != 0xFFFFFFFF) &&
+            (!(mode & 2) ||
+            !(attr & FILE_ATTRIBUTE_READONLY) ||
+            (attr & FILE_ATTRIBUTE_DIRECTORY)));
+#else
+
+    Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_FACCESSAT
+    if ((dir_fd != DEFAULT_DIR_FD) ||
+        effective_ids ||
+        !follow_symlinks) {
+        int flags = 0;
+        if (!follow_symlinks)
+            flags |= AT_SYMLINK_NOFOLLOW;
+        if (effective_ids)
+            flags |= AT_EACCESS;
+        result = faccessat(dir_fd, path.narrow, mode, flags);
+    }
+    else
+#endif
+        result = access(path.narrow, mode);
+    Py_END_ALLOW_THREADS
+    return_value = PyBool_FromLong(!result);
+#endif
+
+#ifndef HAVE_FACCESSAT
+exit:
+#endif
+    path_cleanup(&path);
+    return return_value;
 }
 
 #ifndef F_OK
@@ -2071,27 +2532,66 @@ posix_ctermid(PyObject *self, PyObject *noargs)
 
 PyDoc_STRVAR(posix_chdir__doc__,
 "chdir(path)\n\n\
-Change the current working directory to the specified path.");
+Change the current working directory to the specified path.\n\
+\n\
+path may always be specified as a string.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.");
 
 static PyObject *
-posix_chdir(PyObject *self, PyObject *args)
+posix_chdir(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-#ifdef MS_WINDOWS
-    return win32_1str(args, "chdir", "y:chdir", win32_chdir, "U:chdir", win32_wchdir);
-#elif defined(PYOS_OS2) && defined(PYCC_GCC)
-    return posix_1str(args, "O&:chdir", _chdir2);
-#elif defined(__VMS)
-    return posix_1str(args, "O&:chdir", (int (*)(const char *))chdir);
-#else
-    return posix_1str(args, "O&:chdir", chdir);
+    path_t path;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", NULL};
+
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FCHDIR
+    path.allow_fd = 1;
 #endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&:chdir", keywords,
+        path_converter, &path
+        ))
+        return NULL;
+
+    Py_BEGIN_ALLOW_THREADS
+#ifdef MS_WINDOWS
+    if (path.wide)
+        result = win32_wchdir(path.wide);
+    else
+        result = win32_chdir(path.narrow);
+	result = !result; /* on unix, success = 0, on windows, success = !0 */
+#elif defined(PYOS_OS2) && defined(PYCC_GCC)
+    result = _chdir2(path.narrow);
+#else
+#ifdef HAVE_FCHDIR
+    if (path.fd != -1)
+        result = fchdir(path.fd);
+    else
+#endif
+        result = chdir(path.narrow);
+#endif
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_error("chdir", &path);
+        goto exit;
+    }
+
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 
 #ifdef HAVE_FCHDIR
 PyDoc_STRVAR(posix_fchdir__doc__,
-"fchdir(fildes)\n\n\
-Change to the directory of the given file descriptor.  fildes must be\n\
-opened on a directory, not a file.");
+"fchdir(fd)\n\n\
+Change to the directory of the given file descriptor.  fd must be\n\
+opened on a directory, not a file.  Equivalent to os.chdir(fd).");
 
 static PyObject *
 posix_fchdir(PyObject *self, PyObject *fdobj)
@@ -2102,87 +2602,155 @@ posix_fchdir(PyObject *self, PyObject *fdobj)
 
 
 PyDoc_STRVAR(posix_chmod__doc__,
-"chmod(path, mode)\n\n\
-Change the access permissions of a file.");
+"chmod(path, mode, *, dir_fd=None, follow_symlinks=True)\n\n\
+Change the access permissions of a file.\n\
+\n\
+path may always be specified as a string.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, chmod will modify the symbolic link itself instead of the file the\n\
+  link points to.\n\
+It is an error to use dir_fd or follow_symlinks when specifying path as\n\
+  an open file descriptor.\n\
+dir_fd and follow_symlinks may not be implemented on your platform.\n\
+  If they are unavailable, using them will raise a NotImplementedError.");
 
 static PyObject *
-posix_chmod(PyObject *self, PyObject *args)
+posix_chmod(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath = NULL;
-    const char *path = NULL;
-    int i;
-    int res;
+    path_t path;
+    int mode;
+    int dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 1;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "mode", "dir_fd",
+                               "follow_symlinks", NULL};
+
 #ifdef MS_WINDOWS
     DWORD attr;
-    PyObject *po;
-    if (PyArg_ParseTuple(args, "Ui|:chmod", &po, &i)) {
-        wchar_t *wpath = PyUnicode_AsUnicode(po);
-        if (wpath == NULL)
-            return NULL;
-        Py_BEGIN_ALLOW_THREADS
-        attr = GetFileAttributesW(wpath);
-        if (attr != 0xFFFFFFFF) {
-            if (i & _S_IWRITE)
-                attr &= ~FILE_ATTRIBUTE_READONLY;
-            else
-                attr |= FILE_ATTRIBUTE_READONLY;
-            res = SetFileAttributesW(wpath, attr);
-        }
-        else
-            res = 0;
-        Py_END_ALLOW_THREADS
-        if (!res)
-            return win32_error_object("chmod", po);
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
+#endif
 
-    if (!PyArg_ParseTuple(args, "yi:chmod", &path, &i))
+#ifdef HAVE_FCHMODAT
+    int fchmodat_nofollow_unsupported = 0;
+#endif
+
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FCHMOD
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&i|$O&p:chmod", keywords,
+        path_converter, &path,
+        &mode,
+#ifdef HAVE_FCHMODAT
+        dir_fd_converter, &dir_fd,
+#else
+        dir_fd_unavailable, &dir_fd,
+#endif
+        &follow_symlinks))
         return NULL;
-    if (win32_warn_bytes_api())
-        return NULL;
+
+#if !(defined(HAVE_FCHMODAT) || defined(HAVE_LCHMOD))
+    if (follow_symlinks_specified("chmod", follow_symlinks))
+        goto exit;
+#endif
+
+#ifdef MS_WINDOWS
     Py_BEGIN_ALLOW_THREADS
-    attr = GetFileAttributesA(path);
-    if (attr != 0xFFFFFFFF) {
-        if (i & _S_IWRITE)
+    if (path.wide)
+        attr = GetFileAttributesW(path.wide);
+    else
+        attr = GetFileAttributesA(path.narrow);
+    if (attr == 0xFFFFFFFF)
+        result = 0;
+    else {
+        if (mode & _S_IWRITE)
             attr &= ~FILE_ATTRIBUTE_READONLY;
         else
             attr |= FILE_ATTRIBUTE_READONLY;
-        res = SetFileAttributesA(path, attr);
+        if (path.wide)
+            result = SetFileAttributesW(path.wide, attr);
+        else
+            result = SetFileAttributesA(path.narrow, attr);
+    }
+    Py_END_ALLOW_THREADS
+
+    if (!result) {
+        return_value = win32_error_object("chmod", path.object);
+        goto exit;
+    }
+#else /* MS_WINDOWS */
+    Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_FCHMOD
+    if (path.fd != -1)
+        result = fchmod(path.fd, mode);
+    else
+#endif
+#ifdef HAVE_LCHMOD
+    if ((!follow_symlinks) && (dir_fd == DEFAULT_DIR_FD))
+        result = lchmod(path.narrow, mode);
+    else
+#endif
+#ifdef HAVE_FCHMODAT
+    if ((dir_fd != DEFAULT_DIR_FD) || !follow_symlinks) {
+        /*
+         * fchmodat() doesn't currently support AT_SYMLINK_NOFOLLOW!
+         * The documentation specifically shows how to use it,
+         * and then says it isn't implemented yet.
+         * (true on linux with glibc 2.15, and openindiana 3.x)
+         *
+         * Once it is supported, os.chmod will automatically
+         * support dir_fd and follow_symlinks=False.  (Hopefully.)
+         * Until then, we need to be careful what exception we raise.
+         */
+        result = fchmodat(dir_fd, path.narrow, mode,
+                          follow_symlinks ? 0 : AT_SYMLINK_NOFOLLOW);
+        /*
+         * But wait!  We can't throw the exception without allowing threads,
+         * and we can't do that in this nested scope.  (Macro trickery, sigh.)
+         */
+        fchmodat_nofollow_unsupported =
+                         result &&
+                         ((errno == ENOTSUP) || (errno == EOPNOTSUPP)) &&
+                         !follow_symlinks;
     }
     else
-        res = 0;
-    Py_END_ALLOW_THREADS
-    if (!res) {
-        win32_error("chmod", path);
-        return NULL;
-    }
-    Py_INCREF(Py_None);
-    return Py_None;
-#else /* MS_WINDOWS */
-    if (!PyArg_ParseTuple(args, "O&i:chmod", PyUnicode_FSConverter,
-                          &opath, &i))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = chmod(path, i);
-    Py_END_ALLOW_THREADS
-    if (res < 0)
-        return posix_error_with_allocated_filename(opath);
-    Py_DECREF(opath);
-    Py_INCREF(Py_None);
-    return Py_None;
 #endif
+        result = chmod(path.narrow, mode);
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+#ifdef HAVE_FCHMODAT
+        if (fchmodat_nofollow_unsupported) {
+            if (dir_fd != DEFAULT_DIR_FD)
+                dir_fd_and_follow_symlinks_invalid("chmod",
+                                                   dir_fd, follow_symlinks);
+            else
+                follow_symlinks_specified("chmod", follow_symlinks);
+        }
+        else
+#endif
+            return_value = path_error("chmod", &path);
+        goto exit;
+    }
+#endif
+
+    Py_INCREF(Py_None);
+    return_value = Py_None;
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
+
 
 #ifdef HAVE_FCHMOD
 PyDoc_STRVAR(posix_fchmod__doc__,
 "fchmod(fd, mode)\n\n\
 Change the access permissions of the file given by file\n\
-descriptor fd.");
+descriptor fd.  Equivalent to os.chmod(fd, mode).");
 
 static PyObject *
 posix_fchmod(PyObject *self, PyObject *args)
@@ -2203,7 +2771,8 @@ posix_fchmod(PyObject *self, PyObject *args)
 PyDoc_STRVAR(posix_lchmod__doc__,
 "lchmod(path, mode)\n\n\
 Change the access permissions of a file. If path is a symlink, this\n\
-affects the link itself rather than the target.");
+affects the link itself rather than the target.\n\
+Equivalent to chmod(path, mode, follow_symlinks=False).");
 
 static PyObject *
 posix_lchmod(PyObject *self, PyObject *args)
@@ -2229,28 +2798,56 @@ posix_lchmod(PyObject *self, PyObject *args)
 
 #ifdef HAVE_CHFLAGS
 PyDoc_STRVAR(posix_chflags__doc__,
-"chflags(path, flags)\n\n\
-Set file flags.");
+"chflags(path, flags, *, follow_symlinks=True)\n\n\
+Set file flags.\n\
+\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, chflags will change flags on the symbolic link itself instead of the\n\
+  file the link points to.\n\
+follow_symlinks may not be implemented on your platform.  If it is\n\
+unavailable, using it will raise a NotImplementedError.");
 
 static PyObject *
-posix_chflags(PyObject *self, PyObject *args)
+posix_chflags(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    char *path;
+    path_t path;
     unsigned long flags;
-    int res;
-    if (!PyArg_ParseTuple(args, "O&k:chflags",
-                          PyUnicode_FSConverter, &opath, &flags))
+    int follow_symlinks = 1;
+    int result;
+    PyObject *return_value;
+    static char *keywords[] = {"path", "flags", "follow_symlinks", NULL};
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&k|$i:chflags", keywords,
+                          path_converter, &path,
+                          &flags, &follow_symlinks))
         return NULL;
-    path = PyBytes_AsString(opath);
+
+#ifndef HAVE_LCHFLAGS
+    if (follow_symlinks_specified("chflags", follow_symlinks))
+        goto exit;
+#endif
+
     Py_BEGIN_ALLOW_THREADS
-    res = chflags(path, flags);
+#ifdef HAVE_LCHFLAGS
+    if (!follow_symlinks)
+        result = lchflags(path.narrow, flags);
+    else
+#endif
+        result = chflags(path.narrow, flags);
     Py_END_ALLOW_THREADS
-    if (res < 0)
-        return posix_error_with_allocated_filename(opath);
-    Py_DECREF(opath);
+
+    if (result) {
+        return_value = path_posix_error("chflags", &path);
+        goto exit;
+    }
+
+    return_value = Py_None;
     Py_INCREF(Py_None);
-    return Py_None;
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 #endif /* HAVE_CHFLAGS */
 
@@ -2258,7 +2855,8 @@ posix_chflags(PyObject *self, PyObject *args)
 PyDoc_STRVAR(posix_lchflags__doc__,
 "lchflags(path, flags)\n\n\
 Set file flags.\n\
-This function will not follow symbolic links.");
+This function will not follow symbolic links.\n\
+Equivalent to chflags(path, flags, follow_symlinks=False).");
 
 static PyObject *
 posix_lchflags(PyObject *self, PyObject *args)
@@ -2342,29 +2940,105 @@ posix_fdatasync(PyObject *self, PyObject *fdobj)
 
 #ifdef HAVE_CHOWN
 PyDoc_STRVAR(posix_chown__doc__,
-"chown(path, uid, gid)\n\n\
-Change the owner and group id of path to the numeric uid and gid.");
+"chown(path, uid, gid, *, dir_fd=None, follow_symlinks=True)\n\n\
+Change the owner and group id of path to the numeric uid and gid.\n\
+\n\
+path may always be specified as a string.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, chown will modify the symbolic link itself instead of the file the\n\
+  link points to.\n\
+It is an error to use dir_fd or follow_symlinks when specifying path as\n\
+  an open file descriptor.\n\
+dir_fd and follow_symlinks may not be implemented on your platform.\n\
+  If they are unavailable, using them will raise a NotImplementedError.");
 
 static PyObject *
-posix_chown(PyObject *self, PyObject *args)
+posix_chown(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    char *path;
-    long uid, gid;
-    int res;
-    if (!PyArg_ParseTuple(args, "O&ll:chown",
-                          PyUnicode_FSConverter, &opath,
-                          &uid, &gid))
+    path_t path;
+    long uid_l, gid_l;
+    uid_t uid;
+    gid_t gid;
+    int dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 1;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "uid", "gid", "dir_fd",
+                               "follow_symlinks", NULL};
+
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FCHOWN
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&ll|$O&p:chown", keywords,
+                                     path_converter, &path,
+                                     &uid_l, &gid_l,
+#ifdef HAVE_FCHOWNAT
+                                     dir_fd_converter, &dir_fd,
+#else
+                                     dir_fd_unavailable, &dir_fd,
+#endif
+                                     &follow_symlinks))
         return NULL;
-    path = PyBytes_AsString(opath);
+
+#if !(defined(HAVE_LCHOWN) || defined(HAVE_FCHOWNAT))
+    if (follow_symlinks_specified("chown", follow_symlinks))
+        goto exit;
+#endif
+    if (dir_fd_and_fd_invalid("chown", dir_fd, path.fd) ||
+        fd_and_follow_symlinks_invalid("chown", path.fd, follow_symlinks))
+        goto exit;
+
+#ifdef __APPLE__
+    /*
+     * This is for Mac OS X 10.3, which doesn't have lchown.
+     * (But we still have an lchown symbol because of weak-linking.)
+     * It doesn't have fchownat either.  So there's no possibility
+     * of a graceful failover.
+     */
+    if ((!follow_symlinks) && (lchown == NULL)) {
+        follow_symlinks_specified("chown", follow_symlinks);
+        goto exit;
+    }
+#endif
+
     Py_BEGIN_ALLOW_THREADS
-    res = chown(path, (uid_t) uid, (gid_t) gid);
+    uid = (uid_t)uid_l;
+    gid = (uid_t)gid_l;
+#ifdef HAVE_FCHOWN
+    if (path.fd != -1)
+        result = fchown(path.fd, uid, gid);
+    else
+#endif
+#ifdef HAVE_LCHOWN
+    if ((!follow_symlinks) && (dir_fd == DEFAULT_DIR_FD))
+        result = lchown(path.narrow, uid, gid);
+    else
+#endif
+#ifdef HAVE_FCHOWNAT
+    if ((dir_fd != DEFAULT_DIR_FD) || (!follow_symlinks))
+        result = fchownat(dir_fd, path.narrow, uid, gid,
+                          follow_symlinks ? 0 : AT_SYMLINK_NOFOLLOW);
+    else
+#endif
+        result = chown(path.narrow, uid, gid);
     Py_END_ALLOW_THREADS
-    if (res < 0)
-        return posix_error_with_allocated_filename(opath);
-    Py_DECREF(opath);
+
+    if (result) {
+        return_value = path_posix_error("chown", &path);
+        goto exit;
+    }
+
+    return_value = Py_None;
     Py_INCREF(Py_None);
-    return Py_None;
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 #endif /* HAVE_CHOWN */
 
@@ -2372,7 +3046,7 @@ posix_chown(PyObject *self, PyObject *args)
 PyDoc_STRVAR(posix_fchown__doc__,
 "fchown(fd, uid, gid)\n\n\
 Change the owner and group id of the file given by file descriptor\n\
-fd to the numeric uid and gid.");
+fd to the numeric uid and gid.  Equivalent to os.chown(fd, uid, gid).");
 
 static PyObject *
 posix_fchown(PyObject *self, PyObject *args)
@@ -2395,7 +3069,8 @@ posix_fchown(PyObject *self, PyObject *args)
 PyDoc_STRVAR(posix_lchown__doc__,
 "lchown(path, uid, gid)\n\n\
 Change the owner and group id of path to the numeric uid and gid.\n\
-This function will not follow symbolic links.");
+This function will not follow symbolic links.\n\
+Equivalent to os.chown(path, uid, gid, follow_symlinks=False).");
 
 static PyObject *
 posix_lchown(PyObject *self, PyObject *args)
@@ -2497,125 +3172,188 @@ posix_getcwd_bytes(PyObject *self)
 }
 #endif
 
+#if ((!defined(HAVE_LINK)) && defined(MS_WINDOWS))
+#define HAVE_LINK 1
+#endif
 
 #ifdef HAVE_LINK
 PyDoc_STRVAR(posix_link__doc__,
-"link(src, dst)\n\n\
-Create a hard link to a file.");
+"link(src, dst, *, src_dir_fd=None, dst_dir_fd=None, follow_symlinks=True)\n\n\
+Create a hard link to a file.\n\
+\n\
+If either src_dir_fd or dst_dir_fd is not None, it should be a file\n\
+  descriptor open to a directory, and the respective path string (src or dst)\n\
+  should be relative; the path will then be relative to that directory.\n\
+If follow_symlinks is False, and the last element of src is a symbolic\n\
+  link, link will create a link to the symbolic link itself instead of the\n\
+  file the link points to.\n\
+src_dir_fd, dst_dir_fd, and follow_symlinks may not be implemented on your\n\
+  platform.  If they are unavailable, using them will raise a\n\
+  NotImplementedError.");
 
 static PyObject *
-posix_link(PyObject *self, PyObject *args)
+posix_link(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    return posix_2str(args, "O&O&:link", link);
-}
-#endif /* HAVE_LINK */
+    path_t src, dst;
+    int src_dir_fd = DEFAULT_DIR_FD;
+    int dst_dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 1;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"src", "dst", "src_dir_fd", "dst_dir_fd",
+                               "follow_symlinks", NULL};
+#ifdef MS_WINDOWS
+    BOOL result;
+#else
+    int result;
+#endif
+
+    memset(&src, 0, sizeof(src));
+    memset(&dst, 0, sizeof(dst));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&|O&O&p:link", keywords,
+            path_converter, &src,
+            path_converter, &dst,
+            dir_fd_converter, &src_dir_fd,
+            dir_fd_converter, &dst_dir_fd,
+            &follow_symlinks))
+        return NULL;
+
+#ifndef HAVE_LINKAT
+    if ((src_dir_fd != DEFAULT_DIR_FD) || (dst_dir_fd != DEFAULT_DIR_FD)) {
+        argument_unavailable_error("link", "src_dir_fd and dst_dir_fd");
+        goto exit;
+    }
+#endif
+
+    if ((src.narrow && dst.wide) || (src.wide && dst.narrow)) {
+        PyErr_SetString(PyExc_NotImplementedError,
+                        "link: src and dst must be the same type");
+        goto exit;
+    }
 
 #ifdef MS_WINDOWS
-PyDoc_STRVAR(win32_link__doc__,
-"link(src, dst)\n\n\
-Create a hard link to a file.");
+    Py_BEGIN_ALLOW_THREADS
+    if (src.wide)
+        result = CreateHardLinkW(dst.wide, src.wide, NULL);
+    else
+        result = CreateHardLinkA(dst.narrow, src.narrow, NULL);
+    Py_END_ALLOW_THREADS
 
-static PyObject *
-win32_link(PyObject *self, PyObject *args)
-{
-    PyObject *src, *dst;
-    BOOL ok;
-
-    if (PyArg_ParseTuple(args, "UU:link", &src, &dst))
-    {
-        wchar_t *wsrc, *wdst;
-
-        wsrc = PyUnicode_AsUnicode(src);
-        if (wsrc == NULL)
-            goto error;
-        wdst = PyUnicode_AsUnicode(dst);
-        if (wdst == NULL)
-            goto error;
-
-        Py_BEGIN_ALLOW_THREADS
-        ok = CreateHardLinkW(wdst, wsrc, NULL);
-        Py_END_ALLOW_THREADS
-
-        if (!ok)
-            return win32_error("link", NULL);
-        Py_RETURN_NONE;
+    if (!result) {
+        return_value = win32_error_object("link", dst.object);
+        goto exit;
     }
-    else {
-        PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "O&O&:link",
-                              PyUnicode_FSConverter, &src,
-                              PyUnicode_FSConverter, &dst))
-            return NULL;
+#else
+    Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_LINKAT
+    if ((src_dir_fd != DEFAULT_DIR_FD) ||
+        (dst_dir_fd != DEFAULT_DIR_FD) ||
+        (!follow_symlinks))
+        result = linkat(src_dir_fd, src.narrow,
+            dst_dir_fd, dst.narrow,
+            follow_symlinks ? AT_SYMLINK_FOLLOW : 0);
+    else
+#endif
+        result = link(src.narrow, dst.narrow);
+    Py_END_ALLOW_THREADS
 
-        if (win32_warn_bytes_api())
-            goto error;
-
-        Py_BEGIN_ALLOW_THREADS
-        ok = CreateHardLinkA(PyBytes_AS_STRING(dst),
-                             PyBytes_AS_STRING(src),
-                             NULL);
-        Py_END_ALLOW_THREADS
-
-        Py_XDECREF(src);
-        Py_XDECREF(dst);
-
-        if (!ok)
-            return win32_error("link", NULL);
-        Py_RETURN_NONE;
-
-    error:
-        Py_XDECREF(src);
-        Py_XDECREF(dst);
-        return NULL;
+    if (result) {
+        return_value = path_error("link", &dst);
+        goto exit;
     }
+#endif
+
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+
+exit:
+    path_cleanup(&src);
+    path_cleanup(&dst);
+    return return_value;
 }
-#endif /* MS_WINDOWS */
+#endif
+
 
 
 PyDoc_STRVAR(posix_listdir__doc__,
-"listdir([path]) -> list_of_strings\n\n\
-Return a list containing the names of the entries in the directory.\n\
-\n\
-    path: path of directory to list (default: '.')\n\
-\n\
+"listdir(path='.') -> list_of_filenames\n\n\
+Return a list containing the names of the files in the directory.\n\
 The list is in arbitrary order.  It does not include the special\n\
-entries '.' and '..' even if they are present in the directory.");
+entries '.' and '..' even if they are present in the directory.\n\
+\n\
+path can be specified as either str or bytes.  If path is bytes,\n\
+  the filenames returned will also be bytes; in all other circumstances\n\
+  the filenames returned will be str.\n\
+On some platforms, path may also be specified as an open file descriptor;\n\
+  the file descriptor must refer to a directory.\n\
+  If this functionality is unavailable, using it raises NotImplementedError.");
 
 static PyObject *
-posix_listdir(PyObject *self, PyObject *args)
+posix_listdir(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    path_t path;
+    PyObject *list = NULL;
+    static char *keywords[] = {"path", NULL};
+    int fd = -1;
+
+#if defined(MS_WINDOWS) && !defined(HAVE_OPENDIR)
+    PyObject *v;
+    HANDLE hFindFile = INVALID_HANDLE_VALUE;
+    BOOL result;
+    WIN32_FIND_DATA FileData;
+    char namebuf[MAX_PATH+5]; /* Overallocate for \\*.*\0 */
+    char *bufptr = namebuf;
+    /* only claim to have space for MAX_PATH */
+    Py_ssize_t len = sizeof(namebuf)-5;
+    PyObject *po = NULL;
+    wchar_t *wnamebuf = NULL;
+#elif defined(PYOS_OS2)
+#ifndef MAX_PATH
+#define MAX_PATH    CCHMAXPATH
+#endif
+    char *pt;
+    PyObject *v;
+    char namebuf[MAX_PATH+5];
+    HDIR  hdir = 1;
+    ULONG srchcnt = 1;
+    FILEFINDBUF3   ep;
+    APIRET rc;
+#else
+    PyObject *v;
+    DIR *dirp = NULL;
+    struct dirent *ep;
+    int return_str; /* if false, return bytes */
+#endif
+
+    memset(&path, 0, sizeof(path));
+    path.nullable = 1;
+#ifdef HAVE_FDOPENDIR
+    path.allow_fd = 1;
+    path.fd = -1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|O&:listdir", keywords,
+        path_converter, &path
+        ))
+        return NULL;
+
     /* XXX Should redo this putting the (now four) versions of opendir
        in separate files instead of having them all here... */
 #if defined(MS_WINDOWS) && !defined(HAVE_OPENDIR)
-
-    PyObject *d, *v;
-    HANDLE hFindFile;
-    BOOL result;
-    WIN32_FIND_DATA FileData;
-    const char *path;
-    Py_ssize_t pathlen;
-    char namebuf[MAX_PATH+5]; /* Overallocate for \\*.*\0 */
-    char *bufptr = namebuf;
-    Py_ssize_t len = sizeof(namebuf)-5; /* only claim to have space for MAX_PATH */
-
-    PyObject *po = NULL;
-    if (PyArg_ParseTuple(args, "|U:listdir", &po)) {
+    if (!path.narrow) {
         WIN32_FIND_DATAW wFileData;
-        wchar_t *wnamebuf, *po_wchars;
+        wchar_t *po_wchars;
 
-        if (po == NULL) { /* Default arg: "." */
+        if (!path.wide) { /* Default arg: "." */
             po_wchars = L".";
             len = 1;
         } else {
-            po_wchars = PyUnicode_AsUnicodeAndSize(po, &len);
-            if (po_wchars == NULL)
-                return NULL;
+            po_wchars = path.wide;
+            len = wcslen(path.wide);
         }
-        /* Overallocate for \\*.*\0 */
+        /* The +5 is so we can append "\\*.*\0" */
         wnamebuf = malloc((len + 5) * sizeof(wchar_t));
         if (!wnamebuf) {
             PyErr_NoMemory();
-            return NULL;
+            goto exit;
         }
         wcscpy(wnamebuf, po_wchars);
         if (len > 0) {
@@ -2624,38 +3362,36 @@ posix_listdir(PyObject *self, PyObject *args)
                 wnamebuf[len++] = L'\\';
             wcscpy(wnamebuf + len, L"*.*");
         }
-        if ((d = PyList_New(0)) == NULL) {
-            free(wnamebuf);
-            return NULL;
+        if ((list = PyList_New(0)) == NULL) {
+            goto exit;
         }
         Py_BEGIN_ALLOW_THREADS
         hFindFile = FindFirstFileW(wnamebuf, &wFileData);
         Py_END_ALLOW_THREADS
         if (hFindFile == INVALID_HANDLE_VALUE) {
             int error = GetLastError();
-            if (error == ERROR_FILE_NOT_FOUND) {
-                free(wnamebuf);
-                return d;
-            }
-            Py_DECREF(d);
+            if (error == ERROR_FILE_NOT_FOUND)
+                goto exit;
+            Py_DECREF(list);
+            list = NULL;
             win32_error_unicode("FindFirstFileW", wnamebuf);
-            free(wnamebuf);
-            return NULL;
+            goto exit;
         }
         do {
             /* Skip over . and .. */
             if (wcscmp(wFileData.cFileName, L".") != 0 &&
                 wcscmp(wFileData.cFileName, L"..") != 0) {
-                v = PyUnicode_FromWideChar(wFileData.cFileName, wcslen(wFileData.cFileName));
+                v = PyUnicode_FromWideChar(wFileData.cFileName,
+                                           wcslen(wFileData.cFileName));
                 if (v == NULL) {
-                    Py_DECREF(d);
-                    d = NULL;
+                    Py_DECREF(list);
+                    list = NULL;
                     break;
                 }
-                if (PyList_Append(d, v) != 0) {
+                if (PyList_Append(list, v) != 0) {
                     Py_DECREF(v);
-                    Py_DECREF(d);
-                    d = NULL;
+                    Py_DECREF(list);
+                    list = NULL;
                     break;
                 }
                 Py_DECREF(v);
@@ -2666,37 +3402,16 @@ posix_listdir(PyObject *self, PyObject *args)
             /* FindNextFile sets error to ERROR_NO_MORE_FILES if
                it got to the end of the directory. */
             if (!result && GetLastError() != ERROR_NO_MORE_FILES) {
-                Py_DECREF(d);
-                win32_error_unicode("FindNextFileW", wnamebuf);
-                FindClose(hFindFile);
-                free(wnamebuf);
-                return NULL;
+                Py_DECREF(list);
+                list = win32_error_unicode("FindNextFileW", wnamebuf);
+                goto exit;
             }
         } while (result == TRUE);
 
-        if (FindClose(hFindFile) == FALSE) {
-            Py_DECREF(d);
-            win32_error_unicode("FindClose", wnamebuf);
-            free(wnamebuf);
-            return NULL;
-        }
-        free(wnamebuf);
-        return d;
+        goto exit;
     }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
-
-    if (!PyArg_ParseTuple(args, "y#:listdir", &path, &pathlen))
-        return NULL;
-    if (win32_warn_bytes_api())
-        return NULL;
-    if (pathlen+1 > MAX_PATH) {
-        PyErr_SetString(PyExc_ValueError, "path too long");
-        return NULL;
-    }
-    strcpy(namebuf, path);
-    len = pathlen;
+    strcpy(namebuf, path.narrow);
+    len = path.length;
     if (len > 0) {
         char ch = namebuf[len-1];
         if (ch != SEP && ch != ALTSEP && ch != ':')
@@ -2704,7 +3419,7 @@ posix_listdir(PyObject *self, PyObject *args)
         strcpy(namebuf + len, "*.*");
     }
 
-    if ((d = PyList_New(0)) == NULL)
+    if ((list = PyList_New(0)) == NULL)
         return NULL;
 
     Py_BEGIN_ALLOW_THREADS
@@ -2713,9 +3428,10 @@ posix_listdir(PyObject *self, PyObject *args)
     if (hFindFile == INVALID_HANDLE_VALUE) {
         int error = GetLastError();
         if (error == ERROR_FILE_NOT_FOUND)
-            return d;
-        Py_DECREF(d);
-        return win32_error("FindFirstFile", namebuf);
+            goto exit;
+        Py_DECREF(list);
+        list = win32_error("FindFirstFile", namebuf);
+        goto exit;
     }
     do {
         /* Skip over . and .. */
@@ -2723,14 +3439,14 @@ posix_listdir(PyObject *self, PyObject *args)
             strcmp(FileData.cFileName, "..") != 0) {
             v = PyBytes_FromString(FileData.cFileName);
             if (v == NULL) {
-                Py_DECREF(d);
-                d = NULL;
+                Py_DECREF(list);
+                list = NULL;
                 break;
             }
-            if (PyList_Append(d, v) != 0) {
+            if (PyList_Append(list, v) != 0) {
                 Py_DECREF(v);
-                Py_DECREF(d);
-                d = NULL;
+                Py_DECREF(list);
+                list = NULL;
                 break;
             }
             Py_DECREF(v);
@@ -2741,46 +3457,33 @@ posix_listdir(PyObject *self, PyObject *args)
         /* FindNextFile sets error to ERROR_NO_MORE_FILES if
            it got to the end of the directory. */
         if (!result && GetLastError() != ERROR_NO_MORE_FILES) {
-            Py_DECREF(d);
-            win32_error("FindNextFile", namebuf);
-            FindClose(hFindFile);
-            return NULL;
+            Py_DECREF(list);
+            list = win32_error("FindNextFile", namebuf);
+            goto exit;
         }
     } while (result == TRUE);
 
-    if (FindClose(hFindFile) == FALSE) {
-        Py_DECREF(d);
-        return win32_error("FindClose", namebuf);
+exit:
+    if (hFindFile != INVALID_HANDLE_VALUE) {
+        if (FindClose(hFindFile) == FALSE) {
+            if (list != NULL) {
+                Py_DECREF(list);
+                list = win32_error_object("FindClose", path.object);
+            }
+        }
     }
+    if (wnamebuf)
+        free(wnamebuf);
+    path_cleanup(&path);
 
-    return d;
+    return list;
 
 #elif defined(PYOS_OS2)
-
-#ifndef MAX_PATH
-#define MAX_PATH    CCHMAXPATH
-#endif
-    PyObject *oname;
-    char *name, *pt;
-    Py_ssize_t len;
-    PyObject *d, *v;
-    char namebuf[MAX_PATH+5];
-    HDIR  hdir = 1;
-    ULONG srchcnt = 1;
-    FILEFINDBUF3   ep;
-    APIRET rc;
-
-    if (!PyArg_ParseTuple(args, "O&:listdir",
-                          PyUnicode_FSConverter, &oname))
-        return NULL;
-    name = PyBytes_AsString(oname);
-    len = PyBytes_GET_SIZE(oname);
-    if (len >= MAX_PATH) {
-        Py_DECREF(oname);
+    if (path.length >= MAX_PATH) {
         PyErr_SetString(PyExc_ValueError, "path too long");
-        return NULL;
+        goto exit;
     }
-    strcpy(namebuf, name);
+    strcpy(namebuf, path.narrow);
     for (pt = namebuf; *pt; pt++)
         if (*pt == ALTSEP)
             *pt = SEP;
@@ -2788,9 +3491,8 @@ posix_listdir(PyObject *self, PyObject *args)
         namebuf[len++] = SEP;
     strcpy(namebuf + len, "*.*");
 
-    if ((d = PyList_New(0)) == NULL) {
-        Py_DECREF(oname);
-        return NULL;
+    if ((list = PyList_New(0)) == NULL) {
+        goto exit;
     }
 
     rc = DosFindFirst(namebuf,         /* Wildcard Pattern to Match */
@@ -2802,7 +3504,9 @@ posix_listdir(PyObject *self, PyObject *args)
 
     if (rc != NO_ERROR) {
         errno = ENOENT;
-        return posix_error_with_allocated_filename(oname);
+        Py_DECREF(list);
+        list = posix_error_with_filename(path.narrow);
+        goto exit;
     }
 
     if (srchcnt > 0) { /* If Directory is NOT Totally Empty, */
@@ -2818,55 +3522,70 @@ posix_listdir(PyObject *self, PyObject *args)
 
             v = PyBytes_FromString(namebuf);
             if (v == NULL) {
-                Py_DECREF(d);
-                d = NULL;
+                Py_DECREF(list);
+                list = NULL;
                 break;
             }
-            if (PyList_Append(d, v) != 0) {
+            if (PyList_Append(list, v) != 0) {
                 Py_DECREF(v);
-                Py_DECREF(d);
-                d = NULL;
+                Py_DECREF(list);
+                list = NULL;
                 break;
             }
             Py_DECREF(v);
         } while (DosFindNext(hdir, &ep, sizeof(ep), &srchcnt) == NO_ERROR && srchcnt > 0);
     }
 
-    Py_DECREF(oname);
-    return d;
+exit:
+    path_cleanup(&path);
+
+    return list;
 #else
-    PyObject *oname;
-    char *name;
-    PyObject *d, *v;
-    DIR *dirp;
-    struct dirent *ep;
-    int arg_is_unicode = 1;
 
     errno = 0;
-    /* v is never read, so it does not need to be initialized yet. */
-    if (!PyArg_ParseTuple(args, "|U:listdir", &v)) {
-        arg_is_unicode = 0;
-        PyErr_Clear();
-    }
-    oname = NULL;
-    if (!PyArg_ParseTuple(args, "|O&:listdir", PyUnicode_FSConverter, &oname))
-        return NULL;
-    if (oname == NULL) { /* Default arg: "." */
-        oname = PyBytes_FromString(".");
-    }
-    name = PyBytes_AsString(oname);
-    Py_BEGIN_ALLOW_THREADS
-    dirp = opendir(name);
-    Py_END_ALLOW_THREADS
-    if (dirp == NULL) {
-        return posix_error_with_allocated_filename(oname);
-    }
-    if ((d = PyList_New(0)) == NULL) {
+#ifdef HAVE_FDOPENDIR
+    if (path.fd != -1) {
+        /* closedir() closes the FD, so we duplicate it */
         Py_BEGIN_ALLOW_THREADS
-        closedir(dirp);
+        fd = dup(path.fd);
         Py_END_ALLOW_THREADS
-        Py_DECREF(oname);
-        return NULL;
+
+        if (fd == -1) {
+            list = posix_error();
+            goto exit;
+        }
+
+        return_str = 1;
+
+        Py_BEGIN_ALLOW_THREADS
+        dirp = fdopendir(fd);
+        Py_END_ALLOW_THREADS
+    }
+    else
+#endif
+    {
+        char *name;
+        if (path.narrow) {
+            name = path.narrow;
+            /* only return bytes if they specified a bytes object */
+            return_str = !(PyBytes_Check(path.object));
+        }
+        else {
+            name = ".";
+            return_str = 1;
+        }
+
+        Py_BEGIN_ALLOW_THREADS
+        dirp = opendir(name);
+        Py_END_ALLOW_THREADS
+    }
+
+    if (dirp == NULL) {
+        list = path_error("listdir", &path);
+        goto exit;
+    }
+    if ((list = PyList_New(0)) == NULL) {
+        goto exit;
     }
     for (;;) {
         errno = 0;
@@ -2877,116 +3596,46 @@ posix_listdir(PyObject *self, PyObject *args)
             if (errno == 0) {
                 break;
             } else {
-                Py_BEGIN_ALLOW_THREADS
-                closedir(dirp);
-                Py_END_ALLOW_THREADS
-                Py_DECREF(d);
-                return posix_error_with_allocated_filename(oname);
+                Py_DECREF(list);
+                list = path_error("listdir", &path);
+                goto exit;
             }
         }
         if (ep->d_name[0] == '.' &&
             (NAMLEN(ep) == 1 ||
              (ep->d_name[1] == '.' && NAMLEN(ep) == 2)))
             continue;
-        if (arg_is_unicode)
+        if (return_str)
             v = PyUnicode_DecodeFSDefaultAndSize(ep->d_name, NAMLEN(ep));
         else
             v = PyBytes_FromStringAndSize(ep->d_name, NAMLEN(ep));
         if (v == NULL) {
-            Py_CLEAR(d);
+            Py_CLEAR(list);
             break;
         }
-        if (PyList_Append(d, v) != 0) {
+        if (PyList_Append(list, v) != 0) {
             Py_DECREF(v);
-            Py_CLEAR(d);
+            Py_CLEAR(list);
             break;
         }
         Py_DECREF(v);
     }
-    Py_BEGIN_ALLOW_THREADS
-    closedir(dirp);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(oname);
 
-    return d;
+exit:
+    if (dirp != NULL) {
+        Py_BEGIN_ALLOW_THREADS
+        if (fd > -1)
+            rewinddir(dirp);
+        closedir(dirp);
+        Py_END_ALLOW_THREADS
+    }
+
+    path_cleanup(&path);
+
+    return list;
 
 #endif /* which OS */
 }  /* end of posix_listdir */
-
-#ifdef HAVE_FDOPENDIR
-PyDoc_STRVAR(posix_flistdir__doc__,
-"flistdir(fd) -> list_of_strings\n\n\
-Like listdir(), but uses a file descriptor instead.");
-
-static PyObject *
-posix_flistdir(PyObject *self, PyObject *args)
-{
-    PyObject *d, *v;
-    DIR *dirp;
-    struct dirent *ep;
-    int fd;
-
-    errno = 0;
-    if (!PyArg_ParseTuple(args, "i:flistdir", &fd))
-        return NULL;
-    /* closedir() closes the FD, so we duplicate it */
-    fd = dup(fd);
-    if (fd < 0)
-        return posix_error();
-    Py_BEGIN_ALLOW_THREADS
-    dirp = fdopendir(fd);
-    Py_END_ALLOW_THREADS
-    if (dirp == NULL) {
-        close(fd);
-        return posix_error();
-    }
-    if ((d = PyList_New(0)) == NULL) {
-        Py_BEGIN_ALLOW_THREADS
-        closedir(dirp);
-        Py_END_ALLOW_THREADS
-        return NULL;
-    }
-    for (;;) {
-        errno = 0;
-        Py_BEGIN_ALLOW_THREADS
-        ep = readdir(dirp);
-        Py_END_ALLOW_THREADS
-        if (ep == NULL) {
-            if (errno == 0) {
-                break;
-            } else {
-                Py_BEGIN_ALLOW_THREADS
-                rewinddir(dirp);
-                closedir(dirp);
-                Py_END_ALLOW_THREADS
-                Py_DECREF(d);
-                return posix_error();
-            }
-        }
-        if (ep->d_name[0] == '.' &&
-            (NAMLEN(ep) == 1 ||
-             (ep->d_name[1] == '.' && NAMLEN(ep) == 2)))
-            continue;
-        v = PyUnicode_DecodeFSDefaultAndSize(ep->d_name, NAMLEN(ep));
-        if (v == NULL) {
-            Py_CLEAR(d);
-            break;
-        }
-        if (PyList_Append(d, v) != 0) {
-            Py_DECREF(v);
-            Py_CLEAR(d);
-            break;
-        }
-        Py_DECREF(v);
-    }
-    Py_BEGIN_ALLOW_THREADS
-    rewinddir(dirp);
-    closedir(dirp);
-    Py_END_ALLOW_THREADS
-
-    return d;
-}
-#endif
 
 #ifdef MS_WINDOWS
 /* A helper function for abspath on win32 */
@@ -3178,68 +3827,72 @@ check:
 #endif /* MS_WINDOWS */
 
 PyDoc_STRVAR(posix_mkdir__doc__,
-"mkdir(path [, mode=0777])\n\n\
-Create a directory.");
+"mkdir(path, mode=0o777, *, dir_fd=None)\n\n\
+Create a directory.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.\n\
+\n\
+The mode argument is ignored on Windows.");
 
 static PyObject *
-posix_mkdir(PyObject *self, PyObject *args)
+posix_mkdir(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    int res;
-    const char *path;
+    path_t path;
     int mode = 0777;
+    int dir_fd = DEFAULT_DIR_FD;
+    static char *keywords[] = {"path", "mode", "dir_fd", NULL};
+    PyObject *return_value = NULL;
+    int result;
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|i$O&:mkdir", keywords,
+        path_converter, &path, &mode,
+#ifdef HAVE_MKDIRAT
+        dir_fd_converter, &dir_fd
+#else
+        dir_fd_unavailable, &dir_fd
+#endif
+        ))
+        return NULL;
 
 #ifdef MS_WINDOWS
-    PyObject *po;
-    if (PyArg_ParseTuple(args, "U|i:mkdir", &po, &mode))
-    {
-        wchar_t *wpath = PyUnicode_AsUnicode(po);
-        if (wpath == NULL)
-            return NULL;
-
-        Py_BEGIN_ALLOW_THREADS
-        res = CreateDirectoryW(wpath, NULL);
-        Py_END_ALLOW_THREADS
-        if (!res)
-            return win32_error_object("mkdir", po);
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
-    if (!PyArg_ParseTuple(args, "y|i:mkdir", &path, &mode))
-        return NULL;
-    if (win32_warn_bytes_api())
-        return NULL;
     Py_BEGIN_ALLOW_THREADS
-    res = CreateDirectoryA(path, NULL);
+    if (path.wide)
+        result = CreateDirectoryW(path.wide, NULL);
+    else
+        result = CreateDirectoryA(path.narrow, NULL);
     Py_END_ALLOW_THREADS
-    if (!res) {
-        win32_error("mkdir", path);
-        return NULL;
-    }
-    Py_INCREF(Py_None);
-    return Py_None;
-#else
-    PyObject *opath;
 
-    if (!PyArg_ParseTuple(args, "O&|i:mkdir",
-                          PyUnicode_FSConverter, &opath, &mode))
-        return NULL;
-    path = PyBytes_AsString(opath);
+    if (!result) {
+        return_value = win32_error_object("mkdir", path.object);
+        goto exit;
+    }
+#else
     Py_BEGIN_ALLOW_THREADS
+#if HAVE_MKDIRAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = mkdirat(dir_fd, path.narrow, mode);
+    else
+#endif
 #if ( defined(__WATCOMC__) || defined(PYCC_VACPP) ) && !defined(__QNX__)
-    res = mkdir(path);
+        result = mkdir(path.narrow);
 #else
-    res = mkdir(path, mode);
+        result = mkdir(path.narrow, mode);
 #endif
     Py_END_ALLOW_THREADS
-    if (res < 0)
-        return posix_error_with_allocated_filename(opath);
-    Py_DECREF(opath);
-    Py_INCREF(Py_None);
-    return Py_None;
+    if (result < 0) {
+        return_value = path_error("mkdir", &path);
+        goto exit;
+    }
 #endif
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 
 
@@ -3328,114 +3981,177 @@ posix_setpriority(PyObject *self, PyObject *args)
 
 
 static PyObject *
-internal_rename(PyObject *self, PyObject *args, int is_replace)
+internal_rename(PyObject *args, PyObject *kwargs, int is_replace)
 {
+    char *function_name = is_replace ? "replace" : "rename";
+    path_t src;
+    path_t dst;
+    int src_dir_fd = DEFAULT_DIR_FD;
+    int dst_dir_fd = DEFAULT_DIR_FD;
+    int dir_fd_specified;
+    PyObject *return_value = NULL;
+    char format[24];
+    static char *keywords[] = {"src", "dst", "src_dir_fd", "dst_dir_fd", NULL};
+
 #ifdef MS_WINDOWS
-    PyObject *src, *dst;
     BOOL result;
     int flags = is_replace ? MOVEFILE_REPLACE_EXISTING : 0;
-    if (PyArg_ParseTuple(args,
-                         is_replace ? "UU:replace" : "UU:rename",
-                         &src, &dst))
-    {
-        wchar_t *wsrc, *wdst;
-
-        wsrc = PyUnicode_AsUnicode(src);
-        if (wsrc == NULL)
-            return NULL;
-        wdst = PyUnicode_AsUnicode(dst);
-        if (wdst == NULL)
-            return NULL;
-        Py_BEGIN_ALLOW_THREADS
-        result = MoveFileExW(wsrc, wdst, flags);
-        Py_END_ALLOW_THREADS
-        if (!result)
-            return win32_error(is_replace ? "replace" : "rename", NULL);
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
-    else {
-        PyErr_Clear();
-        if (!PyArg_ParseTuple(args,
-                              is_replace ? "O&O&:replace" : "O&O&:rename",
-                              PyUnicode_FSConverter, &src,
-                              PyUnicode_FSConverter, &dst))
-            return NULL;
-
-        if (win32_warn_bytes_api())
-            goto error;
-
-        Py_BEGIN_ALLOW_THREADS
-        result = MoveFileExA(PyBytes_AS_STRING(src),
-                             PyBytes_AS_STRING(dst), flags);
-        Py_END_ALLOW_THREADS
-
-        Py_XDECREF(src);
-        Py_XDECREF(dst);
-
-        if (!result)
-            return win32_error(is_replace ? "replace" : "rename", NULL);
-        Py_INCREF(Py_None);
-        return Py_None;
-
-error:
-        Py_XDECREF(src);
-        Py_XDECREF(dst);
-        return NULL;
-    }
 #else
-    return posix_2str(args,
-                      is_replace ? "O&O&:replace" : "O&O&:rename", rename);
+    int result;
 #endif
+
+    memset(&src, 0, sizeof(src));
+    memset(&dst, 0, sizeof(dst));
+    strcpy(format, "O&O&|$O&O&:");
+    strcat(format, function_name);
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, format, keywords,
+        path_converter, &src,
+        path_converter, &dst,
+        dir_fd_converter, &src_dir_fd,
+        dir_fd_converter, &dst_dir_fd))
+        return NULL;
+
+    dir_fd_specified = (src_dir_fd != DEFAULT_DIR_FD) ||
+                       (dst_dir_fd != DEFAULT_DIR_FD);
+#ifndef HAVE_RENAMEAT
+    if (dir_fd_specified) {
+        argument_unavailable_error(function_name, "src_dir_fd and dst_dir_fd");
+        goto exit;
+    }
+#endif
+
+    if ((src.narrow && dst.wide) || (src.wide && dst.narrow)) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: src and dst must be the same type", function_name);
+        goto exit;
+    }
+
+#ifdef MS_WINDOWS
+    Py_BEGIN_ALLOW_THREADS
+    if (src.wide)
+        result = MoveFileExW(src.wide, dst.wide, flags);
+    else
+        result = MoveFileExA(src.narrow, dst.narrow, flags);
+    Py_END_ALLOW_THREADS
+
+    if (!result) {
+        return_value = win32_error_object(function_name, dst.object);
+        goto exit;
+    }
+
+#else
+    Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_RENAMEAT
+    if (dir_fd_specified)
+        result = renameat(src_dir_fd, src.narrow, dst_dir_fd, dst.narrow);
+    else
+#endif
+        result = rename(src.narrow, dst.narrow);
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_error(function_name, &dst);
+        goto exit;
+    }
+#endif
+
+    Py_INCREF(Py_None);
+    return_value = Py_None;
+exit:
+    path_cleanup(&src);
+    path_cleanup(&dst);
+    return return_value;
 }
 
 PyDoc_STRVAR(posix_rename__doc__,
-"rename(old, new)\n\n\
-Rename a file or directory.");
+"rename(src, dst, *, src_dir_fd=None, dst_dir_fd=None)\n\n\
+Rename a file or directory.\n\
+\n\
+If either src_dir_fd or dst_dir_fd is not None, it should be a file\n\
+  descriptor open to a directory, and the respective path string (src or dst)\n\
+  should be relative; the path will then be relative to that directory.\n\
+src_dir_fd and dst_dir_fd, may not be implemented on your platform.\n\
+  If they are unavailable, using them will raise a NotImplementedError.");
 
 static PyObject *
-posix_rename(PyObject *self, PyObject *args)
+posix_rename(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    return internal_rename(self, args, 0);
+    return internal_rename(args, kwargs, 0);
 }
 
 PyDoc_STRVAR(posix_replace__doc__,
-"replace(old, new)\n\n\
-Rename a file or directory, overwriting the destination.");
+"replace(src, dst, *, src_dir_fd=None, dst_dir_fd=None)\n\n\
+Rename a file or directory, overwriting the destination.\n\
+\n\
+If either src_dir_fd or dst_dir_fd is not None, it should be a file\n\
+  descriptor open to a directory, and the respective path string (src or dst)\n\
+  should be relative; the path will then be relative to that directory.\n\
+src_dir_fd and dst_dir_fd, may not be implemented on your platform.\n\
+  If they are unavailable, using them will raise a NotImplementedError.");
 
 static PyObject *
-posix_replace(PyObject *self, PyObject *args)
+posix_replace(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    return internal_rename(self, args, 1);
+    return internal_rename(args, kwargs, 1);
 }
 
 PyDoc_STRVAR(posix_rmdir__doc__,
-"rmdir(path)\n\n\
-Remove a directory.");
+"rmdir(path, *, dir_fd=None)\n\n\
+Remove a directory.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 static PyObject *
-posix_rmdir(PyObject *self, PyObject *args)
+posix_rmdir(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-#ifdef MS_WINDOWS
-    return win32_1str(args, "rmdir", "y:rmdir", RemoveDirectoryA, "U:rmdir", RemoveDirectoryW);
+    path_t path;
+    int dir_fd = DEFAULT_DIR_FD;
+    static char *keywords[] = {"path", "dir_fd", NULL};
+    int result;
+    PyObject *return_value = NULL;
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|$O&:rmdir", keywords,
+            path_converter, &path,
+#ifdef HAVE_UNLINKAT
+            dir_fd_converter, &dir_fd
 #else
-    return posix_1str(args, "O&:rmdir", rmdir);
+            dir_fd_unavailable, &dir_fd
 #endif
-}
+            ))
+        return NULL;
 
-
-PyDoc_STRVAR(posix_stat__doc__,
-"stat(path) -> stat result\n\n\
-Perform a stat system call on the given path.");
-
-static PyObject *
-posix_stat(PyObject *self, PyObject *args)
-{
+    Py_BEGIN_ALLOW_THREADS
 #ifdef MS_WINDOWS
-    return posix_do_stat(self, args, "O&:stat", STAT, "U:stat", win32_stat_w);
+    if (path.wide)
+        result = RemoveDirectoryW(path.wide);
+    else
+        result = RemoveDirectoryA(path.narrow);
+    result = !result; /* Windows, success=1, UNIX, success=0 */
 #else
-    return posix_do_stat(self, args, "O&:stat", STAT, NULL, NULL);
+#ifdef HAVE_UNLINKAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = unlinkat(dir_fd, path.narrow, AT_REMOVEDIR);
+    else
 #endif
+        result = rmdir(path.narrow);
+#endif
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_error("rmdir", &path);
+        goto exit;
+    }
+
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 
 
@@ -3527,127 +4243,468 @@ BOOL WINAPI Py_DeleteFileW(LPCWSTR lpFileName)
 #endif /* MS_WINDOWS */
 
 PyDoc_STRVAR(posix_unlink__doc__,
-"unlink(path)\n\n\
-Remove a file (same as remove(path)).");
+"unlink(path, *, dir_fd=None)\n\n\
+Remove a file (same as remove()).\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 PyDoc_STRVAR(posix_remove__doc__,
-"remove(path)\n\n\
-Remove a file (same as unlink(path)).");
+"remove(path, *, dir_fd=None)\n\n\
+Remove a file (same as unlink()).\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 static PyObject *
-posix_unlink(PyObject *self, PyObject *args)
+posix_unlink(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-#ifdef MS_WINDOWS
-    return win32_1str(args, "remove", "y:remove", DeleteFileA,
-                      "U:remove", Py_DeleteFileW);
+    path_t path;
+    int dir_fd = DEFAULT_DIR_FD;
+    static char *keywords[] = {"path", "dir_fd", NULL};
+    int result;
+    PyObject *return_value = NULL;
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|$O&:unlink", keywords,
+            path_converter, &path,
+#ifdef HAVE_UNLINKAT
+            dir_fd_converter, &dir_fd
 #else
-    return posix_1str(args, "O&:remove", unlink);
+            dir_fd_unavailable, &dir_fd
 #endif
+            ))
+        return NULL;
+
+    Py_BEGIN_ALLOW_THREADS
+#ifdef MS_WINDOWS
+    if (path.wide)
+        result = Py_DeleteFileW(path.wide);
+    else
+        result = DeleteFileA(path.narrow);
+    result = !result; /* Windows, success=1, UNIX, success=0 */
+#else
+#ifdef HAVE_UNLINKAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = unlinkat(dir_fd, path.narrow, 0);
+    else
+#endif /* HAVE_UNLINKAT */
+        result = unlink(path.narrow);
+#endif
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_error("unlink", &path);
+        goto exit;
+    }
+
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 
 
-#ifdef HAVE_UNAME
 PyDoc_STRVAR(posix_uname__doc__,
-"uname() -> (sysname, nodename, release, version, machine)\n\n\
-Return a tuple identifying the current operating system.");
+"uname() -> uname_result\n\n\
+Return an object identifying the current operating system.\n\
+The object behaves like a named tuple with the following fields:\n\
+  (sysname, nodename, release, version, machine)");
 
+static PyStructSequence_Field uname_result_fields[] = {
+    {"sysname",    "operating system name"},
+    {"nodename",   "name of machine on network (implementation-defined)"},
+    {"release",    "operating system release"},
+    {"version",    "operating system version"},
+    {"machine",    "hardware identifier"},
+    {NULL}
+};
+
+PyDoc_STRVAR(uname_result__doc__,
+"uname_result: Result from os.uname().\n\n\
+This object may be accessed either as a tuple of\n\
+  (sysname, nodename, release, version, machine),\n\
+or via the attributes sysname, nodename, release, version, and machine.\n\
+\n\
+See os.uname for more information.");
+
+static PyStructSequence_Desc uname_result_desc = {
+    "uname_result", /* name */
+    uname_result__doc__, /* doc */
+    uname_result_fields,
+    5
+};
+
+static PyTypeObject UnameResultType;
+
+
+#ifdef HAVE_UNAME
 static PyObject *
 posix_uname(PyObject *self, PyObject *noargs)
 {
     struct utsname u;
     int res;
+    PyObject *value;
 
     Py_BEGIN_ALLOW_THREADS
     res = uname(&u);
     Py_END_ALLOW_THREADS
     if (res < 0)
         return posix_error();
-    return Py_BuildValue("(sssss)",
-                         u.sysname,
-                         u.nodename,
-                         u.release,
-                         u.version,
-                         u.machine);
+
+    value = PyStructSequence_New(&UnameResultType);
+    if (value == NULL)
+        return NULL;
+
+#define SET(i, field) \
+    { \
+    PyObject *o = PyUnicode_DecodeASCII(field, strlen(field), NULL); \
+    if (!o) { \
+        Py_DECREF(value); \
+        return NULL; \
+    } \
+    PyStructSequence_SET_ITEM(value, i, o); \
+    } \
+
+    SET(0, u.sysname);
+    SET(1, u.nodename);
+    SET(2, u.release);
+    SET(3, u.version);
+    SET(4, u.machine);
+
+#undef SET
+
+    return value;
 }
 #endif /* HAVE_UNAME */
 
 
 PyDoc_STRVAR(posix_utime__doc__,
-"utime(path[, (atime, mtime)])\n\
-Set the access and modified time of the file to the given values.\n\
-If no second argument is used, set the access and modified times to\n\
-the current time.");
+"utime(path, times=None, *, ns=None, dir_fd=None, follow_symlinks=True)\n\
+Set the access and modified time of path.\n\
+\n\
+path may always be specified as a string.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.\n\
+\n\
+If times is not None, it must be a tuple (atime, mtime);\n\
+    atime and mtime should be expressed as float seconds since the epoch.\n\
+If ns is not None, it must be a tuple (atime_ns, mtime_ns);\n\
+    atime_ns and mtime_ns should be expressed as integer nanoseconds\n\
+    since the epoch.\n\
+If both times and ns are None, utime uses the current time.\n\
+Specifying tuples for both times and ns is an error.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, utime will modify the symbolic link itself instead of the file the\n\
+  link points to.\n\
+It is an error to use dir_fd or follow_symlinks when specifying path\n\
+  as an open file descriptor.\n\
+dir_fd and follow_symlinks may not be available on your platform.\n\
+  If they are unavailable, using them will raise a NotImplementedError.");
+
+typedef struct {
+    int    now;
+    time_t atime_s;
+    long   atime_ns;
+    time_t mtime_s;
+    long   mtime_ns;
+} utime_t;
+
+/*
+ * these macros assume that "utime" is a pointer to a utime_t
+ * they also intentionally leak the declaration of a pointer named "time"
+ */
+#define UTIME_TO_TIMESPEC \
+    struct timespec ts[2]; \
+    struct timespec *time; \
+    if (utime->now) \
+        time = NULL; \
+    else { \
+        ts[0].tv_sec = utime->atime_s; \
+        ts[0].tv_nsec = utime->atime_ns; \
+        ts[1].tv_sec = utime->mtime_s; \
+        ts[1].tv_nsec = utime->mtime_ns; \
+        time = ts; \
+    } \
+
+#define UTIME_TO_TIMEVAL \
+    struct timeval tv[2]; \
+    struct timeval *time; \
+    if (utime->now) \
+        time = NULL; \
+    else { \
+        tv[0].tv_sec = utime->atime_s; \
+        tv[0].tv_usec = utime->atime_ns / 1000; \
+        tv[1].tv_sec = utime->mtime_s; \
+        tv[1].tv_usec = utime->mtime_ns / 1000; \
+        time = tv; \
+    } \
+
+#define UTIME_TO_UTIMBUF \
+    struct utimbuf u[2]; \
+    struct utimbuf *time; \
+    if (utime->now) \
+        time = NULL; \
+    else { \
+        u.actime = utime->atime_s; \
+        u.modtime = utime->mtime_s; \
+        time = u; \
+    }
+
+#define UTIME_TO_TIME_T \
+    time_t timet[2]; \
+    struct timet time; \
+    if (utime->now) \
+        time = NULL; \
+    else { \
+        timet[0] = utime->atime_s; \
+        timet[1] = utime->mtime_s; \
+        time = &timet; \
+    } \
+
+
+#define UTIME_HAVE_DIR_FD (defined(HAVE_FUTIMESAT) || defined(HAVE_UTIMENSAT))
+
+#if UTIME_HAVE_DIR_FD
+
+static int
+utime_dir_fd(utime_t *utime, int dir_fd, char *path, int follow_symlinks)
+{
+#ifdef HAVE_UTIMENSAT
+    int flags = follow_symlinks ? 0 : AT_SYMLINK_NOFOLLOW;
+    UTIME_TO_TIMESPEC;
+    return utimensat(dir_fd, path, time, flags);
+#elif defined(HAVE_FUTIMESAT)
+    UTIME_TO_TIMEVAL;
+    /*
+     * follow_symlinks will never be false here;
+     * we only allow !follow_symlinks and dir_fd together
+     * if we have utimensat()
+     */
+    assert(follow_symlinks);
+    return futimesat(dir_fd, path, time);
+#endif
+}
+
+#endif
+
+#define UTIME_HAVE_FD (defined(HAVE_FUTIMES) || defined(HAVE_FUTIMENS))
+
+#if UTIME_HAVE_FD
+
+static int
+utime_fd(utime_t *utime, int fd)
+{
+#ifdef HAVE_FUTIMENS
+    UTIME_TO_TIMESPEC;
+    return futimens(fd, time);
+#else
+    UTIME_TO_TIMEVAL;
+    return futimes(fd, time);
+#endif
+}
+
+#endif
+
+
+#define UTIME_HAVE_NOFOLLOW_SYMLINKS \
+        (defined(HAVE_UTIMENSAT) || defined(HAVE_LUTIMES))
+
+#if UTIME_HAVE_NOFOLLOW_SYMLINKS
+
+static int
+utime_nofollow_symlinks(utime_t *utime, char *path)
+{
+#ifdef HAVE_UTIMENSAT
+    UTIME_TO_TIMESPEC;
+    return utimensat(DEFAULT_DIR_FD, path, time, AT_SYMLINK_NOFOLLOW);
+#else
+    UTIME_TO_TIMEVAL;
+    return lutimes(path, time);
+#endif
+}
+
+#endif
+
+#ifndef MS_WINDOWS
+
+static int
+utime_default(utime_t *utime, char *path)
+{
+#ifdef HAVE_UTIMENSAT
+    UTIME_TO_TIMESPEC;
+    return utimensat(DEFAULT_DIR_FD, path, time, 0);
+#elif defined(HAVE_UTIMES)
+    UTIME_TO_TIMEVAL;
+    return utimes(path, time);
+#elif defined(HAVE_UTIME_H)
+    UTIME_TO_UTIMBUF;
+    return utime(path, time);
+#else
+    UTIME_TO_TIME_T;
+    return utime(path, time);
+#endif
+}
+
+#endif
+
+static int
+split_py_long_to_s_and_ns(PyObject *py_long, time_t *s, long *ns)
+{
+    int result = 0;
+    PyObject *divmod;
+    divmod = PyNumber_Divmod(py_long, billion);
+    if (!divmod)
+        goto exit;
+    *s = _PyLong_AsTime_t(PyTuple_GET_ITEM(divmod, 0));
+    if ((*s == -1) && PyErr_Occurred())
+        goto exit;
+    *ns = PyLong_AsLong(PyTuple_GET_ITEM(divmod, 1));
+    if ((*ns == -1) && PyErr_Occurred())
+        goto exit;
+
+    result = 1;
+exit:
+    Py_XDECREF(divmod);
+    return result;
+}
 
 static PyObject *
-posix_utime(PyObject *self, PyObject *args)
+posix_utime(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    path_t path;
+    PyObject *times = NULL;
+    PyObject *ns = NULL;
+    int dir_fd = DEFAULT_DIR_FD;
+    int follow_symlinks = 1;
+    char *keywords[] = {"path", "times", "ns", "dir_fd",
+                        "follow_symlinks", NULL};
+
+    utime_t utime;
+
 #ifdef MS_WINDOWS
-    PyObject *arg = Py_None;
-    PyObject *obwpath;
-    wchar_t *wpath = NULL;
-    const char *apath;
     HANDLE hFile;
-    time_t atimesec, mtimesec;
-    long ansec, mnsec;
     FILETIME atime, mtime;
-    PyObject *result = NULL;
+#else
+    int result;
+#endif
 
-    if (PyArg_ParseTuple(args, "U|O:utime", &obwpath, &arg)) {
-        wpath = PyUnicode_AsUnicode(obwpath);
-        if (wpath == NULL)
-            return NULL;
-        Py_BEGIN_ALLOW_THREADS
-        hFile = CreateFileW(wpath, FILE_WRITE_ATTRIBUTES, 0,
-                            NULL, OPEN_EXISTING,
-                            FILE_FLAG_BACKUP_SEMANTICS, NULL);
-        Py_END_ALLOW_THREADS
-        if (hFile == INVALID_HANDLE_VALUE)
-            return win32_error_object("utime", obwpath);
+    PyObject *return_value = NULL;
+
+    memset(&path, 0, sizeof(path));
+#if UTIME_HAVE_FD
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs,
+            "O&|O$OO&p:utime", keywords,
+            path_converter, &path,
+            &times, &ns,
+#if UTIME_HAVE_DIR_FD
+            dir_fd_converter, &dir_fd,
+#else
+            dir_fd_unavailable, &dir_fd,
+#endif
+            &follow_symlinks
+            ))
+        return NULL;
+
+    if (times && (times != Py_None) && ns) {
+        PyErr_SetString(PyExc_ValueError,
+                     "utime: you may specify either 'times'"
+                     " or 'ns' but not both");
+        goto exit;
     }
-    else {
-        /* Drop the argument parsing error as narrow strings
-           are also valid. */
-        PyErr_Clear();
 
-        if (!PyArg_ParseTuple(args, "y|O:utime", &apath, &arg))
-            return NULL;
-        if (win32_warn_bytes_api())
-            return NULL;
-
-        Py_BEGIN_ALLOW_THREADS
-        hFile = CreateFileA(apath, FILE_WRITE_ATTRIBUTES, 0,
-                            NULL, OPEN_EXISTING,
-                            FILE_FLAG_BACKUP_SEMANTICS, NULL);
-        Py_END_ALLOW_THREADS
-        if (hFile == INVALID_HANDLE_VALUE) {
-            win32_error("utime", apath);
-            return NULL;
+    if (times && (times != Py_None)) {
+        if (!PyTuple_CheckExact(times) || (PyTuple_Size(times) != 2)) {
+            PyErr_SetString(PyExc_TypeError,
+                         "utime: 'times' must be either"
+                         " a tuple of two ints or None");
+            goto exit;
+        }
+        utime.now = 0;
+        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(times, 0),
+                                     &utime.atime_s, &utime.atime_ns) == -1 ||
+            _PyTime_ObjectToTimespec(PyTuple_GET_ITEM(times, 1),
+                                     &utime.mtime_s, &utime.mtime_ns) == -1) {
+            goto exit;
         }
     }
+    else if (ns) {
+        if (!PyTuple_CheckExact(ns) || (PyTuple_Size(ns) != 2)) {
+            PyErr_SetString(PyExc_TypeError,
+                         "utime: 'ns' must be a tuple of two ints");
+            goto exit;
+        }
+        utime.now = 0;
+        if (!split_py_long_to_s_and_ns(PyTuple_GET_ITEM(ns, 0),
+                                      &utime.atime_s, &utime.atime_ns) ||
+            !split_py_long_to_s_and_ns(PyTuple_GET_ITEM(ns, 1),
+                                       &utime.mtime_s, &utime.mtime_ns)) {
+            goto exit;
+        }
+    }
+    else {
+        /* times and ns are both None/unspecified. use "now". */
+        utime.now = 1;
+    }
 
-    if (arg == Py_None) {
+#if !UTIME_HAVE_NOFOLLOW_SYMLINKS
+    if (follow_symlinks_specified("utime", follow_symlinks))
+        goto exit;
+#endif
+
+    if (path_and_dir_fd_invalid("utime", &path, dir_fd) ||
+        dir_fd_and_fd_invalid("utime", dir_fd, path.fd) ||
+        fd_and_follow_symlinks_invalid("utime", path.fd, follow_symlinks))
+        goto exit;
+
+#if !defined(HAVE_UTIMENSAT)
+    if ((dir_fd != DEFAULT_DIR_FD) && (!follow_symlinks)) {
+        PyErr_SetString(PyExc_ValueError,
+                     "utime: cannot use dir_fd and follow_symlinks "
+                     "together on this platform");
+        goto exit;
+    }
+#endif
+
+#ifdef MS_WINDOWS
+    Py_BEGIN_ALLOW_THREADS
+    if (path.wide)
+        hFile = CreateFileW(path.wide, FILE_WRITE_ATTRIBUTES, 0,
+                            NULL, OPEN_EXISTING,
+                            FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    else
+        hFile = CreateFileA(path.narrow, FILE_WRITE_ATTRIBUTES, 0,
+                            NULL, OPEN_EXISTING,
+                            FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    Py_END_ALLOW_THREADS
+    if (hFile == INVALID_HANDLE_VALUE) {
+        win32_error_object("utime", path.object);
+        goto exit;
+    }
+
+    if (utime.now) {
         SYSTEMTIME now;
         GetSystemTime(&now);
         if (!SystemTimeToFileTime(&now, &mtime) ||
             !SystemTimeToFileTime(&now, &atime)) {
             win32_error("utime", NULL);
-            goto done;
+            goto exit;
         }
     }
-    else if (!PyTuple_Check(arg) || PyTuple_Size(arg) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-                        "utime() arg 2 must be a tuple (atime, mtime)");
-        goto done;
-    }
     else {
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 0),
-                                     &atimesec, &ansec) == -1)
-            goto done;
-        time_t_to_FILE_TIME(atimesec, ansec, &atime);
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 1),
-                                     &mtimesec, &mnsec) == -1)
-            goto done;
-        time_t_to_FILE_TIME(mtimesec, mnsec, &mtime);
+        time_t_to_FILE_TIME(utime.atime_s, utime.atime_ns, &atime);
+        time_t_to_FILE_TIME(utime.mtime_s, utime.mtime_ns, &mtime);
     }
     if (!SetFileTime(hFile, NULL, &atime, &mtime)) {
         /* Avoid putting the file name into the error here,
@@ -3655,279 +4712,52 @@ posix_utime(PyObject *self, PyObject *args)
            something is wrong with the file, when it also
            could be the time stamp that gives a problem. */
         win32_error("utime", NULL);
-        goto done;
+        goto exit;
     }
-    Py_INCREF(Py_None);
-    result = Py_None;
-done:
-    CloseHandle(hFile);
-    return result;
 #else /* MS_WINDOWS */
+    Py_BEGIN_ALLOW_THREADS
 
-    PyObject *opath;
-    char *path;
-    time_t atime, mtime;
-    long ansec, mnsec;
-    int res;
-    PyObject* arg = Py_None;
-
-    if (!PyArg_ParseTuple(args, "O&|O:utime",
-                          PyUnicode_FSConverter, &opath, &arg))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    if (arg == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = utime(path, NULL);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(arg) || PyTuple_Size(arg) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-                        "utime() arg 2 must be a tuple (atime, mtime)");
-        Py_DECREF(opath);
-        return NULL;
-    }
-    else {
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 0),
-                                     &atime, &ansec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 1),
-                                     &mtime, &mnsec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-
-        Py_BEGIN_ALLOW_THREADS
-        {
-#ifdef HAVE_UTIMENSAT
-        struct timespec buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_nsec = ansec;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_nsec = mnsec;
-        res = utimensat(AT_FDCWD, path, buf, 0);
-#elif defined(HAVE_UTIMES)
-        struct timeval buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_usec = ansec / 1000;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_usec = mnsec / 1000;
-        res = utimes(path, buf);
-#elif defined(HAVE_UTIME_H)
-        /* XXX should define struct utimbuf instead, above */
-        struct utimbuf buf;
-        buf.actime = atime;
-        buf.modtime = mtime;
-        res = utime(path, &buf);
-#else
-        time_t buf[2];
-        buf[0] = atime;
-        buf[1] = mtime;
-        res = utime(path, buf);
+#if UTIME_HAVE_NOFOLLOW_SYMLINKS
+    if ((!follow_symlinks) && (dir_fd == DEFAULT_DIR_FD))
+        result = utime_nofollow_symlinks(&utime, path.narrow);
+    else
 #endif
-        }
-        Py_END_ALLOW_THREADS
+
+#if UTIME_HAVE_DIR_FD
+    if ((dir_fd != DEFAULT_DIR_FD) || (!follow_symlinks))
+        result = utime_dir_fd(&utime, dir_fd, path.narrow, follow_symlinks);
+    else
+#endif
+
+#if UTIME_HAVE_FD
+    if (path.fd != -1)
+        result = utime_fd(&utime, path.fd);
+    else
+#endif
+
+    result = utime_default(&utime, path.narrow);
+
+    Py_END_ALLOW_THREADS
+
+    if (result < 0) {
+        /* see previous comment about not putting filename in error here */
+        return_value = posix_error();
+        goto exit;
     }
-    if (res < 0) {
-        return posix_error_with_allocated_filename(opath);
-    }
-    Py_DECREF(opath);
-    Py_INCREF(Py_None);
-    return Py_None;
-#undef UTIME_EXTRACT
+
 #endif /* MS_WINDOWS */
+
+    Py_INCREF(Py_None);
+    return_value = Py_None;
+
+exit:
+    path_cleanup(&path);
+#ifdef MS_WINDOWS
+    if (hFile != INVALID_HANDLE_VALUE)
+        CloseHandle(hFile);
+#endif
+    return return_value;
 }
-
-#ifdef HAVE_FUTIMES
-PyDoc_STRVAR(posix_futimes__doc__,
-"futimes(fd[, (atime, mtime)])\n\
-Set the access and modified time of the file specified by the file\n\
-descriptor fd to the given values. If no second argument is used, set the\n\
-access and modified times to the current time.");
-
-static PyObject *
-posix_futimes(PyObject *self, PyObject *args)
-{
-    int res, fd;
-    PyObject* arg = Py_None;
-    time_t atime, mtime;
-    long ansec, mnsec;
-
-    if (!PyArg_ParseTuple(args, "i|O:futimes", &fd, &arg))
-        return NULL;
-
-    if (arg == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = futimes(fd, NULL);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(arg) || PyTuple_Size(arg) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-                "futimes() arg 2 must be a tuple (atime, mtime)");
-        return NULL;
-    }
-    else {
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 0),
-                                     &atime, &ansec) == -1) {
-            return NULL;
-        }
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 1),
-                                     &mtime, &mnsec) == -1) {
-            return NULL;
-        }
-        Py_BEGIN_ALLOW_THREADS
-        {
-#ifdef HAVE_FUTIMENS
-        struct timespec buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_nsec = ansec;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_nsec = mnsec;
-        res = futimens(fd, buf);
-#else
-        struct timeval buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_usec = ansec / 1000;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_usec = mnsec / 1000;
-        res = futimes(fd, buf);
-#endif
-        }
-        Py_END_ALLOW_THREADS
-    }
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_LUTIMES
-PyDoc_STRVAR(posix_lutimes__doc__,
-"lutimes(path[, (atime, mtime)])\n\
-Like utime(), but if path is a symbolic link, it is not dereferenced.");
-
-static PyObject *
-posix_lutimes(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    PyObject *arg = Py_None;
-    const char *path;
-    int res;
-    time_t atime, mtime;
-    long ansec, mnsec;
-
-    if (!PyArg_ParseTuple(args, "O&|O:lutimes",
-            PyUnicode_FSConverter, &opath, &arg))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    if (arg == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = lutimes(path, NULL);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(arg) || PyTuple_Size(arg) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-            "lutimes() arg 2 must be a tuple (atime, mtime)");
-        Py_DECREF(opath);
-        return NULL;
-    }
-    else {
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 0),
-                                     &atime, &ansec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 1),
-                                     &mtime, &mnsec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        Py_BEGIN_ALLOW_THREADS
-        {
-#ifdef HAVE_UTIMENSAT
-        struct timespec buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_nsec = ansec;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_nsec = mnsec;
-        res = utimensat(AT_FDCWD, path, buf, AT_SYMLINK_NOFOLLOW);
-#else
-        struct timeval buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_usec = ansec / 1000;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_usec = mnsec / 1000;
-        res = lutimes(path, buf);
-#endif
-        }
-        Py_END_ALLOW_THREADS
-    }
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_FUTIMENS
-PyDoc_STRVAR(posix_futimens__doc__,
-"futimens(fd[, (atime_sec, atime_nsec), (mtime_sec, mtime_nsec)])\n\
-Updates the timestamps of a file specified by the file descriptor fd, with\n\
-nanosecond precision.\n\
-If no second argument is given, set atime and mtime to the current time.\n\
-If *_nsec is specified as UTIME_NOW, the timestamp is updated to the\n\
-current time.\n\
-If *_nsec is specified as UTIME_OMIT, the timestamp is not updated.");
-
-static PyObject *
-posix_futimens(PyObject *self, PyObject *args)
-{
-    int res, fd;
-    PyObject *atime = Py_None;
-    PyObject *mtime = Py_None;
-    struct timespec buf[2];
-
-    if (!PyArg_ParseTuple(args, "i|OO:futimens",
-            &fd, &atime, &mtime))
-        return NULL;
-    if (atime == Py_None && mtime == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = futimens(fd, NULL);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(atime) || PyTuple_Size(atime) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-            "futimens() arg 2 must be a tuple (atime_sec, atime_nsec)");
-        return NULL;
-    }
-    else if (!PyTuple_Check(mtime) || PyTuple_Size(mtime) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-            "futimens() arg 3 must be a tuple (mtime_sec, mtime_nsec)");
-        return NULL;
-    }
-    else {
-        if (!PyArg_ParseTuple(atime, "ll:futimens",
-                &(buf[0].tv_sec), &(buf[0].tv_nsec))) {
-            return NULL;
-        }
-        if (!PyArg_ParseTuple(mtime, "ll:futimens",
-                &(buf[1].tv_sec), &(buf[1].tv_nsec))) {
-            return NULL;
-        }
-        Py_BEGIN_ALLOW_THREADS
-        res = futimens(fd, buf);
-        Py_END_ALLOW_THREADS
-    }
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
 
 /* Process operations */
 
@@ -4141,121 +4971,79 @@ Execute a path with arguments and environment, replacing current process.\n\
 \n\
     path: path of executable file\n\
     args: tuple or list of arguments\n\
-    env: dictionary of strings mapping to strings");
+    env: dictionary of strings mapping to strings\n\
+\n\
+On some platforms, you may specify an open file descriptor for path;\n\
+  execve will execute the program the file descriptor is open to.\n\
+  If this functionality is unavailable, using it raises NotImplementedError.");
 
 static PyObject *
-posix_execve(PyObject *self, PyObject *args)
+posix_execve(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    char *path;
+    path_t path;
     PyObject *argv, *env;
-    char **argvlist;
+    char **argvlist = NULL;
     char **envlist;
     Py_ssize_t argc, envc;
+    static char *keywords[] = {"path", "argv", "environment", NULL};
 
     /* execve has three arguments: (path, argv, env), where
        argv is a list or tuple of strings and env is a dictionary
        like posix.environ. */
 
-    if (!PyArg_ParseTuple(args, "O&OO:execve",
-                          PyUnicode_FSConverter,
-                          &opath, &argv, &env))
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FEXECVE
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&OO:execve", keywords,
+                          path_converter, &path,
+                          &argv, &env
+                          ))
         return NULL;
-    path = PyBytes_AsString(opath);
+
     if (!PyList_Check(argv) && !PyTuple_Check(argv)) {
         PyErr_SetString(PyExc_TypeError,
-                        "execve() arg 2 must be a tuple or list");
-        goto fail_0;
+                        "execve: argv must be a tuple or list");
+        goto fail;
     }
     argc = PySequence_Size(argv);
     if (!PyMapping_Check(env)) {
         PyErr_SetString(PyExc_TypeError,
-                        "execve() arg 3 must be a mapping object");
-        goto fail_0;
+                        "execve: environment must be a mapping object");
+        goto fail;
     }
 
     argvlist = parse_arglist(argv, &argc);
     if (argvlist == NULL) {
-        goto fail_0;
+        goto fail;
     }
-
-    envlist = parse_envlist(env, &envc);
-    if (envlist == NULL)
-        goto fail_1;
-
-    execve(path, argvlist, envlist);
-
-    /* If we get here it's definitely an error */
-
-    (void) posix_error();
-
-    while (--envc >= 0)
-        PyMem_DEL(envlist[envc]);
-    PyMem_DEL(envlist);
-  fail_1:
-    free_string_array(argvlist, argc);
-  fail_0:
-    Py_DECREF(opath);
-    return NULL;
-}
-#endif /* HAVE_EXECV */
-
-#ifdef HAVE_FEXECVE
-PyDoc_STRVAR(posix_fexecve__doc__,
-"fexecve(fd, args, env)\n\n\
-Execute the program specified by a file descriptor with arguments and\n\
-environment, replacing the current process.\n\
-\n\
-    fd: file descriptor of executable\n\
-    args: tuple or list of arguments\n\
-    env: dictionary of strings mapping to strings");
-
-static PyObject *
-posix_fexecve(PyObject *self, PyObject *args)
-{
-    int fd;
-    PyObject *argv, *env;
-    char **argvlist;
-    char **envlist;
-    Py_ssize_t argc, envc;
-
-    if (!PyArg_ParseTuple(args, "iOO:fexecve",
-                          &fd, &argv, &env))
-        return NULL;
-    if (!PyList_Check(argv) && !PyTuple_Check(argv)) {
-        PyErr_SetString(PyExc_TypeError,
-                        "fexecve() arg 2 must be a tuple or list");
-        return NULL;
-    }
-    argc = PySequence_Size(argv);
-    if (!PyMapping_Check(env)) {
-        PyErr_SetString(PyExc_TypeError,
-                        "fexecve() arg 3 must be a mapping object");
-        return NULL;
-    }
-
-    argvlist = parse_arglist(argv, &argc);
-    if (argvlist == NULL)
-        return NULL;
 
     envlist = parse_envlist(env, &envc);
     if (envlist == NULL)
         goto fail;
 
-    fexecve(fd, argvlist, envlist);
+#ifdef HAVE_FEXECVE
+    if (path.fd > -1)
+        fexecve(path.fd, argvlist, envlist);
+    else
+#endif
+        execve(path.narrow, argvlist, envlist);
 
     /* If we get here it's definitely an error */
 
-    (void) posix_error();
+    path_posix_error("execve", &path);
 
     while (--envc >= 0)
         PyMem_DEL(envlist[envc]);
     PyMem_DEL(envlist);
   fail:
-    free_string_array(argvlist, argc);
+    if (argvlist)
+        free_string_array(argvlist, argc);
+    path_cleanup(&path);
     return NULL;
 }
-#endif /* HAVE_FEXECVE */
+#endif /* HAVE_EXECV */
+
 
 #ifdef HAVE_SPAWNV
 PyDoc_STRVAR(posix_spawnv__doc__,
@@ -4932,290 +5720,8 @@ posix_sched_yield(PyObject *self, PyObject *noargs)
 
 #ifdef HAVE_SCHED_SETAFFINITY
 
-typedef struct {
-    PyObject_HEAD;
-    Py_ssize_t size;
-    int ncpus;
-    cpu_set_t *set;
-} Py_cpu_set;
-
-static PyTypeObject cpu_set_type;
-
-static void
-cpu_set_dealloc(Py_cpu_set *set)
-{
-    assert(set->set);
-    CPU_FREE(set->set);
-    Py_TYPE(set)->tp_free(set);
-}
-
-static Py_cpu_set *
-make_new_cpu_set(PyTypeObject *type, Py_ssize_t size)
-{
-    Py_cpu_set *set;
-
-    if (size < 0) {
-        PyErr_SetString(PyExc_ValueError, "negative size");
-        return NULL;
-    }
-    set = (Py_cpu_set *)type->tp_alloc(type, 0);
-    if (!set)
-        return NULL;
-    set->ncpus = size;
-    set->size = CPU_ALLOC_SIZE(size);
-    set->set = CPU_ALLOC(size);
-    if (!set->set) {
-        type->tp_free(set);
-        PyErr_NoMemory();
-        return NULL;
-    }
-    CPU_ZERO_S(set->size, set->set);
-    return set;
-}
-
-static PyObject *
-cpu_set_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
-{
-    int size;
-
-    if (!_PyArg_NoKeywords("cpu_set()", kwargs) ||
-        !PyArg_ParseTuple(args, "i:cpu_set", &size))
-        return NULL;
-    return (PyObject *)make_new_cpu_set(type, size);
-}
-
-static PyObject *
-cpu_set_repr(Py_cpu_set *set)
-{
-    return PyUnicode_FromFormat("<cpu_set with %li entries>", set->ncpus);
-}
-
-static Py_ssize_t
-cpu_set_len(Py_cpu_set *set)
-{
-    return set->ncpus;
-}
-
-static int
-_get_cpu(Py_cpu_set *set, const char *requester, PyObject *args)
-{
-    int cpu;
-    if (!PyArg_ParseTuple(args, requester, &cpu))
-        return -1;
-    if (cpu < 0) {
-        PyErr_SetString(PyExc_ValueError, "cpu < 0 not valid");
-        return -1;
-    }
-    if (cpu >= set->ncpus) {
-        PyErr_SetString(PyExc_ValueError, "cpu too large for set");
-        return -1;
-    }
-    return cpu;
-}
-
-PyDoc_STRVAR(cpu_set_set_doc,
-"cpu_set.set(i)\n\n\
-Add CPU *i* to the set.");
-
-static PyObject *
-cpu_set_set(Py_cpu_set *set, PyObject *args)
-{
-    int cpu = _get_cpu(set, "i|set", args);
-    if (cpu == -1)
-        return NULL;
-    CPU_SET_S(cpu, set->size, set->set);
-    Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR(cpu_set_count_doc,
-"cpu_set.count() -> int\n\n\
-Return the number of CPUs active in the set.");
-
-static PyObject *
-cpu_set_count(Py_cpu_set *set, PyObject *noargs)
-{
-    return PyLong_FromLong(CPU_COUNT_S(set->size, set->set));
-}
-
-PyDoc_STRVAR(cpu_set_clear_doc,
-"cpu_set.clear(i)\n\n\
-Remove CPU *i* from the set.");
-
-static PyObject *
-cpu_set_clear(Py_cpu_set *set, PyObject *args)
-{
-    int cpu = _get_cpu(set, "i|clear", args);
-    if (cpu == -1)
-        return NULL;
-    CPU_CLR_S(cpu, set->size, set->set);
-    Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR(cpu_set_isset_doc,
-"cpu_set.isset(i) -> bool\n\n\
-Test if CPU *i* is in the set.");
-
-static PyObject *
-cpu_set_isset(Py_cpu_set *set, PyObject *args)
-{
-    int cpu = _get_cpu(set, "i|isset", args);
-    if (cpu == -1)
-        return NULL;
-    if (CPU_ISSET_S(cpu, set->size, set->set))
-        Py_RETURN_TRUE;
-    Py_RETURN_FALSE;
-}
-
-PyDoc_STRVAR(cpu_set_zero_doc,
-"cpu_set.zero()\n\n\
-Clear the cpu_set.");
-
-static PyObject *
-cpu_set_zero(Py_cpu_set *set, PyObject *noargs)
-{
-    CPU_ZERO_S(set->size, set->set);
-    Py_RETURN_NONE;
-}
-
-static PyObject *
-cpu_set_richcompare(Py_cpu_set *set, Py_cpu_set *other, int op)
-{
-    int eq;
-
-    if ((op != Py_EQ && op != Py_NE) || Py_TYPE(other) != &cpu_set_type)
-        Py_RETURN_NOTIMPLEMENTED;
-
-    eq = set->ncpus == other->ncpus && CPU_EQUAL_S(set->size, set->set, other->set);
-    if ((op == Py_EQ) ? eq : !eq)
-        Py_RETURN_TRUE;
-    else
-        Py_RETURN_FALSE;
-}
-
-#define CPU_SET_BINOP(name, op) \
-    static PyObject * \
-    do_cpu_set_##name(Py_cpu_set *left, Py_cpu_set *right, Py_cpu_set *res) { \
-        if (res) { \
-            Py_INCREF(res); \
-        } \
-        else { \
-            res = make_new_cpu_set(&cpu_set_type, left->ncpus); \
-            if (!res) \
-                return NULL; \
-        } \
-        if (Py_TYPE(right) != &cpu_set_type || left->ncpus != right->ncpus) { \
-            Py_DECREF(res); \
-            Py_RETURN_NOTIMPLEMENTED; \
-        } \
-        assert(left->size == right->size && right->size == res->size); \
-        op(res->size, res->set, left->set, right->set); \
-        return (PyObject *)res; \
-    } \
-    static PyObject * \
-    cpu_set_##name(Py_cpu_set *left, Py_cpu_set *right) { \
-        return do_cpu_set_##name(left, right, NULL); \
-    } \
-    static PyObject * \
-    cpu_set_i##name(Py_cpu_set *left, Py_cpu_set *right) { \
-        return do_cpu_set_##name(left, right, left); \
-    } \
-
-CPU_SET_BINOP(and, CPU_AND_S)
-CPU_SET_BINOP(or, CPU_OR_S)
-CPU_SET_BINOP(xor, CPU_XOR_S)
-#undef CPU_SET_BINOP
-
-PyDoc_STRVAR(cpu_set_doc,
-"cpu_set(size)\n\n\
-Create an empty mask of CPUs.");
-
-static PyNumberMethods cpu_set_as_number = {
-    0,                                  /*nb_add*/
-    0,                                  /*nb_subtract*/
-    0,                                  /*nb_multiply*/
-    0,                                  /*nb_remainder*/
-    0,                                  /*nb_divmod*/
-    0,                                  /*nb_power*/
-    0,                                  /*nb_negative*/
-    0,                                  /*nb_positive*/
-    0,                                  /*nb_absolute*/
-    0,                                  /*nb_bool*/
-    0,                                  /*nb_invert*/
-    0,                                  /*nb_lshift*/
-    0,                                  /*nb_rshift*/
-    (binaryfunc)cpu_set_and,            /*nb_and*/
-    (binaryfunc)cpu_set_xor,            /*nb_xor*/
-    (binaryfunc)cpu_set_or,             /*nb_or*/
-    0,                                  /*nb_int*/
-    0,                                  /*nb_reserved*/
-    0,                                  /*nb_float*/
-    0,                                  /*nb_inplace_add*/
-    0,                                  /*nb_inplace_subtract*/
-    0,                                  /*nb_inplace_multiply*/
-    0,                                  /*nb_inplace_remainder*/
-    0,                                  /*nb_inplace_power*/
-    0,                                  /*nb_inplace_lshift*/
-    0,                                  /*nb_inplace_rshift*/
-    (binaryfunc)cpu_set_iand,           /*nb_inplace_and*/
-    (binaryfunc)cpu_set_ixor,           /*nb_inplace_xor*/
-    (binaryfunc)cpu_set_ior,            /*nb_inplace_or*/
-};
-
-static PySequenceMethods cpu_set_as_sequence = {
-    (lenfunc)cpu_set_len,                            /* sq_length */
-};
-
-static PyMethodDef cpu_set_methods[] = {
-    {"clear", (PyCFunction)cpu_set_clear, METH_VARARGS, cpu_set_clear_doc},
-    {"count", (PyCFunction)cpu_set_count, METH_NOARGS, cpu_set_count_doc},
-    {"isset", (PyCFunction)cpu_set_isset, METH_VARARGS, cpu_set_isset_doc},
-    {"set", (PyCFunction)cpu_set_set, METH_VARARGS, cpu_set_set_doc},
-    {"zero", (PyCFunction)cpu_set_zero, METH_NOARGS, cpu_set_zero_doc},
-    {NULL, NULL}   /* sentinel */
-};
-
-static PyTypeObject cpu_set_type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
-    "posix.cpu_set",                    /* tp_name */
-    sizeof(Py_cpu_set),                 /* tp_basicsize */
-    0,                                  /* tp_itemsize */
-    /* methods */
-    (destructor)cpu_set_dealloc,        /* tp_dealloc */
-    0,                                  /* tp_print */
-    0,                                  /* tp_getattr */
-    0,                                  /* tp_setattr */
-    0,                                  /* tp_reserved */
-    (reprfunc)cpu_set_repr,             /* tp_repr */
-    &cpu_set_as_number,                 /* tp_as_number */
-    &cpu_set_as_sequence,               /* tp_as_sequence */
-    0,                                  /* tp_as_mapping */
-    PyObject_HashNotImplemented,        /* tp_hash */
-    0,                                  /* tp_call */
-    0,                                  /* tp_str */
-    PyObject_GenericGetAttr,            /* tp_getattro */
-    0,                                  /* tp_setattro */
-    0,                                  /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT,                 /* tp_flags */
-    cpu_set_doc,                        /* tp_doc */
-    0,                                  /* tp_traverse */
-    0,                                  /* tp_clear */
-    (richcmpfunc)cpu_set_richcompare,   /* tp_richcompare */
-    0,                                  /* tp_weaklistoffset */
-    0,                                  /* tp_iter */
-    0,                                  /* tp_iternext */
-    cpu_set_methods,                    /* tp_methods */
-    0,                                  /* tp_members */
-    0,                                  /* tp_getset */
-    0,                                  /* tp_base */
-    0,                                  /* tp_dict */
-    0,                                  /* tp_descr_get */
-    0,                                  /* tp_descr_set */
-    0,                                  /* tp_dictoffset */
-    0,                                  /* tp_init */
-    PyType_GenericAlloc,                /* tp_alloc */
-    cpu_set_new,                        /* tp_new */
-    PyObject_Del,                       /* tp_free */
-};
+/* The minimum number of CPUs allocated in a cpu_set_t */
+static const int NCPUS_START = sizeof(unsigned long) * CHAR_BIT;
 
 PyDoc_STRVAR(posix_sched_setaffinity__doc__,
 "sched_setaffinity(pid, cpu_set)\n\n\
@@ -5225,14 +5731,89 @@ static PyObject *
 posix_sched_setaffinity(PyObject *self, PyObject *args)
 {
     pid_t pid;
-    Py_cpu_set *cpu_set;
+    int ncpus;
+    size_t setsize;
+    cpu_set_t *mask = NULL;
+    PyObject *iterable, *iterator = NULL, *item;
 
-    if (!PyArg_ParseTuple(args, _Py_PARSE_PID "O!:sched_setaffinity",
-                          &pid, &cpu_set_type, &cpu_set))
+    if (!PyArg_ParseTuple(args, _Py_PARSE_PID "O:sched_setaffinity",
+                          &pid, &iterable))
         return NULL;
-    if (sched_setaffinity(pid, cpu_set->size, cpu_set->set))
-        return posix_error();
+
+    iterator = PyObject_GetIter(iterable);
+    if (iterator == NULL)
+        return NULL;
+
+    ncpus = NCPUS_START;
+    setsize = CPU_ALLOC_SIZE(ncpus);
+    mask = CPU_ALLOC(ncpus);
+    if (mask == NULL) {
+        PyErr_NoMemory();
+        goto error;
+    }
+    CPU_ZERO_S(setsize, mask);
+
+    while ((item = PyIter_Next(iterator))) {
+        long cpu;
+        if (!PyLong_Check(item)) {
+            PyErr_Format(PyExc_TypeError,
+                        "expected an iterator of ints, "
+                        "but iterator yielded %R",
+                        Py_TYPE(item));
+            Py_DECREF(item);
+            goto error;
+        }
+        cpu = PyLong_AsLong(item);
+        Py_DECREF(item);
+        if (cpu < 0) {
+            if (!PyErr_Occurred())
+                PyErr_SetString(PyExc_ValueError, "negative CPU number");
+            goto error;
+        }
+        if (cpu > INT_MAX - 1) {
+            PyErr_SetString(PyExc_OverflowError, "CPU number too large");
+            goto error;
+        }
+        if (cpu >= ncpus) {
+            /* Grow CPU mask to fit the CPU number */
+            int newncpus = ncpus;
+            cpu_set_t *newmask;
+            size_t newsetsize;
+            while (newncpus <= cpu) {
+                if (newncpus > INT_MAX / 2)
+                    newncpus = cpu + 1;
+                else
+                    newncpus = newncpus * 2;
+            }
+            newmask = CPU_ALLOC(newncpus);
+            if (newmask == NULL) {
+                PyErr_NoMemory();
+                goto error;
+            }
+            newsetsize = CPU_ALLOC_SIZE(newncpus);
+            CPU_ZERO_S(newsetsize, newmask);
+            memcpy(newmask, mask, setsize);
+            CPU_FREE(mask);
+            setsize = newsetsize;
+            mask = newmask;
+            ncpus = newncpus;
+        }
+        CPU_SET_S(cpu, setsize, mask);
+    }
+    Py_CLEAR(iterator);
+
+    if (sched_setaffinity(pid, setsize, mask)) {
+        posix_error();
+        goto error;
+    }
+    CPU_FREE(mask);
     Py_RETURN_NONE;
+
+error:
+    if (mask)
+        CPU_FREE(mask);
+    Py_XDECREF(iterator);
+    return NULL;
 }
 
 PyDoc_STRVAR(posix_sched_getaffinity__doc__,
@@ -5244,20 +5825,58 @@ static PyObject *
 posix_sched_getaffinity(PyObject *self, PyObject *args)
 {
     pid_t pid;
-    int ncpus;
-    Py_cpu_set *res;
+    int cpu, ncpus, count;
+    size_t setsize;
+    cpu_set_t *mask = NULL;
+    PyObject *res = NULL;
 
-    if (!PyArg_ParseTuple(args, _Py_PARSE_PID "i:sched_getaffinity",
-                          &pid, &ncpus))
+    if (!PyArg_ParseTuple(args, _Py_PARSE_PID ":sched_getaffinity",
+                          &pid))
         return NULL;
-    res = make_new_cpu_set(&cpu_set_type, ncpus);
-    if (!res)
-        return NULL;
-    if (sched_getaffinity(pid, res->size, res->set)) {
-        Py_DECREF(res);
-        return posix_error();
+
+    ncpus = NCPUS_START;
+    while (1) {
+        setsize = CPU_ALLOC_SIZE(ncpus);
+        mask = CPU_ALLOC(ncpus);
+        if (mask == NULL)
+            return PyErr_NoMemory();
+        if (sched_getaffinity(pid, setsize, mask) == 0)
+            break;
+        CPU_FREE(mask);
+        if (errno != EINVAL)
+            return posix_error();
+        if (ncpus > INT_MAX / 2) {
+            PyErr_SetString(PyExc_OverflowError, "could not allocate "
+                            "a large enough CPU set");
+            return NULL;
+        }
+        ncpus = ncpus * 2;
     }
-    return (PyObject *)res;
+
+    res = PySet_New(NULL);
+    if (res == NULL)
+        goto error;
+    for (cpu = 0, count = CPU_COUNT_S(setsize, mask); count; cpu++) {
+        if (CPU_ISSET_S(cpu, setsize, mask)) {
+            PyObject *cpu_num = PyLong_FromLong(cpu);
+            --count;
+            if (cpu_num == NULL)
+                goto error;
+            if (PySet_Add(res, cpu_num)) {
+                Py_DECREF(cpu_num);
+                goto error;
+            }
+            Py_DECREF(cpu_num);
+        }
+    }
+    CPU_FREE(mask);
+    return res;
+
+error:
+    if (mask)
+        CPU_FREE(mask);
+    Py_XDECREF(res);
+    return NULL;
 }
 
 #endif /* HAVE_SCHED_SETAFFINITY */
@@ -6368,107 +6987,224 @@ posix_wait(PyObject *self, PyObject *noargs)
 #endif
 
 
-PyDoc_STRVAR(posix_lstat__doc__,
-"lstat(path) -> stat result\n\n\
-Like stat(path), but do not follow symbolic links.");
-
-static PyObject *
-posix_lstat(PyObject *self, PyObject *args)
-{
-#ifdef HAVE_LSTAT
-    return posix_do_stat(self, args, "O&:lstat", lstat, NULL, NULL);
-#else /* !HAVE_LSTAT */
-#ifdef MS_WINDOWS
-    return posix_do_stat(self, args, "O&:lstat", win32_lstat, "U:lstat",
-                         win32_lstat_w);
-#else
-    return posix_do_stat(self, args, "O&:lstat", STAT, NULL, NULL);
+#if defined(HAVE_READLINK) || defined(MS_WINDOWS)
+PyDoc_STRVAR(readlink__doc__,
+"readlink(path, *, dir_fd=None) -> path\n\n\
+Return a string representing the path to which the symbolic link points.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 #endif
-#endif /* !HAVE_LSTAT */
-}
-
 
 #ifdef HAVE_READLINK
-PyDoc_STRVAR(posix_readlink__doc__,
-"readlink(path) -> path\n\n\
-Return a string representing the path to which the symbolic link points.");
 
 static PyObject *
-posix_readlink(PyObject *self, PyObject *args)
+posix_readlink(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject* v;
-    char buf[MAXPATHLEN];
-    PyObject *opath;
-    char *path;
-    int n;
-    int arg_is_unicode = 0;
+    path_t path;
+    int dir_fd = DEFAULT_DIR_FD;
+    char buffer[MAXPATHLEN];
+    ssize_t length;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "dir_fd", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&:readlink",
-                          PyUnicode_FSConverter, &opath))
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|$O&:readlink", keywords,
+                          path_converter, &path,
+#ifdef HAVE_READLINKAT
+                          dir_fd_converter, &dir_fd
+#else
+                          dir_fd_unavailable, &dir_fd
+#endif
+                          ))
         return NULL;
-    path = PyBytes_AsString(opath);
-    v = PySequence_GetItem(args, 0);
-    if (v == NULL) {
-        Py_DECREF(opath);
-        return NULL;
-    }
-
-    if (PyUnicode_Check(v)) {
-        arg_is_unicode = 1;
-    }
-    Py_DECREF(v);
 
     Py_BEGIN_ALLOW_THREADS
-    n = readlink(path, buf, (int) sizeof buf);
-    Py_END_ALLOW_THREADS
-    if (n < 0)
-        return posix_error_with_allocated_filename(opath);
-
-    Py_DECREF(opath);
-    if (arg_is_unicode)
-        return PyUnicode_DecodeFSDefaultAndSize(buf, n);
+#ifdef HAVE_READLINKAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        length = readlinkat(dir_fd, path.narrow, buffer, sizeof(buffer));
     else
-        return PyBytes_FromStringAndSize(buf, n);
+#endif
+        length = readlink(path.narrow, buffer, sizeof(buffer));
+    Py_END_ALLOW_THREADS
+
+    if (length < 0) {
+        return_value = path_posix_error("readlink", &path);
+        goto exit;
+    }
+
+    if (PyUnicode_Check(path.object))
+        return_value = PyUnicode_DecodeFSDefaultAndSize(buffer, length);
+    else
+        return_value = PyBytes_FromStringAndSize(buffer, length);
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
+
+
 #endif /* HAVE_READLINK */
 
 
-#if defined(HAVE_SYMLINK) && !defined(MS_WINDOWS)
+#ifdef HAVE_SYMLINK
 PyDoc_STRVAR(posix_symlink__doc__,
-"symlink(src, dst)\n\n\
-Create a symbolic link pointing to src named dst.");
+"symlink(src, dst, target_is_directory=False, *, dir_fd=None)\n\n\
+Create a symbolic link pointing to src named dst.\n\n\
+target_is_directory is required on Windows if the target is to be\n\
+  interpreted as a directory.  (On Windows, symlink requires\n\
+  Windows 6.0 or greater, and raises a NotImplementedError otherwise.)\n\
+  target_is_directory is ignored on non-Windows platforms.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
+
+#if defined(MS_WINDOWS)
+
+/* Grab CreateSymbolicLinkW dynamically from kernel32 */
+static DWORD (CALLBACK *Py_CreateSymbolicLinkW)(LPWSTR, LPWSTR, DWORD) = NULL;
+static DWORD (CALLBACK *Py_CreateSymbolicLinkA)(LPSTR, LPSTR, DWORD) = NULL;
+static int
+check_CreateSymbolicLink()
+{
+    HINSTANCE hKernel32;
+    /* only recheck */
+    if (Py_CreateSymbolicLinkW && Py_CreateSymbolicLinkA)
+        return 1;
+    hKernel32 = GetModuleHandleW(L"KERNEL32");
+    *(FARPROC*)&Py_CreateSymbolicLinkW = GetProcAddress(hKernel32,
+                                                        "CreateSymbolicLinkW");
+    *(FARPROC*)&Py_CreateSymbolicLinkA = GetProcAddress(hKernel32,
+                                                        "CreateSymbolicLinkA");
+    return (Py_CreateSymbolicLinkW && Py_CreateSymbolicLinkA);
+}
+
+#endif
 
 static PyObject *
-posix_symlink(PyObject *self, PyObject *args)
+posix_symlink(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    return posix_2str(args, "O&O&:symlink", symlink);
+    path_t src;
+    path_t dst;
+    int dir_fd = DEFAULT_DIR_FD;
+    int target_is_directory = 0;
+    static char *keywords[] = {"src", "dst", "target_is_directory",
+                               "dir_fd", NULL};
+    PyObject *return_value;
+#ifdef MS_WINDOWS
+    DWORD result;
+#else
+    int result;
+#endif
+
+    memset(&src, 0, sizeof(src));
+    src.argument_name = "src";
+    memset(&dst, 0, sizeof(dst));
+    dst.argument_name = "dst";
+
+#ifdef MS_WINDOWS
+    if (!check_CreateSymbolicLink()) {
+        PyErr_SetString(PyExc_NotImplementedError,
+            "CreateSymbolicLink functions not found");
+		return NULL;
+	}
+    if (!win32_can_symlink) {
+        PyErr_SetString(PyExc_OSError, "symbolic link privilege not held");
+		return NULL;
+	}
+#endif
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&|i$O&:symlink",
+            keywords,
+            path_converter, &src,
+            path_converter, &dst,
+            &target_is_directory,
+#ifdef HAVE_SYMLINKAT
+            dir_fd_converter, &dir_fd
+#else
+            dir_fd_unavailable, &dir_fd
+#endif
+            ))
+        return NULL;
+
+    if ((src.narrow && dst.wide) || (src.wide && dst.narrow)) {
+        PyErr_SetString(PyExc_ValueError,
+            "symlink: src and dst must be the same type");
+        return_value = NULL;
+        goto exit;
+    }
+
+#ifdef MS_WINDOWS
+    Py_BEGIN_ALLOW_THREADS
+    if (dst.wide)
+        result = Py_CreateSymbolicLinkW(dst.wide, src.wide,
+                                        target_is_directory);
+    else
+        result = Py_CreateSymbolicLinkA(dst.narrow, src.narrow,
+                                        target_is_directory);
+    Py_END_ALLOW_THREADS
+
+    if (!result) {
+        return_value = win32_error_object("symlink", src.object);
+        goto exit;
+    }
+
+#else
+
+    Py_BEGIN_ALLOW_THREADS
+#if HAVE_SYMLINKAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = symlinkat(src.narrow, dir_fd, dst.narrow);
+    else
+#endif
+        result = symlink(src.narrow, dst.narrow);
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_error("symlink", &dst);
+        goto exit;
+    }
+#endif
+
+    return_value = Py_None;
+    Py_INCREF(Py_None);
+    goto exit; /* silence "unused label" warning */
+exit:
+    path_cleanup(&src);
+    path_cleanup(&dst);
+    return return_value;
 }
+
 #endif /* HAVE_SYMLINK */
+
 
 #if !defined(HAVE_READLINK) && defined(MS_WINDOWS)
 
-PyDoc_STRVAR(win_readlink__doc__,
-"readlink(path) -> path\n\n\
-Return a string representing the path to which the symbolic link points.");
-
-/* Windows readlink implementation */
 static PyObject *
-win_readlink(PyObject *self, PyObject *args)
+win_readlink(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     wchar_t *path;
     DWORD n_bytes_returned;
     DWORD io_result;
     PyObject *po, *result;
+	int dir_fd;
     HANDLE reparse_point_handle;
 
     char target_buffer[MAXIMUM_REPARSE_DATA_BUFFER_SIZE];
     REPARSE_DATA_BUFFER *rdb = (REPARSE_DATA_BUFFER *)target_buffer;
     wchar_t *print_name;
 
-    if (!PyArg_ParseTuple(args,
-                  "U:readlink",
-                  &po))
+    static char *keywords[] = {"path", "dir_fd", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "U|$O&:readlink", keywords,
+                          &po,
+                          dir_fd_unavailable, &dir_fd
+                          ))
         return NULL;
+
     path = PyUnicode_AsUnicode(po);
     if (path == NULL)
         return NULL;
@@ -6520,92 +7256,76 @@ win_readlink(PyObject *self, PyObject *args)
 
 #endif /* !defined(HAVE_READLINK) && defined(MS_WINDOWS) */
 
-#if defined(HAVE_SYMLINK) && defined(MS_WINDOWS)
 
-/* Grab CreateSymbolicLinkW dynamically from kernel32 */
-static int has_CreateSymbolicLinkW = 0;
-static DWORD (CALLBACK *Py_CreateSymbolicLinkW)(LPWSTR, LPWSTR, DWORD);
-static int
-check_CreateSymbolicLinkW()
-{
-    HINSTANCE hKernel32;
-    /* only recheck */
-    if (has_CreateSymbolicLinkW)
-        return has_CreateSymbolicLinkW;
-    hKernel32 = GetModuleHandleW(L"KERNEL32");
-    *(FARPROC*)&Py_CreateSymbolicLinkW = GetProcAddress(hKernel32,
-                                                        "CreateSymbolicLinkW");
-    if (Py_CreateSymbolicLinkW)
-        has_CreateSymbolicLinkW = 1;
-    return has_CreateSymbolicLinkW;
-}
+static PyStructSequence_Field times_result_fields[] = {
+    {"user",    "user time"},
+    {"system",   "system time"},
+    {"children_user",    "user time of children"},
+    {"children_system",    "system time of children"},
+    {"elapsed",    "elapsed time since an arbitrary point in the past"},
+    {NULL}
+};
 
-PyDoc_STRVAR(win_symlink__doc__,
-"symlink(src, dst, target_is_directory=False)\n\n\
-Create a symbolic link pointing to src named dst.\n\
-target_is_directory is required if the target is to be interpreted as\n\
-a directory.\n\
-This function requires Windows 6.0 or greater, and raises a\n\
-NotImplementedError otherwise.");
+PyDoc_STRVAR(times_result__doc__,
+"times_result: Result from os.times().\n\n\
+This object may be accessed either as a tuple of\n\
+  (user, system, children_user, children_system, elapsed),\n\
+or via the attributes user, system, children_user, children_system,\n\
+and elapsed.\n\
+\n\
+See os.times for more information.");
 
-static PyObject *
-win_symlink(PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    static char *kwlist[] = {"src", "dest", "target_is_directory", NULL};
-    PyObject *osrc, *odest;
-    PyObject *usrc = NULL, *udest = NULL;
-    wchar_t *wsrc, *wdest;
-    int target_is_directory = 0;
-    DWORD res;
+static PyStructSequence_Desc times_result_desc = {
+    "times_result", /* name */
+    times_result__doc__, /* doc */
+    times_result_fields,
+    5
+};
 
-    if (!check_CreateSymbolicLinkW())
-    {
-        /* raise NotImplementedError */
-        return PyErr_Format(PyExc_NotImplementedError,
-            "CreateSymbolicLinkW not found");
-    }
-    if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "OO|i:symlink", kwlist,
-            &osrc, &odest, &target_is_directory))
-        return NULL;
+static PyTypeObject TimesResultType;
 
-    usrc = win32_decode_filename(osrc);
-    if (!usrc)
-        return NULL;
-    udest = win32_decode_filename(odest);
-    if (!udest)
-        goto error;
-
-    if (win32_can_symlink == 0)
-        return PyErr_Format(PyExc_OSError, "symbolic link privilege not held");
-
-    wsrc = PyUnicode_AsUnicode(usrc);
-    if (wsrc == NULL)
-        goto error;
-    wdest = PyUnicode_AsUnicode(udest);
-    if (wsrc == NULL)
-        goto error;
-
-    Py_BEGIN_ALLOW_THREADS
-    res = Py_CreateSymbolicLinkW(wdest, wsrc, target_is_directory);
-    Py_END_ALLOW_THREADS
-
-    Py_DECREF(usrc);
-    Py_DECREF(udest);
-    if (!res)
-        return win32_error_object("symlink", osrc);
-
-    Py_INCREF(Py_None);
-    return Py_None;
-
-error:
-    Py_XDECREF(usrc);
-    Py_XDECREF(udest);
-    return NULL;
-}
-#endif /* defined(HAVE_SYMLINK) && defined(MS_WINDOWS) */
+#ifdef MS_WINDOWS
+#define HAVE_TIMES  /* mandatory, for the method table */
+#endif
 
 #ifdef HAVE_TIMES
+
+static PyObject *
+build_times_result(double user, double system,
+    double children_user, double children_system,
+    double elapsed)
+{
+    PyObject *value = PyStructSequence_New(&TimesResultType);
+    if (value == NULL)
+        return NULL;
+
+#define SET(i, field) \
+    { \
+    PyObject *o = PyFloat_FromDouble(field); \
+    if (!o) { \
+        Py_DECREF(value); \
+        return NULL; \
+    } \
+    PyStructSequence_SET_ITEM(value, i, o); \
+    } \
+
+    SET(0, user);
+    SET(1, system);
+    SET(2, children_user);
+    SET(3, children_system);
+    SET(4, elapsed);
+
+#undef SET
+
+    return value;
+}
+
+PyDoc_STRVAR(posix_times__doc__,
+"times() -> times_result\n\n\
+Return an object containing floating point numbers indicating process\n\
+times.  The object behaves like a named tuple with these fields:\n\
+  (utime, stime, cutime, cstime, elapsed_time)");
+
 #if defined(PYCC_VACPP) && defined(PYOS_OS2)
 static long
 system_uptime(void)
@@ -6623,38 +7343,14 @@ static PyObject *
 posix_times(PyObject *self, PyObject *noargs)
 {
     /* Currently Only Uptime is Provided -- Others Later */
-    return Py_BuildValue("ddddd",
+    return build_times_result(
                          (double)0 /* t.tms_utime / HZ */,
                          (double)0 /* t.tms_stime / HZ */,
                          (double)0 /* t.tms_cutime / HZ */,
                          (double)0 /* t.tms_cstime / HZ */,
                          (double)system_uptime() / 1000);
 }
-#else /* not OS2 */
-#define NEED_TICKS_PER_SECOND
-static long ticks_per_second = -1;
-static PyObject *
-posix_times(PyObject *self, PyObject *noargs)
-{
-    struct tms t;
-    clock_t c;
-    errno = 0;
-    c = times(&t);
-    if (c == (clock_t) -1)
-        return posix_error();
-    return Py_BuildValue("ddddd",
-                         (double)t.tms_utime / ticks_per_second,
-                         (double)t.tms_stime / ticks_per_second,
-                         (double)t.tms_cutime / ticks_per_second,
-                         (double)t.tms_cstime / ticks_per_second,
-                         (double)c / ticks_per_second);
-}
-#endif /* not OS2 */
-#endif /* HAVE_TIMES */
-
-
-#ifdef MS_WINDOWS
-#define HAVE_TIMES      /* so the method table will pick it up */
+#elif defined(MS_WINDOWS)
 static PyObject *
 posix_times(PyObject *self, PyObject *noargs)
 {
@@ -6667,8 +7363,7 @@ posix_times(PyObject *self, PyObject *noargs)
        1e7 is one second in such units; 1e-7 the inverse.
        429.4967296 is 2**32 / 1e7 or 2**32 * 1e-7.
     */
-    return Py_BuildValue(
-        "ddddd",
+    return build_times_result(
         (double)(user.dwHighDateTime*429.4967296 +
                  user.dwLowDateTime*1e-7),
         (double)(kernel.dwHighDateTime*429.4967296 +
@@ -6677,13 +7372,28 @@ posix_times(PyObject *self, PyObject *noargs)
         (double)0,
         (double)0);
 }
-#endif /* MS_WINDOWS */
-
-#ifdef HAVE_TIMES
-PyDoc_STRVAR(posix_times__doc__,
-"times() -> (utime, stime, cutime, cstime, elapsed_time)\n\n\
-Return a tuple of floating point numbers indicating process times.");
+#else /* Neither Windows nor OS/2 */
+#define NEED_TICKS_PER_SECOND
+static long ticks_per_second = -1;
+static PyObject *
+posix_times(PyObject *self, PyObject *noargs)
+{
+    struct tms t;
+    clock_t c;
+    errno = 0;
+    c = times(&t);
+    if (c == (clock_t) -1)
+        return posix_error();
+    return build_times_result(
+                         (double)t.tms_utime / ticks_per_second,
+                         (double)t.tms_stime / ticks_per_second,
+                         (double)t.tms_cutime / ticks_per_second,
+                         (double)t.tms_cstime / ticks_per_second,
+                         (double)c / ticks_per_second);
+}
 #endif
+
+#endif /* HAVE_TIMES */
 
 
 #ifdef HAVE_GETSID
@@ -6783,57 +7493,68 @@ posix_tcsetpgrp(PyObject *self, PyObject *args)
 /* Functions acting on file descriptors */
 
 PyDoc_STRVAR(posix_open__doc__,
-"open(filename, flag [, mode=0777]) -> fd\n\n\
-Open a file (for low level IO).");
+"open(path, flags, mode=0o777, *, dir_fd=None)\n\n\
+Open a file for low level IO.  Returns a file handle (integer).\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 static PyObject *
-posix_open(PyObject *self, PyObject *args)
+posix_open(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *ofile;
-    char *file;
-    int flag;
+    path_t path;
+    int flags;
     int mode = 0777;
+    int dir_fd = DEFAULT_DIR_FD;
     int fd;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "flags", "mode", "dir_fd", NULL};
 
-#ifdef MS_WINDOWS
-    PyObject *po;
-    if (PyArg_ParseTuple(args, "Ui|i:open", &po, &flag, &mode)) {
-        wchar_t *wpath = PyUnicode_AsUnicode(po);
-        if (wpath == NULL)
-            return NULL;
-
-        Py_BEGIN_ALLOW_THREADS
-        fd = _wopen(wpath, flag, mode);
-        Py_END_ALLOW_THREADS
-        if (fd < 0)
-            return posix_error();
-        return PyLong_FromLong((long)fd);
-    }
-    /* Drop the argument parsing error as narrow strings
-       are also valid. */
-    PyErr_Clear();
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&i|i$O&:open", keywords,
+        path_converter, &path,
+        &flags, &mode,
+#ifdef HAVE_OPENAT
+        dir_fd_converter, &dir_fd
+#else
+        dir_fd_unavailable, &dir_fd
 #endif
+        ))
+        return NULL;
 
-    if (!PyArg_ParseTuple(args, "O&i|i:open",
-                          PyUnicode_FSConverter, &ofile,
-                          &flag, &mode))
-        return NULL;
-#ifdef MS_WINDOWS
-    if (win32_warn_bytes_api()) {
-        Py_DECREF(ofile);
-        return NULL;
-    }
-#endif
-    file = PyBytes_AsString(ofile);
     Py_BEGIN_ALLOW_THREADS
-    fd = open(file, flag, mode);
+#ifdef MS_WINDOWS
+    if (path.wide)
+        fd = _wopen(path.wide, flags, mode);
+    else
+#endif
+#ifdef HAVE_OPENAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        fd = openat(dir_fd, path.narrow, flags, mode);
+    else
+#endif
+        fd = open(path.narrow, flags, mode);
     Py_END_ALLOW_THREADS
-    if (fd < 0)
-        return posix_error_with_allocated_filename(ofile);
-    Py_DECREF(ofile);
-    return PyLong_FromLong((long)fd);
-}
 
+    if (fd == -1) {
+#ifdef MS_WINDOWS
+        /* force use of posix_error here for exact backwards compatibility */
+        if (path.wide)
+            return_value = posix_error();
+        else
+#endif
+        return_value = path_error("open", &path);
+        goto exit;
+    }
+
+    return_value = PyLong_FromLong((long)fd);
+
+exit:
+    path_cleanup(&path);
+    return return_value;
+}
 
 PyDoc_STRVAR(posix_close__doc__,
 "close(fd)\n\n\
@@ -7342,7 +8063,8 @@ done:
 
 PyDoc_STRVAR(posix_fstat__doc__,
 "fstat(fd) -> stat result\n\n\
-Like stat(), but for an open file descriptor.");
+Like stat(), but for an open file descriptor.\n\
+Equivalent to stat(fd=fd).");
 
 static PyObject *
 posix_fstat(PyObject *self, PyObject *args)
@@ -7356,8 +8078,6 @@ posix_fstat(PyObject *self, PyObject *args)
     /* on OpenVMS we must ensure that all bytes are written to the file */
     fsync(fd);
 #endif
-    if (!_PyVerify_fd(fd))
-        return posix_error();
     Py_BEGIN_ALLOW_THREADS
     res = FSTAT(fd, &st);
     Py_END_ALLOW_THREADS
@@ -7524,63 +8244,118 @@ posix_pwrite(PyObject *self, PyObject *args)
 
 #ifdef HAVE_MKFIFO
 PyDoc_STRVAR(posix_mkfifo__doc__,
-"mkfifo(filename [, mode=0666])\n\n\
-Create a FIFO (a POSIX named pipe).");
+"mkfifo(path, mode=0o666, *, dir_fd=None)\n\n\
+Create a FIFO (a POSIX named pipe).\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 static PyObject *
-posix_mkfifo(PyObject *self, PyObject *args)
+posix_mkfifo(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    char *filename;
+    path_t path;
     int mode = 0666;
-    int res;
-    if (!PyArg_ParseTuple(args, "O&|i:mkfifo", PyUnicode_FSConverter, &opath,
-                          &mode))
+    int dir_fd = DEFAULT_DIR_FD;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "mode", "dir_fd", NULL};
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|i$O&:mkfifo", keywords,
+        path_converter, &path,
+        &mode,
+#ifdef HAVE_MKFIFOAT
+        dir_fd_converter, &dir_fd
+#else
+        dir_fd_unavailable, &dir_fd
+#endif
+        ))
         return NULL;
-    filename = PyBytes_AS_STRING(opath);
+
     Py_BEGIN_ALLOW_THREADS
-    res = mkfifo(filename, mode);
+#ifdef HAVE_MKFIFOAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = mkfifoat(dir_fd, path.narrow, mode);
+    else
+#endif
+        result = mkfifo(path.narrow, mode);
     Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
+
+    if (result < 0) {
+        return_value = posix_error();
+        goto exit;
+    }
+
+    return_value = Py_None;
     Py_INCREF(Py_None);
-    return Py_None;
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 #endif
 
-
 #if defined(HAVE_MKNOD) && defined(HAVE_MAKEDEV)
 PyDoc_STRVAR(posix_mknod__doc__,
-"mknod(filename [, mode=0600, device])\n\n\
+"mknod(filename, mode=0o600, device=0, *, dir_fd=None)\n\n\
 Create a filesystem node (file, device special file or named pipe)\n\
 named filename. mode specifies both the permissions to use and the\n\
 type of node to be created, being combined (bitwise OR) with one of\n\
 S_IFREG, S_IFCHR, S_IFBLK, and S_IFIFO. For S_IFCHR and S_IFBLK,\n\
 device defines the newly created device special file (probably using\n\
-os.makedev()), otherwise it is ignored.");
+os.makedev()), otherwise it is ignored.\n\
+\n\
+If dir_fd is not None, it should be a file descriptor open to a directory,\n\
+  and path should be relative; path will then be relative to that directory.\n\
+dir_fd may not be implemented on your platform.\n\
+  If it is unavailable, using it will raise a NotImplementedError.");
 
 
 static PyObject *
-posix_mknod(PyObject *self, PyObject *args)
+posix_mknod(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    char *filename;
-    int mode = 0600;
+    path_t path;
+    int mode = 0666;
     int device = 0;
-    int res;
-    if (!PyArg_ParseTuple(args, "O&|ii:mknod", PyUnicode_FSConverter, &opath,
-                          &mode, &device))
+    int dir_fd = DEFAULT_DIR_FD;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "mode", "device", "dir_fd", NULL};
+
+    memset(&path, 0, sizeof(path));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&|ii$O&:mknod", keywords,
+        path_converter, &path,
+        &mode, &device,
+#ifdef HAVE_MKNODAT
+        dir_fd_converter, &dir_fd
+#else
+        dir_fd_unavailable, &dir_fd
+#endif
+        ))
         return NULL;
-    filename = PyBytes_AS_STRING(opath);
+
     Py_BEGIN_ALLOW_THREADS
-    res = mknod(filename, mode, device);
+#ifdef HAVE_MKNODAT
+    if (dir_fd != DEFAULT_DIR_FD)
+        result = mknodat(dir_fd, path.narrow, mode, device);
+    else
+#endif
+        result = mknod(path.narrow, mode, device);
     Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
+
+    if (result < 0) {
+        return_value = posix_error();
+        goto exit;
+    }
+
+    return_value = Py_None;
     Py_INCREF(Py_None);
-    return Py_None;
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 #endif
 
@@ -7654,28 +8429,44 @@ posix_ftruncate(PyObject *self, PyObject *args)
 #ifdef HAVE_TRUNCATE
 PyDoc_STRVAR(posix_truncate__doc__,
 "truncate(path, length)\n\n\
-Truncate the file given by path to length bytes.");
+Truncate the file given by path to length bytes.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.");
 
 static PyObject *
-posix_truncate(PyObject *self, PyObject *args)
+posix_truncate(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *opath;
-    const char *path;
+    path_t path;
     off_t length;
     int res;
+    PyObject *result = NULL;
+    static char *keywords[] = {"path", "length", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&O&:truncate",
-            PyUnicode_FSConverter, &opath, _parse_off_t, &length))
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FTRUNCATE
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&:truncate", keywords,
+                                     path_converter, &path,
+                                     _parse_off_t, &length))
         return NULL;
-    path = PyBytes_AsString(opath);
 
     Py_BEGIN_ALLOW_THREADS
-    res = truncate(path, length);
+#ifdef HAVE_FTRUNCATE
+    if (path.fd != -1)
+        res = ftruncate(path.fd, length);
+    else
+#endif
+        res = truncate(path.narrow, length);
     Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
     if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
+        result = path_posix_error("truncate", &path);
+    else {
+        Py_INCREF(Py_None);
+        result = Py_None;
+    }
+    path_cleanup(&path);
+    return result;
 }
 #endif
 
@@ -8098,7 +8889,8 @@ _pystatvfs_fromstructstatvfs(struct statvfs st) {
 
 PyDoc_STRVAR(posix_fstatvfs__doc__,
 "fstatvfs(fd) -> statvfs result\n\n\
-Perform an fstatvfs system call on the given fd.");
+Perform an fstatvfs system call on the given fd.\n\
+Equivalent to statvfs(fd).");
 
 static PyObject *
 posix_fstatvfs(PyObject *self, PyObject *args)
@@ -8123,28 +8915,58 @@ posix_fstatvfs(PyObject *self, PyObject *args)
 #include <sys/statvfs.h>
 
 PyDoc_STRVAR(posix_statvfs__doc__,
-"statvfs(path) -> statvfs result\n\n\
-Perform a statvfs system call on the given path.");
+"statvfs(path)\n\n\
+Perform a statvfs system call on the given path.\n\
+\n\
+path may always be specified as a string.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.");
 
 static PyObject *
-posix_statvfs(PyObject *self, PyObject *args)
+posix_statvfs(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *path;
-    int res;
+    static char *keywords[] = {"path", NULL};
+    path_t path;
+    int result;
+    PyObject *return_value = NULL;
     struct statvfs st;
-    if (!PyArg_ParseTuple(args, "O&:statvfs", PyUnicode_FSConverter, &path))
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS
-    res = statvfs(PyBytes_AS_STRING(path), &st);
-    Py_END_ALLOW_THREADS
-    if (res != 0) {
-        posix_error_with_filename(PyBytes_AS_STRING(path));
-        Py_DECREF(path);
-        return NULL;
-    }
-    Py_DECREF(path);
 
-    return _pystatvfs_fromstructstatvfs(st);
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FSTATVFS
+    path.allow_fd = 1;
+#endif
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&:statvfs", keywords,
+        path_converter, &path
+        ))
+        return NULL;
+
+    Py_BEGIN_ALLOW_THREADS
+#ifdef HAVE_FSTATVFS
+    if (path.fd != -1) {
+#ifdef __APPLE__
+        /* handle weak-linking on Mac OS X 10.3 */
+        if (fstatvfs == NULL) {
+            fd_specified("statvfs", path.fd);
+            goto exit;
+        }
+#endif
+        result = fstatvfs(path.fd, &st);
+    }
+    else
+#endif
+        result = statvfs(path.narrow, &st);
+    Py_END_ALLOW_THREADS
+
+    if (result) {
+        return_value = path_posix_error("statvfs", &path);
+        goto exit;
+    }
+
+    return_value = _pystatvfs_fromstructstatvfs(st);
+
+exit:
+    path_cleanup(&path);
+    return return_value;
 }
 #endif /* HAVE_STATVFS */
 
@@ -8360,31 +9182,45 @@ posix_fpathconf(PyObject *self, PyObject *args)
 PyDoc_STRVAR(posix_pathconf__doc__,
 "pathconf(path, name) -> integer\n\n\
 Return the configuration limit name for the file or directory path.\n\
-If there is no limit, return -1.");
+If there is no limit, return -1.\n\
+On some platforms, path may also be specified as an open file descriptor.\n\
+  If this functionality is unavailable, using it raises an exception.");
 
 static PyObject *
-posix_pathconf(PyObject *self, PyObject *args)
+posix_pathconf(PyObject *self, PyObject *args, PyObject *kwargs)
 {
+    path_t path;
     PyObject *result = NULL;
     int name;
-    char *path;
+    static char *keywords[] = {"path", "name", NULL};
 
-    if (PyArg_ParseTuple(args, "sO&:pathconf", &path,
-                         conv_path_confname, &name)) {
+    memset(&path, 0, sizeof(path));
+#ifdef HAVE_FPATHCONF
+    path.allow_fd = 1;
+#endif
+    if (PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&:pathconf", keywords,
+                                    path_converter, &path,
+                                    conv_path_confname, &name)) {
     long limit;
 
     errno = 0;
-    limit = pathconf(path, name);
+#ifdef HAVE_FPATHCONF
+    if (path.fd != -1)
+        limit = fpathconf(path.fd, name);
+    else
+#endif
+        limit = pathconf(path.narrow, name);
     if (limit == -1 && errno != 0) {
         if (errno == EINVAL)
             /* could be a path or name problem */
             posix_error();
         else
-            posix_error_with_filename(path);
+            result = path_posix_error("pathconf", &path);
     }
     else
         result = PyLong_FromLong(limit);
     }
+    path_cleanup(&path);
     return result;
 }
 #endif
@@ -9340,42 +10176,6 @@ device_encoding(PyObject *self, PyObject *args)
     return _Py_device_encoding(fd);
 }
 
-#ifdef __VMS
-/* Use openssl random routine */
-#include <openssl/rand.h>
-PyDoc_STRVAR(vms_urandom__doc__,
-"urandom(n) -> str\n\n\
-Return n random bytes suitable for cryptographic use.");
-
-static PyObject*
-vms_urandom(PyObject *self, PyObject *args)
-{
-    int howMany;
-    PyObject* result;
-
-    /* Read arguments */
-    if (! PyArg_ParseTuple(args, "i:urandom", &howMany))
-        return NULL;
-    if (howMany < 0)
-        return PyErr_Format(PyExc_ValueError,
-                            "negative argument not allowed");
-
-    /* Allocate bytes */
-    result = PyBytes_FromStringAndSize(NULL, howMany);
-    if (result != NULL) {
-        /* Get random data */
-        if (RAND_pseudo_bytes((unsigned char*)
-                              PyBytes_AS_STRING(result),
-                              howMany) < 0) {
-            Py_DECREF(result);
-            return PyErr_Format(PyExc_ValueError,
-                                "RAND_pseudo_bytes");
-        }
-    }
-    return result;
-}
-#endif
-
 #ifdef HAVE_SETRESUID
 PyDoc_STRVAR(posix_setresuid__doc__,
 "setresuid(ruid, euid, suid)\n\n\
@@ -9452,946 +10252,301 @@ posix_getresgid (PyObject *self, PyObject *noargs)
 }
 #endif
 
-/* Posix *at family of functions:
-    faccessat, fchmodat, fchownat, fstatat, futimesat,
-    linkat, mkdirat, mknodat, openat, readlinkat, renameat, symlinkat,
-    unlinkat, utimensat, mkfifoat */
-
-#ifdef HAVE_FACCESSAT
-PyDoc_STRVAR(posix_faccessat__doc__,
-"faccessat(dirfd, path, mode, flags=0) -> True if granted, False otherwise\n\n\
-Like access() but if path is relative, it is taken as relative to dirfd.\n\
-flags is optional and can be constructed by ORing together zero or more\n\
-of these values: AT_SYMLINK_NOFOLLOW, AT_EACCESS.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_faccessat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    char *path;
-    int mode;
-    int res;
-    int dirfd, flags = 0;
-    if (!PyArg_ParseTuple(args, "iO&i|i:faccessat",
-            &dirfd, PyUnicode_FSConverter, &opath, &mode, &flags))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = faccessat(dirfd, path, mode, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    return PyBool_FromLong(res == 0);
-}
-#endif
-
-#ifdef HAVE_FCHMODAT
-PyDoc_STRVAR(posix_fchmodat__doc__,
-"fchmodat(dirfd, path, mode, flags=0)\n\n\
-Like chmod() but if path is relative, it is taken as relative to dirfd.\n\
-flags is optional and may be 0 or AT_SYMLINK_NOFOLLOW.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_fchmodat(PyObject *self, PyObject *args)
-{
-    int dirfd, mode, res;
-    int flags = 0;
-    PyObject *opath;
-    char *path;
-
-    if (!PyArg_ParseTuple(args, "iO&i|i:fchmodat",
-            &dirfd, PyUnicode_FSConverter, &opath, &mode, &flags))
-        return NULL;
-
-    path = PyBytes_AsString(opath);
-
-    Py_BEGIN_ALLOW_THREADS
-    res = fchmodat(dirfd, path, mode, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif /* HAVE_FCHMODAT */
-
-#ifdef HAVE_FCHOWNAT
-PyDoc_STRVAR(posix_fchownat__doc__,
-"fchownat(dirfd, path, uid, gid, flags=0)\n\n\
-Like chown() but if path is relative, it is taken as relative to dirfd.\n\
-flags is optional and may be 0 or AT_SYMLINK_NOFOLLOW.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_fchownat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    int dirfd, res;
-    long uid, gid;
-    int flags = 0;
-    char *path;
-
-    if (!PyArg_ParseTuple(args, "iO&ll|i:fchownat",
-            &dirfd, PyUnicode_FSConverter, &opath, &uid, &gid, &flags))
-        return NULL;
-
-    path = PyBytes_AsString(opath);
-
-    Py_BEGIN_ALLOW_THREADS
-    res = fchownat(dirfd, path, (uid_t) uid, (gid_t) gid, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif /* HAVE_FCHOWNAT */
-
-#ifdef HAVE_FSTATAT
-PyDoc_STRVAR(posix_fstatat__doc__,
-"fstatat(dirfd, path, flags=0) -> stat result\n\n\
-Like stat() but if path is relative, it is taken as relative to dirfd.\n\
-flags is optional and may be 0 or AT_SYMLINK_NOFOLLOW.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_fstatat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    char *path;
-    STRUCT_STAT st;
-    int dirfd, res, flags = 0;
-
-    if (!PyArg_ParseTuple(args, "iO&|i:fstatat",
-            &dirfd, PyUnicode_FSConverter, &opath, &flags))
-        return NULL;
-    path = PyBytes_AsString(opath);
-
-    Py_BEGIN_ALLOW_THREADS
-    res = fstatat(dirfd, path, &st, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res != 0)
-        return posix_error();
-
-    return _pystat_fromstructstat(&st);
-}
-#endif
-
-#ifdef HAVE_FUTIMESAT
-PyDoc_STRVAR(posix_futimesat__doc__,
-"futimesat(dirfd, path[, (atime, mtime)])\n\
-Like utime() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_futimesat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    char *path;
-    int res, dirfd;
-    PyObject* arg = Py_None;
-    time_t atime, mtime;
-    long ansec, mnsec;
-
-    if (!PyArg_ParseTuple(args, "iO&|O:futimesat",
-            &dirfd, PyUnicode_FSConverter, &opath, &arg))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    if (arg == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = futimesat(dirfd, path, NULL);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(arg) || PyTuple_Size(arg) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-                "futimesat() arg 3 must be a tuple (atime, mtime)");
-        Py_DECREF(opath);
-        return NULL;
-    }
-    else {
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 0),
-                                     &atime, &ansec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        if (_PyTime_ObjectToTimespec(PyTuple_GET_ITEM(arg, 1),
-                                     &mtime, &mnsec) == -1) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-
-        Py_BEGIN_ALLOW_THREADS
-        {
-#ifdef HAVE_UTIMENSAT
-        struct timespec buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_nsec = ansec;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_nsec = mnsec;
-        res = utimensat(dirfd, path, buf, 0);
-#else
-        struct timeval buf[2];
-        buf[0].tv_sec = atime;
-        buf[0].tv_usec = ansec / 1000;
-        buf[1].tv_sec = mtime;
-        buf[1].tv_usec = mnsec / 1000;
-        res = futimesat(dirfd, path, buf);
-#endif
-        }
-        Py_END_ALLOW_THREADS
-    }
-    Py_DECREF(opath);
-    if (res < 0) {
-        return posix_error();
-    }
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_LINKAT
-PyDoc_STRVAR(posix_linkat__doc__,
-"linkat(srcfd, srcpath, dstfd, dstpath, flags=0)\n\n\
-Like link() but if srcpath is relative, it is taken as relative to srcfd\n\
-and if dstpath is relative, it is taken as relative to dstfd.\n\
-flags is optional and may be 0 or AT_SYMLINK_FOLLOW.\n\
-If srcpath is relative and srcfd is the special value AT_FDCWD, then\n\
-srcpath is interpreted relative to the current working directory. This\n\
-also applies for dstpath.");
-
-static PyObject *
-posix_linkat(PyObject *self, PyObject *args)
-{
-    PyObject *osrc, *odst;
-    char *src, *dst;
-    int res, srcfd, dstfd;
-    int flags = 0;
-
-    if (!PyArg_ParseTuple(args, "iO&iO&|i:linkat",
-            &srcfd, PyUnicode_FSConverter, &osrc, &dstfd, PyUnicode_FSConverter, &odst, &flags))
-        return NULL;
-    src = PyBytes_AsString(osrc);
-    dst = PyBytes_AsString(odst);
-    Py_BEGIN_ALLOW_THREADS
-    res = linkat(srcfd, src, dstfd, dst, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(osrc);
-    Py_DECREF(odst);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif /* HAVE_LINKAT */
-
-#ifdef HAVE_MKDIRAT
-PyDoc_STRVAR(posix_mkdirat__doc__,
-"mkdirat(dirfd, path, mode=0o777)\n\n\
-Like mkdir() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_mkdirat(PyObject *self, PyObject *args)
-{
-    int res, dirfd;
-    PyObject *opath;
-    char *path;
-    int mode = 0777;
-
-    if (!PyArg_ParseTuple(args, "iO&|i:mkdirat",
-            &dirfd, PyUnicode_FSConverter, &opath, &mode))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = mkdirat(dirfd, path, mode);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#if defined(HAVE_MKNODAT) && defined(HAVE_MAKEDEV)
-PyDoc_STRVAR(posix_mknodat__doc__,
-"mknodat(dirfd, path, mode=0o600, device=0)\n\n\
-Like mknod() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_mknodat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    char *filename;
-    int mode = 0600;
-    int device = 0;
-    int res, dirfd;
-    if (!PyArg_ParseTuple(args, "iO&|ii:mknodat", &dirfd,
-            PyUnicode_FSConverter, &opath, &mode, &device))
-        return NULL;
-    filename = PyBytes_AS_STRING(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = mknodat(dirfd, filename, mode, device);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_OPENAT
-PyDoc_STRVAR(posix_openat__doc__,
-"openat(dirfd, path, flag, mode=0o777) -> fd\n\n\
-Like open() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_openat(PyObject *self, PyObject *args)
-{
-    PyObject *ofile;
-    char *file;
-    int flag, dirfd, fd;
-    int mode = 0777;
-
-    if (!PyArg_ParseTuple(args, "iO&i|i:openat",
-            &dirfd, PyUnicode_FSConverter, &ofile,
-            &flag, &mode))
-        return NULL;
-    file = PyBytes_AsString(ofile);
-    Py_BEGIN_ALLOW_THREADS
-    fd = openat(dirfd, file, flag, mode);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(ofile);
-    if (fd < 0)
-        return posix_error();
-    return PyLong_FromLong((long)fd);
-}
-#endif
-
-#ifdef HAVE_READLINKAT
-PyDoc_STRVAR(posix_readlinkat__doc__,
-"readlinkat(dirfd, path) -> path\n\n\
-Like readlink() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_readlinkat(PyObject *self, PyObject *args)
-{
-    PyObject *v, *opath;
-    char buf[MAXPATHLEN];
-    char *path;
-    int n, dirfd;
-    int arg_is_unicode = 0;
-
-    if (!PyArg_ParseTuple(args, "iO&:readlinkat",
-            &dirfd, PyUnicode_FSConverter, &opath))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    v = PySequence_GetItem(args, 1);
-    if (v == NULL) {
-        Py_DECREF(opath);
-        return NULL;
-    }
-
-    if (PyUnicode_Check(v)) {
-        arg_is_unicode = 1;
-    }
-    Py_DECREF(v);
-
-    Py_BEGIN_ALLOW_THREADS
-    n = readlinkat(dirfd, path, buf, (int) sizeof buf);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (n < 0)
-        return posix_error();
-
-    if (arg_is_unicode)
-        return PyUnicode_DecodeFSDefaultAndSize(buf, n);
-    else
-        return PyBytes_FromStringAndSize(buf, n);
-}
-#endif /* HAVE_READLINKAT */
-
-#ifdef HAVE_RENAMEAT
-PyDoc_STRVAR(posix_renameat__doc__,
-"renameat(olddirfd, oldpath, newdirfd, newpath)\n\n\
-Like rename() but if oldpath is relative, it is taken as relative to\n\
-olddirfd and if newpath is relative, it is taken as relative to newdirfd.\n\
-If oldpath is relative and olddirfd is the special value AT_FDCWD, then\n\
-oldpath is interpreted relative to the current working directory. This\n\
-also applies for newpath.");
-
-static PyObject *
-posix_renameat(PyObject *self, PyObject *args)
-{
-    int res;
-    PyObject *opathold, *opathnew;
-    char *opath, *npath;
-    int oldfd, newfd;
-
-    if (!PyArg_ParseTuple(args, "iO&iO&:renameat",
-            &oldfd, PyUnicode_FSConverter, &opathold, &newfd, PyUnicode_FSConverter, &opathnew))
-        return NULL;
-    opath = PyBytes_AsString(opathold);
-    npath = PyBytes_AsString(opathnew);
-    Py_BEGIN_ALLOW_THREADS
-    res = renameat(oldfd, opath, newfd, npath);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opathold);
-    Py_DECREF(opathnew);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#if HAVE_SYMLINKAT
-PyDoc_STRVAR(posix_symlinkat__doc__,
-"symlinkat(src, dstfd, dst)\n\n\
-Like symlink() but if dst is relative, it is taken as relative to dstfd.\n\
-If dst is relative and dstfd is the special value AT_FDCWD, then dst\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_symlinkat(PyObject *self, PyObject *args)
-{
-    int res, dstfd;
-    PyObject *osrc, *odst;
-    char *src, *dst;
-
-    if (!PyArg_ParseTuple(args, "O&iO&:symlinkat",
-            PyUnicode_FSConverter, &osrc, &dstfd, PyUnicode_FSConverter, &odst))
-        return NULL;
-    src = PyBytes_AsString(osrc);
-    dst = PyBytes_AsString(odst);
-    Py_BEGIN_ALLOW_THREADS
-    res = symlinkat(src, dstfd, dst);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(osrc);
-    Py_DECREF(odst);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif /* HAVE_SYMLINKAT */
-
-#ifdef HAVE_UNLINKAT
-PyDoc_STRVAR(posix_unlinkat__doc__,
-"unlinkat(dirfd, path, flags=0)\n\n\
-Like unlink() but if path is relative, it is taken as relative to dirfd.\n\
-flags is optional and may be 0 or AT_REMOVEDIR. If AT_REMOVEDIR is\n\
-specified, unlinkat() behaves like rmdir().\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_unlinkat(PyObject *self, PyObject *args)
-{
-    int dirfd, res, flags = 0;
-    PyObject *opath;
-    char *path;
-
-    if (!PyArg_ParseTuple(args, "iO&|i:unlinkat",
-            &dirfd, PyUnicode_FSConverter, &opath, &flags))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = unlinkat(dirfd, path, flags);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_UTIMENSAT
-PyDoc_STRVAR(posix_utimensat__doc__,
-"utimensat(dirfd, path[, atime=(atime_sec, atime_nsec),\n\
-    mtime=(mtime_sec, mtime_nsec), flags=0])\n\
-utimensat(dirfd, path, None, None, flags)\n\n\
-Updates the timestamps of a file with nanosecond precision. If path is\n\
-relative, it is taken as relative to dirfd.\n\
-If atime and mtime are both None, which is the default, set atime and\n\
-mtime to the current time.\n\
-flags is optional and may be 0 or AT_SYMLINK_NOFOLLOW.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.\n\
-If *_nsec is specified as UTIME_NOW, the timestamp is updated to the\n\
-current time.\n\
-If *_nsec is specified as UTIME_OMIT, the timestamp is not updated.");
-
-static PyObject *
-posix_utimensat(PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    PyObject *opath;
-    char *path;
-    int res, dirfd, flags = 0;
-    PyObject *atime = Py_None;
-    PyObject *mtime = Py_None;
-
-    static char *kwlist[] = {"dirfd", "path", "atime", "mtime", "flags", NULL};
-
-    struct timespec buf[2];
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iO&|OOi:utimensat", kwlist,
-            &dirfd, PyUnicode_FSConverter, &opath, &atime, &mtime, &flags))
-        return NULL;
-    path = PyBytes_AsString(opath);
-    if (atime == Py_None && mtime == Py_None) {
-        /* optional time values not given */
-        Py_BEGIN_ALLOW_THREADS
-        res = utimensat(dirfd, path, NULL, flags);
-        Py_END_ALLOW_THREADS
-    }
-    else if (!PyTuple_Check(atime) || PyTuple_Size(atime) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-            "utimensat() arg 3 must be a tuple (atime_sec, atime_nsec)");
-        Py_DECREF(opath);
-        return NULL;
-    }
-    else if (!PyTuple_Check(mtime) || PyTuple_Size(mtime) != 2) {
-        PyErr_SetString(PyExc_TypeError,
-            "utimensat() arg 4 must be a tuple (mtime_sec, mtime_nsec)");
-        Py_DECREF(opath);
-        return NULL;
-    }
-    else {
-        if (!PyArg_ParseTuple(atime, "ll:utimensat",
-                &(buf[0].tv_sec), &(buf[0].tv_nsec))) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        if (!PyArg_ParseTuple(mtime, "ll:utimensat",
-                &(buf[1].tv_sec), &(buf[1].tv_nsec))) {
-            Py_DECREF(opath);
-            return NULL;
-        }
-        Py_BEGIN_ALLOW_THREADS
-        res = utimensat(dirfd, path, buf, flags);
-        Py_END_ALLOW_THREADS
-    }
-    Py_DECREF(opath);
-    if (res < 0) {
-        return posix_error();
-    }
-    Py_RETURN_NONE;
-}
-#endif
-
-#ifdef HAVE_MKFIFOAT
-PyDoc_STRVAR(posix_mkfifoat__doc__,
-"mkfifoat(dirfd, path, mode=0o666)\n\n\
-Like mkfifo() but if path is relative, it is taken as relative to dirfd.\n\
-If path is relative and dirfd is the special value AT_FDCWD, then path\n\
-is interpreted relative to the current working directory.");
-
-static PyObject *
-posix_mkfifoat(PyObject *self, PyObject *args)
-{
-    PyObject *opath;
-    char *filename;
-    int mode = 0666;
-    int res, dirfd;
-    if (!PyArg_ParseTuple(args, "iO&|i:mkfifoat",
-            &dirfd, PyUnicode_FSConverter, &opath, &mode))
-        return NULL;
-    filename = PyBytes_AS_STRING(opath);
-    Py_BEGIN_ALLOW_THREADS
-    res = mkfifoat(dirfd, filename, mode);
-    Py_END_ALLOW_THREADS
-    Py_DECREF(opath);
-    if (res < 0)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-#endif
-
 #ifdef USE_XATTRS
 
-static int
-try_getxattr(const char *path, const char *name,
-             ssize_t (*get)(const char *, const char *, void *, size_t),
-             Py_ssize_t buf_size, PyObject **res)
-{
-    PyObject *value;
-    Py_ssize_t len;
-
-    assert(buf_size <= XATTR_SIZE_MAX);
-    value = PyBytes_FromStringAndSize(NULL, buf_size);
-    if (!value)
-        return 0;
-    Py_BEGIN_ALLOW_THREADS;
-    len = get(path, name, PyBytes_AS_STRING(value), buf_size);
-    Py_END_ALLOW_THREADS;
-    if (len < 0) {
-        Py_DECREF(value);
-        if (errno == ERANGE) {
-            value = NULL;
-        }
-        else {
-            posix_error();
-            return 0;
-        }
-    }
-    else if (len != buf_size) {
-        /* Can only shrink. */
-        _PyBytes_Resize(&value, len);
-    }
-    *res = value;
-    return 1;
-}
-
-static PyObject *
-getxattr_common(const char *path, PyObject *name_obj,
-                ssize_t (*get)(const char *, const char *, void *, size_t))
-{
-    PyObject *value;
-    const char *name = PyBytes_AS_STRING(name_obj);
-
-    /* Try a small value first. */
-    if (!try_getxattr(path, name, get, 128, &value))
-        return NULL;
-    if (value)
-        return value;
-    /* Now the maximum possible one. */
-    if (!try_getxattr(path, name, get, XATTR_SIZE_MAX, &value))
-        return NULL;
-    assert(value);
-    return value;
-}
-
 PyDoc_STRVAR(posix_getxattr__doc__,
-"getxattr(path, attr) -> value\n\n\
-Return the value of extended attribute *name* on *path*.");
+"getxattr(path, attribute, *, follow_symlinks=True) -> value\n\n\
+Return the value of extended attribute attribute on path.\n\
+\n\
+path may be either a string or an open file descriptor.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, getxattr will examine the symbolic link itself instead of the file\n\
+  the link points to.");
 
 static PyObject *
-posix_getxattr(PyObject *self, PyObject *args)
+posix_getxattr(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *path, *res, *name;
+    path_t path;
+    path_t attribute;
+    int follow_symlinks = 1;
+    PyObject *buffer = NULL;
+    int i;
+    static char *keywords[] = {"path", "attribute", "follow_symlinks", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&O&:getxattr", PyUnicode_FSConverter, &path,
-                          PyUnicode_FSConverter, &name))
+    memset(&path, 0, sizeof(path));
+    memset(&attribute, 0, sizeof(attribute));
+    path.allow_fd = 1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&|$p:getxattr", keywords,
+        path_converter, &path,
+        path_converter, &attribute,
+        &follow_symlinks))
         return NULL;
-    res = getxattr_common(PyBytes_AS_STRING(path), name, getxattr);
-    Py_DECREF(path);
-    Py_DECREF(name);
-    return res;
-}
 
-PyDoc_STRVAR(posix_lgetxattr__doc__,
-"lgetxattr(path, attr) -> value\n\n\
-Like getxattr but don't follow symlinks.");
+    if (fd_and_follow_symlinks_invalid("getxattr", path.fd, follow_symlinks))
+        goto exit;
 
-static PyObject *
-posix_lgetxattr(PyObject *self, PyObject *args)
-{
-    PyObject *path, *res, *name;
+    for (i = 0; ; i++) {
+        void *ptr;
+        ssize_t result;
+        static Py_ssize_t buffer_sizes[] = {128, XATTR_SIZE_MAX, 0};
+        Py_ssize_t buffer_size = buffer_sizes[i];
+        if (!buffer_size) {
+            path_error("getxattr", &path);
+            goto exit;
+        }
+        buffer = PyBytes_FromStringAndSize(NULL, buffer_size);
+        if (!buffer)
+            goto exit;
+        ptr = PyBytes_AS_STRING(buffer);
 
-    if (!PyArg_ParseTuple(args, "O&O&:lgetxattr", PyUnicode_FSConverter, &path,
-                          PyUnicode_FSConverter, &name))
-        return NULL;
-    res = getxattr_common(PyBytes_AS_STRING(path), name, lgetxattr);
-    Py_DECREF(path);
-    Py_DECREF(name);
-    return res;
-}
+        Py_BEGIN_ALLOW_THREADS;
+        if (path.fd >= 0)
+            result = fgetxattr(path.fd, attribute.narrow, ptr, buffer_size);
+        else if (follow_symlinks)
+            result = getxattr(path.narrow, attribute.narrow, ptr, buffer_size);
+        else
+            result = lgetxattr(path.narrow, attribute.narrow, ptr, buffer_size);
+        Py_END_ALLOW_THREADS;
 
-static ssize_t
-wrap_fgetxattr(const char *path, const char *name, void *value, size_t size)
-{
-    /* Hack to share code. */
-    return fgetxattr((int)(Py_uintptr_t)path, name, value, size);
-}
+        if (result < 0) {
+            Py_DECREF(buffer);
+            buffer = NULL;
+            if (errno == ERANGE)
+                continue;
+            path_error("getxattr", &path);
+            goto exit;
+        }
 
-PyDoc_STRVAR(posix_fgetxattr__doc__,
-"fgetxattr(fd, attr) -> value\n\n\
-Like getxattr but operate on a fd instead of a path.");
+        if (result != buffer_size) {
+            /* Can only shrink. */
+            _PyBytes_Resize(&buffer, result);
+        }
+        break;
+    }
 
-static PyObject *
-posix_fgetxattr(PyObject *self, PyObject *args)
-{
-    PyObject *res, *name;
-    int fd;
-
-    if (!PyArg_ParseTuple(args, "iO&:fgetxattr", &fd, PyUnicode_FSConverter, &name))
-        return NULL;
-    res = getxattr_common((const char *)(Py_uintptr_t)fd, name, wrap_fgetxattr);
-    Py_DECREF(name);
-    return res;
+exit:
+    path_cleanup(&path);
+    path_cleanup(&attribute);
+    return buffer;
 }
 
 PyDoc_STRVAR(posix_setxattr__doc__,
-"setxattr(path, attr, value, flags=0)\n\n\
-Set extended attribute *attr* on *path* to *value*.");
+"setxattr(path, attribute, value, flags=0, *, follow_symlinks=True)\n\n\
+Set extended attribute attribute on path to value.\n\
+path may be either a string or an open file descriptor.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, setxattr will modify the symbolic link itself instead of the file\n\
+  the link points to.");
 
 static PyObject *
-posix_setxattr(PyObject *self, PyObject *args)
+posix_setxattr(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *path, *name;
-    Py_buffer data;
-    int flags = 0, err;
+    path_t path;
+    path_t attribute;
+    Py_buffer value;
+    int flags = 0;
+    int follow_symlinks = 1;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "attribute", "value",
+                               "flags", "follow_symlinks", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&O&y*|i:setxattr", PyUnicode_FSConverter,
-                          &path, PyUnicode_FSConverter, &name, &data, &flags))
+    memset(&path, 0, sizeof(path));
+    path.allow_fd = 1;
+    memset(&attribute, 0, sizeof(attribute));
+    memset(&value, 0, sizeof(value));
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&y*|i$p:setxattr",
+        keywords,
+        path_converter, &path,
+        path_converter, &attribute,
+        &value, &flags,
+        &follow_symlinks))
         return NULL;
+
+    if (fd_and_follow_symlinks_invalid("setxattr", path.fd, follow_symlinks))
+        goto exit;
+
     Py_BEGIN_ALLOW_THREADS;
-    err = setxattr(PyBytes_AS_STRING(path), PyBytes_AS_STRING(name),
-                   data.buf, data.len, flags);
+    if (path.fd > -1)
+        result = fsetxattr(path.fd, attribute.narrow,
+                           value.buf, value.len, flags);
+    else if (follow_symlinks)
+        result = setxattr(path.narrow, attribute.narrow,
+                           value.buf, value.len, flags);
+    else
+        result = lsetxattr(path.narrow, attribute.narrow,
+                           value.buf, value.len, flags);
     Py_END_ALLOW_THREADS;
-    Py_DECREF(path);
-    Py_DECREF(name);
-    PyBuffer_Release(&data);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
-}
 
-PyDoc_STRVAR(posix_lsetxattr__doc__,
-"lsetxattr(path, attr, value, flags=0)\n\n\
-Like setxattr but don't follow symlinks.");
+    if (result) {
+        return_value = path_error("setxattr", &path);
+        goto exit;
+    }
 
-static PyObject *
-posix_lsetxattr(PyObject *self, PyObject *args)
-{
-    PyObject *path, *name;
-    Py_buffer data;
-    int flags = 0, err;
+    return_value = Py_None;
+    Py_INCREF(return_value);
 
-    if (!PyArg_ParseTuple(args, "O&O&y*|i:lsetxattr", PyUnicode_FSConverter,
-                          &path, PyUnicode_FSConverter, &name, &data, &flags))
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS;
-    err = lsetxattr(PyBytes_AS_STRING(path), PyBytes_AS_STRING(name),
-                    data.buf, data.len, flags);
-    Py_END_ALLOW_THREADS;
-    Py_DECREF(path);
-    Py_DECREF(name);
-    PyBuffer_Release(&data);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
-}
+exit:
+    path_cleanup(&path);
+    path_cleanup(&attribute);
+    PyBuffer_Release(&value);
 
-PyDoc_STRVAR(posix_fsetxattr__doc__,
-"fsetxattr(fd, attr, value, flags=0)\n\n\
-Like setxattr but operates on *fd* instead of a path.");
-
-static PyObject *
-posix_fsetxattr(PyObject *self, PyObject *args)
-{
-    Py_buffer data;
-    const char *name;
-    int fd, flags = 0, err;
-
-    if (!PyArg_ParseTuple(args, "iO&y*|i:fsetxattr", &fd, PyUnicode_FSConverter,
-                          &name, &data, &flags))
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS;
-    err = fsetxattr(fd, PyBytes_AS_STRING(name), data.buf, data.len, flags);
-    Py_END_ALLOW_THREADS;
-    Py_DECREF(name);
-    PyBuffer_Release(&data);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
+    return return_value;
 }
 
 PyDoc_STRVAR(posix_removexattr__doc__,
-"removexattr(path, attr)\n\n\
-Remove extended attribute *attr* on *path*.");
+"removexattr(path, attribute, *, follow_symlinks=True)\n\n\
+Remove extended attribute attribute on path.\n\
+path may be either a string or an open file descriptor.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, removexattr will modify the symbolic link itself instead of the file\n\
+  the link points to.");
 
 static PyObject *
-posix_removexattr(PyObject *self, PyObject *args)
+posix_removexattr(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *path, *name;
-    int err;
+    path_t path;
+    path_t attribute;
+    int follow_symlinks = 1;
+    int result;
+    PyObject *return_value = NULL;
+    static char *keywords[] = {"path", "attribute", "follow_symlinks", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&O&:removexattr", PyUnicode_FSConverter, &path,
-                          PyUnicode_FSConverter, &name))
+    memset(&path, 0, sizeof(path));
+    memset(&attribute, 0, sizeof(attribute));
+    path.allow_fd = 1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O&O&|$p:removexattr",
+                                     keywords,
+                                     path_converter, &path,
+                                     path_converter, &attribute,
+                                     &follow_symlinks))
         return NULL;
+
+    if (fd_and_follow_symlinks_invalid("removexattr", path.fd, follow_symlinks))
+        goto exit;
+
     Py_BEGIN_ALLOW_THREADS;
-    err = removexattr(PyBytes_AS_STRING(path), PyBytes_AS_STRING(name));
+    if (path.fd > -1)
+        result = fremovexattr(path.fd, attribute.narrow);
+    else if (follow_symlinks)
+        result = removexattr(path.narrow, attribute.narrow);
+    else
+        result = lremovexattr(path.narrow, attribute.narrow);
     Py_END_ALLOW_THREADS;
-    Py_DECREF(path);
-    Py_DECREF(name);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
-}
 
-PyDoc_STRVAR(posix_lremovexattr__doc__,
-"lremovexattr(path, attr)\n\n\
-Like removexattr but don't follow symlinks.");
-
-static PyObject *
-posix_lremovexattr(PyObject *self, PyObject *args)
-{
-    PyObject *path, *name;
-    int err;
-
-    if (!PyArg_ParseTuple(args, "O&O&:lremovexattr", PyUnicode_FSConverter, &path,
-                          PyUnicode_FSConverter, &name))
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS;
-    err = lremovexattr(PyBytes_AS_STRING(path), PyBytes_AS_STRING(name));
-    Py_END_ALLOW_THREADS;
-    Py_DECREF(path);
-    Py_DECREF(name);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-
-PyDoc_STRVAR(posix_fremovexattr__doc__,
-"fremovexattr(fd, attr)\n\n\
-Like removexattr but operates on a file descriptor.");
-
-static PyObject *
-posix_fremovexattr(PyObject *self, PyObject *args)
-{
-    PyObject *name;
-    int fd, err;
-
-    if (!PyArg_ParseTuple(args, "iO&:fremovexattr", &fd,
-                          PyUnicode_FSConverter, &name))
-        return NULL;
-    Py_BEGIN_ALLOW_THREADS;
-    err = fremovexattr(fd, PyBytes_AS_STRING(name));
-    Py_END_ALLOW_THREADS;
-    Py_DECREF(name);
-    if (err)
-        return posix_error();
-    Py_RETURN_NONE;
-}
-
-static Py_ssize_t
-try_listxattr(const char *path, ssize_t (*list)(const char *, char *, size_t),
-              Py_ssize_t buf_size, char **buf)
-{
-    Py_ssize_t len;
-
-    *buf = PyMem_MALLOC(buf_size);
-    if (!*buf) {
-        PyErr_NoMemory();
-        return -1;
+    if (result) {
+        return_value = path_error("removexattr", &path);
+        goto exit;
     }
-    Py_BEGIN_ALLOW_THREADS;
-    len = list(path, *buf, buf_size);
-    Py_END_ALLOW_THREADS;
-    if (len < 0) {
-        PyMem_FREE(*buf);
-        if (errno != ERANGE)
-            posix_error();
-        return -1;
-    }
-    return len;
-}
 
-static PyObject *
-listxattr_common(const char *path, ssize_t (*list)(const char *, char *, size_t))
-{
-    PyObject *res, *attr;
-    Py_ssize_t len, err, start, i;
-    char *buf;
+    return_value = Py_None;
+    Py_INCREF(return_value);
 
-    len = try_listxattr(path, list, 256, &buf);
-    if (len < 0) {
-        if (PyErr_Occurred())
-            return NULL;
-        len = try_listxattr(path, list, XATTR_LIST_MAX, &buf);
-        if (len < 0)
-            return NULL;
-    }
-    res = PyList_New(0);
-    if (!res) {
-        PyMem_FREE(buf);
-        return NULL;
-    }
-    for (start = i = 0; i < len; i++) {
-        if (!buf[i]) {
-            attr = PyUnicode_DecodeFSDefaultAndSize(&buf[start], i - start);
-            if (!attr) {
-                Py_DECREF(res);
-                PyMem_FREE(buf);
-                return NULL;
-            }
-            err = PyList_Append(res, attr);
-            Py_DECREF(attr);
-            if (err) {
-                Py_DECREF(res);
-                PyMem_FREE(buf);
-                return NULL;
-            }
-            start = i + 1;
-        }
-    }
-    PyMem_FREE(buf);
-    return res;
+exit:
+    path_cleanup(&path);
+    path_cleanup(&attribute);
+
+    return return_value;
 }
 
 PyDoc_STRVAR(posix_listxattr__doc__,
-"listxattr(path)\n\n\
-Return a list of extended attributes on *path*.");
+"listxattr(path='.', *, follow_symlinks=True)\n\n\
+Return a list of extended attributes on path.\n\
+\n\
+path may be either None, a string, or an open file descriptor.\n\
+if path is None, listxattr will examine the current directory.\n\
+If follow_symlinks is False, and the last element of the path is a symbolic\n\
+  link, listxattr will examine the symbolic link itself instead of the file\n\
+  the link points to.");
 
 static PyObject *
-posix_listxattr(PyObject *self, PyObject *args)
+posix_listxattr(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-    PyObject *path, *res;
+    path_t path;
+    int follow_symlinks = 1;
+    Py_ssize_t i;
+    PyObject *result = NULL;
+    char *buffer = NULL;
+    char *name;
+    static char *keywords[] = {"path", "follow_symlinks", NULL};
 
-    if (!PyArg_ParseTuple(args, "O&:listxattr", PyUnicode_FSConverter, &path))
+    memset(&path, 0, sizeof(path));
+    path.allow_fd = 1;
+    path.fd = -1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|O&$p:listxattr", keywords,
+        path_converter, &path,
+        &follow_symlinks))
         return NULL;
-    res = listxattr_common(PyBytes_AS_STRING(path), listxattr);
-    Py_DECREF(path);
-    return res;
-}
 
-PyDoc_STRVAR(posix_llistxattr__doc__,
-"llistxattr(path)\n\n\
-Like listxattr but don't follow symlinks..");
+    if (fd_and_follow_symlinks_invalid("listxattr", path.fd, follow_symlinks))
+        goto exit;
 
-static PyObject *
-posix_llistxattr(PyObject *self, PyObject *args)
-{
-    PyObject *path, *res;
+    name = path.narrow ? path.narrow : ".";
+    for (i = 0; ; i++) {
+        char *start, *trace, *end;
+        ssize_t length;
+        static Py_ssize_t buffer_sizes[] = { 256, XATTR_LIST_MAX, 0 };
+        Py_ssize_t buffer_size = buffer_sizes[i];
+        if (!buffer_size) {
+            /* ERANGE */
+            path_error("listxattr", &path);
+            break;
+        }
+        buffer = PyMem_MALLOC(buffer_size);
+        if (!buffer) {
+            PyErr_NoMemory();
+            break;
+        }
 
-    if (!PyArg_ParseTuple(args, "O&:llistxattr", PyUnicode_FSConverter, &path))
-        return NULL;
-    res = listxattr_common(PyBytes_AS_STRING(path), llistxattr);
-    Py_DECREF(path);
-    return res;
-}
+        Py_BEGIN_ALLOW_THREADS;
+        if (path.fd > -1)
+            length = flistxattr(path.fd, buffer, buffer_size);
+        else if (follow_symlinks)
+            length = listxattr(name, buffer, buffer_size);
+        else
+            length = llistxattr(name, buffer, buffer_size);
+        Py_END_ALLOW_THREADS;
 
-static ssize_t
-wrap_flistxattr(const char *path, char *buf, size_t len)
-{
-    /* Hack to share code. */
-    return flistxattr((int)(Py_uintptr_t)path, buf, len);
-}
+        if (length < 0) {
+            if (errno == ERANGE)
+                continue;
+            path_error("listxattr", &path);
+            break;
+        }
 
-PyDoc_STRVAR(posix_flistxattr__doc__,
-"flistxattr(path)\n\n\
-Like flistxattr but operates on a file descriptor.");
+        result = PyList_New(0);
+        if (!result) {
+            goto exit;
+        }
 
-static PyObject *
-posix_flistxattr(PyObject *self, PyObject *args)
-{
-    long fd;
-
-    if (!PyArg_ParseTuple(args, "i:flistxattr", &fd))
-        return NULL;
-    return listxattr_common((const char *)(Py_uintptr_t)fd, wrap_flistxattr);
+        end = buffer + length;
+        for (trace = start = buffer; trace != end; trace++) {
+            if (!*trace) {
+                int error;
+                PyObject *attribute = PyUnicode_DecodeFSDefaultAndSize(start,
+                                                                 trace - start);
+                if (!attribute) {
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto exit;
+                }
+                error = PyList_Append(result, attribute);
+                Py_DECREF(attribute);
+                if (error) {
+                    Py_DECREF(result);
+                    result = NULL;
+                    goto exit;
+                }
+                start = trace + 1;
+            }
+        }
+    break;
+    }
+exit:
+    path_cleanup(&path);
+    if (buffer)
+        PyMem_FREE(buffer);
+    return result;
 }
 
 #endif /* USE_XATTRS */
@@ -10535,20 +10690,30 @@ get_terminal_size(PyObject *self, PyObject *args)
 
 
 static PyMethodDef posix_methods[] = {
-    {"access",          posix_access, METH_VARARGS, posix_access__doc__},
+    {"access",          (PyCFunction)posix_access,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_access__doc__},
 #ifdef HAVE_TTYNAME
     {"ttyname",         posix_ttyname, METH_VARARGS, posix_ttyname__doc__},
 #endif
-    {"chdir",           posix_chdir, METH_VARARGS, posix_chdir__doc__},
+    {"chdir",           (PyCFunction)posix_chdir,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_chdir__doc__},
 #ifdef HAVE_CHFLAGS
-    {"chflags",         posix_chflags, METH_VARARGS, posix_chflags__doc__},
+    {"chflags",         (PyCFunction)posix_chflags,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_chflags__doc__},
 #endif /* HAVE_CHFLAGS */
-    {"chmod",           posix_chmod, METH_VARARGS, posix_chmod__doc__},
+    {"chmod",           (PyCFunction)posix_chmod,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_chmod__doc__},
 #ifdef HAVE_FCHMOD
     {"fchmod",          posix_fchmod, METH_VARARGS, posix_fchmod__doc__},
 #endif /* HAVE_FCHMOD */
 #ifdef HAVE_CHOWN
-    {"chown",           posix_chown, METH_VARARGS, posix_chown__doc__},
+    {"chown",           (PyCFunction)posix_chown,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_chown__doc__},
 #endif /* HAVE_CHOWN */
 #ifdef HAVE_LCHMOD
     {"lchmod",          posix_lchmod, METH_VARARGS, posix_lchmod__doc__},
@@ -10574,15 +10739,20 @@ static PyMethodDef posix_methods[] = {
     {"getcwdb",         (PyCFunction)posix_getcwd_bytes,
     METH_NOARGS, posix_getcwdb__doc__},
 #endif
-#ifdef HAVE_LINK
-    {"link",            posix_link, METH_VARARGS, posix_link__doc__},
+#if defined(HAVE_LINK) || defined(MS_WINDOWS)
+    {"link",            (PyCFunction)posix_link,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_link__doc__},
 #endif /* HAVE_LINK */
-    {"listdir",         posix_listdir, METH_VARARGS, posix_listdir__doc__},
-#ifdef HAVE_FDOPENDIR
-    {"flistdir",       posix_flistdir, METH_VARARGS, posix_flistdir__doc__},
-#endif
-    {"lstat",           posix_lstat, METH_VARARGS, posix_lstat__doc__},
-    {"mkdir",           posix_mkdir, METH_VARARGS, posix_mkdir__doc__},
+    {"listdir",         (PyCFunction)posix_listdir,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_listdir__doc__},
+    {"lstat",           (PyCFunction)posix_lstat,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_lstat__doc__},
+    {"mkdir",           (PyCFunction)posix_mkdir,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_mkdir__doc__},
 #ifdef HAVE_NICE
     {"nice",            posix_nice, METH_VARARGS, posix_nice__doc__},
 #endif /* HAVE_NICE */
@@ -10593,23 +10763,33 @@ static PyMethodDef posix_methods[] = {
     {"setpriority",     posix_setpriority, METH_VARARGS, posix_setpriority__doc__},
 #endif /* HAVE_SETPRIORITY */
 #ifdef HAVE_READLINK
-    {"readlink",        posix_readlink, METH_VARARGS, posix_readlink__doc__},
+    {"readlink",        (PyCFunction)posix_readlink,
+                        METH_VARARGS | METH_KEYWORDS,
+                        readlink__doc__},
 #endif /* HAVE_READLINK */
 #if !defined(HAVE_READLINK) && defined(MS_WINDOWS)
-    {"readlink",        win_readlink, METH_VARARGS, win_readlink__doc__},
+    {"readlink",        (PyCFunction)win_readlink,
+                        METH_VARARGS | METH_KEYWORDS,
+                        readlink__doc__},
 #endif /* !defined(HAVE_READLINK) && defined(MS_WINDOWS) */
-    {"rename",          posix_rename, METH_VARARGS, posix_rename__doc__},
-    {"replace",         posix_replace, METH_VARARGS, posix_replace__doc__},
-    {"rmdir",           posix_rmdir, METH_VARARGS, posix_rmdir__doc__},
-    {"stat",            posix_stat, METH_VARARGS, posix_stat__doc__},
+    {"rename",          (PyCFunction)posix_rename,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_rename__doc__},
+    {"replace",         (PyCFunction)posix_replace,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_replace__doc__},
+    {"rmdir",           (PyCFunction)posix_rmdir,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_rmdir__doc__},
+    {"stat",            (PyCFunction)posix_stat,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_stat__doc__},
     {"stat_float_times", stat_float_times, METH_VARARGS, stat_float_times__doc__},
-#if defined(HAVE_SYMLINK) && !defined(MS_WINDOWS)
-    {"symlink",         posix_symlink, METH_VARARGS, posix_symlink__doc__},
+#if defined(HAVE_SYMLINK)
+    {"symlink",         (PyCFunction)posix_symlink,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_symlink__doc__},
 #endif /* HAVE_SYMLINK */
-#if defined(HAVE_SYMLINK) && defined(MS_WINDOWS)
-    {"symlink", (PyCFunction)win_symlink, METH_VARARGS | METH_KEYWORDS,
-                 win_symlink__doc__},
-#endif /* defined(HAVE_SYMLINK) && defined(MS_WINDOWS) */
 #ifdef HAVE_SYSTEM
     {"system",          posix_system, METH_VARARGS, posix_system__doc__},
 #endif
@@ -10617,29 +10797,24 @@ static PyMethodDef posix_methods[] = {
 #ifdef HAVE_UNAME
     {"uname",           posix_uname, METH_NOARGS, posix_uname__doc__},
 #endif /* HAVE_UNAME */
-    {"unlink",          posix_unlink, METH_VARARGS, posix_unlink__doc__},
-    {"remove",          posix_unlink, METH_VARARGS, posix_remove__doc__},
-    {"utime",           posix_utime, METH_VARARGS, posix_utime__doc__},
-#ifdef HAVE_FUTIMES
-    {"futimes",         posix_futimes, METH_VARARGS, posix_futimes__doc__},
-#endif
-#ifdef HAVE_LUTIMES
-    {"lutimes",         posix_lutimes, METH_VARARGS, posix_lutimes__doc__},
-#endif
-#ifdef HAVE_FUTIMENS
-    {"futimens",        posix_futimens, METH_VARARGS, posix_futimens__doc__},
-#endif
+    {"unlink",          (PyCFunction)posix_unlink,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_unlink__doc__},
+    {"remove",          (PyCFunction)posix_unlink,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_remove__doc__},
+    {"utime",           (PyCFunction)posix_utime,
+                        METH_VARARGS | METH_KEYWORDS, posix_utime__doc__},
 #ifdef HAVE_TIMES
     {"times",           posix_times, METH_NOARGS, posix_times__doc__},
 #endif /* HAVE_TIMES */
     {"_exit",           posix__exit, METH_VARARGS, posix__exit__doc__},
 #ifdef HAVE_EXECV
     {"execv",           posix_execv, METH_VARARGS, posix_execv__doc__},
-    {"execve",          posix_execve, METH_VARARGS, posix_execve__doc__},
+    {"execve",          (PyCFunction)posix_execve,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_execve__doc__},
 #endif /* HAVE_EXECV */
-#ifdef HAVE_FEXECVE
-    {"fexecve",          posix_fexecve, METH_VARARGS, posix_fexecve__doc__},
-#endif
 #ifdef HAVE_SPAWNV
     {"spawnv",          posix_spawnv, METH_VARARGS, posix_spawnv__doc__},
     {"spawnve",         posix_spawnve, METH_VARARGS, posix_spawnve__doc__},
@@ -10726,7 +10901,6 @@ static PyMethodDef posix_methods[] = {
 #ifdef MS_WINDOWS
     {"startfile",       win32_startfile, METH_VARARGS, win32_startfile__doc__},
     {"kill",    win32_kill, METH_VARARGS, win32_kill__doc__},
-    {"link",    win32_link, METH_VARARGS, win32_link__doc__},
 #endif
 #ifdef HAVE_SETUID
     {"setuid",          posix_setuid, METH_VARARGS, posix_setuid__doc__},
@@ -10788,7 +10962,9 @@ static PyMethodDef posix_methods[] = {
 #ifdef HAVE_TCSETPGRP
     {"tcsetpgrp",       posix_tcsetpgrp, METH_VARARGS, posix_tcsetpgrp__doc__},
 #endif /* HAVE_TCSETPGRP */
-    {"open",            posix_open, METH_VARARGS, posix_open__doc__},
+    {"open",            (PyCFunction)posix_open,\
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_open__doc__},
     {"close",           posix_close, METH_VARARGS, posix_close__doc__},
     {"closerange",      posix_closerange, METH_VARARGS, posix_closerange__doc__},
     {"device_encoding", device_encoding, METH_VARARGS, device_encoding__doc__},
@@ -10825,10 +11001,14 @@ static PyMethodDef posix_methods[] = {
     {"pipe2",           posix_pipe2, METH_O, posix_pipe2__doc__},
 #endif
 #ifdef HAVE_MKFIFO
-    {"mkfifo",          posix_mkfifo, METH_VARARGS, posix_mkfifo__doc__},
+    {"mkfifo",          (PyCFunction)posix_mkfifo,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_mkfifo__doc__},
 #endif
 #if defined(HAVE_MKNOD) && defined(HAVE_MAKEDEV)
-    {"mknod",           posix_mknod, METH_VARARGS, posix_mknod__doc__},
+    {"mknod",           (PyCFunction)posix_mknod,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_mknod__doc__},
 #endif
 #ifdef HAVE_DEVICE_MACROS
     {"major",           posix_major, METH_VARARGS, posix_major__doc__},
@@ -10839,7 +11019,9 @@ static PyMethodDef posix_methods[] = {
     {"ftruncate",       posix_ftruncate, METH_VARARGS, posix_ftruncate__doc__},
 #endif
 #ifdef HAVE_TRUNCATE
-    {"truncate",        posix_truncate, METH_VARARGS, posix_truncate__doc__},
+    {"truncate",        (PyCFunction)posix_truncate,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_truncate__doc__},
 #endif
 #ifdef HAVE_POSIX_FALLOCATE
     {"posix_fallocate", posix_posix_fallocate, METH_VARARGS, posix_posix_fallocate__doc__},
@@ -10896,7 +11078,9 @@ static PyMethodDef posix_methods[] = {
     {"fstatvfs",        posix_fstatvfs, METH_VARARGS, posix_fstatvfs__doc__},
 #endif
 #if defined(HAVE_STATVFS) && defined(HAVE_SYS_STATVFS_H)
-    {"statvfs",         posix_statvfs, METH_VARARGS, posix_statvfs__doc__},
+    {"statvfs",         (PyCFunction)posix_statvfs,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_statvfs__doc__},
 #endif
 #ifdef HAVE_CONFSTR
     {"confstr",         posix_confstr, METH_VARARGS, posix_confstr__doc__},
@@ -10908,7 +11092,9 @@ static PyMethodDef posix_methods[] = {
     {"fpathconf",       posix_fpathconf, METH_VARARGS, posix_fpathconf__doc__},
 #endif
 #ifdef HAVE_PATHCONF
-    {"pathconf",        posix_pathconf, METH_VARARGS, posix_pathconf__doc__},
+    {"pathconf",        (PyCFunction)posix_pathconf,
+                        METH_VARARGS | METH_KEYWORDS,
+                        posix_pathconf__doc__},
 #endif
     {"abort",           posix_abort, METH_NOARGS, posix_abort__doc__},
 #ifdef MS_WINDOWS
@@ -10935,67 +11121,19 @@ static PyMethodDef posix_methods[] = {
     {"getresgid",       posix_getresgid, METH_NOARGS, posix_getresgid__doc__},
 #endif
 
-/* posix *at family of functions */
-#ifdef HAVE_FACCESSAT
-    {"faccessat",       posix_faccessat, METH_VARARGS, posix_faccessat__doc__},
-#endif
-#ifdef HAVE_FCHMODAT
-    {"fchmodat",        posix_fchmodat, METH_VARARGS, posix_fchmodat__doc__},
-#endif /* HAVE_FCHMODAT */
-#ifdef HAVE_FCHOWNAT
-    {"fchownat",        posix_fchownat, METH_VARARGS, posix_fchownat__doc__},
-#endif /* HAVE_FCHOWNAT */
-#ifdef HAVE_FSTATAT
-    {"fstatat",         posix_fstatat, METH_VARARGS, posix_fstatat__doc__},
-#endif
-#ifdef HAVE_FUTIMESAT
-    {"futimesat",       posix_futimesat, METH_VARARGS, posix_futimesat__doc__},
-#endif
-#ifdef HAVE_LINKAT
-    {"linkat",          posix_linkat, METH_VARARGS, posix_linkat__doc__},
-#endif /* HAVE_LINKAT */
-#ifdef HAVE_MKDIRAT
-    {"mkdirat",         posix_mkdirat, METH_VARARGS, posix_mkdirat__doc__},
-#endif
-#if defined(HAVE_MKNODAT) && defined(HAVE_MAKEDEV)
-    {"mknodat",         posix_mknodat, METH_VARARGS, posix_mknodat__doc__},
-#endif
-#ifdef HAVE_OPENAT
-    {"openat",      posix_openat, METH_VARARGS, posix_openat__doc__},
-#endif
-#ifdef HAVE_READLINKAT
-    {"readlinkat",      posix_readlinkat, METH_VARARGS, posix_readlinkat__doc__},
-#endif /* HAVE_READLINKAT */
-#ifdef HAVE_RENAMEAT
-    {"renameat",        posix_renameat, METH_VARARGS, posix_renameat__doc__},
-#endif
-#if HAVE_SYMLINKAT
-    {"symlinkat",       posix_symlinkat, METH_VARARGS, posix_symlinkat__doc__},
-#endif /* HAVE_SYMLINKAT */
-#ifdef HAVE_UNLINKAT
-    {"unlinkat",        posix_unlinkat, METH_VARARGS, posix_unlinkat__doc__},
-#endif
-#ifdef HAVE_UTIMENSAT
-    {"utimensat",       (PyCFunction)posix_utimensat,
-                        METH_VARARGS | METH_KEYWORDS,
-                        posix_utimensat__doc__},
-#endif
-#ifdef HAVE_MKFIFOAT
-    {"mkfifoat",        posix_mkfifoat, METH_VARARGS, posix_mkfifoat__doc__},
-#endif
 #ifdef USE_XATTRS
-    {"setxattr", posix_setxattr, METH_VARARGS, posix_setxattr__doc__},
-    {"lsetxattr", posix_lsetxattr, METH_VARARGS, posix_lsetxattr__doc__},
-    {"fsetxattr", posix_fsetxattr, METH_VARARGS, posix_fsetxattr__doc__},
-    {"getxattr", posix_getxattr, METH_VARARGS, posix_getxattr__doc__},
-    {"lgetxattr", posix_lgetxattr, METH_VARARGS, posix_lgetxattr__doc__},
-    {"fgetxattr", posix_fgetxattr, METH_VARARGS, posix_fgetxattr__doc__},
-    {"removexattr", posix_removexattr, METH_VARARGS, posix_removexattr__doc__},
-    {"lremovexattr", posix_lremovexattr, METH_VARARGS, posix_lremovexattr__doc__},
-    {"fremovexattr", posix_fremovexattr, METH_VARARGS, posix_fremovexattr__doc__},
-    {"listxattr", posix_listxattr, METH_VARARGS, posix_listxattr__doc__},
-    {"llistxattr", posix_llistxattr, METH_VARARGS, posix_llistxattr__doc__},
-    {"flistxattr", posix_flistxattr, METH_VARARGS, posix_flistxattr__doc__},
+    {"setxattr", (PyCFunction)posix_setxattr,
+                 METH_VARARGS | METH_KEYWORDS,
+                 posix_setxattr__doc__},
+    {"getxattr", (PyCFunction)posix_getxattr,
+                 METH_VARARGS | METH_KEYWORDS,
+                 posix_getxattr__doc__},
+    {"removexattr", (PyCFunction)posix_removexattr,
+                 METH_VARARGS | METH_KEYWORDS,
+                 posix_removexattr__doc__},
+    {"listxattr", (PyCFunction)posix_listxattr,
+                 METH_VARARGS | METH_KEYWORDS,
+                 posix_listxattr__doc__},
 #endif
 #if defined(TERMSIZE_USE_CONIO) || defined(TERMSIZE_USE_IOCTL)
     {"get_terminal_size", get_terminal_size, METH_VARARGS, termsize__doc__},
@@ -11205,29 +11343,14 @@ all_ins(PyObject *d)
 #ifdef O_ACCMODE
     if (ins(d, "O_ACCMODE", (long)O_ACCMODE)) return -1;
 #endif
-/* posix - constants for *at functions */
-#ifdef AT_SYMLINK_NOFOLLOW
-        if (ins(d, "AT_SYMLINK_NOFOLLOW", (long)AT_SYMLINK_NOFOLLOW)) return -1;
-#endif
-#ifdef AT_EACCESS
-        if (ins(d, "AT_EACCESS", (long)AT_EACCESS)) return -1;
-#endif
-#ifdef AT_FDCWD
-        if (ins(d, "AT_FDCWD", (long)AT_FDCWD)) return -1;
-#endif
-#ifdef AT_REMOVEDIR
-        if (ins(d, "AT_REMOVEDIR", (long)AT_REMOVEDIR)) return -1;
-#endif
-#ifdef AT_SYMLINK_FOLLOW
-        if (ins(d, "AT_SYMLINK_FOLLOW", (long)AT_SYMLINK_FOLLOW)) return -1;
-#endif
-#ifdef UTIME_NOW
-        if (ins(d, "UTIME_NOW", (long)UTIME_NOW)) return -1;
-#endif
-#ifdef UTIME_OMIT
-        if (ins(d, "UTIME_OMIT", (long)UTIME_OMIT)) return -1;
-#endif
 
+
+#ifdef SEEK_HOLE
+    if (ins(d, "SEEK_HOLE", (long)SEEK_HOLE)) return -1;
+#endif
+#ifdef SEEK_DATA
+    if (ins(d, "SEEK_DATA", (long)SEEK_DATA)) return -1;
+#endif
 
 /* MS Windows */
 #ifdef O_NOINHERIT
@@ -11413,14 +11536,6 @@ all_ins(PyObject *d)
     if (ins(d, "F_TEST", (long)F_TEST)) return -1;
 #endif
 
-    /* constants for futimens */
-#ifdef UTIME_NOW
-    if (ins(d, "UTIME_NOW", (long)UTIME_NOW)) return -1;
-#endif
-#ifdef UTIME_OMIT
-    if (ins(d, "UTIME_OMIT", (long)UTIME_OMIT)) return -1;
-#endif
-
 	/* These came from statvfs.h */
 #ifdef ST_RDONLY
 	if (ins(d, "ST_RDONLY", (long)ST_RDONLY)) return -1;
@@ -11580,10 +11695,138 @@ static struct PyModuleDef posixmodule = {
 };
 
 
+static char *have_functions[] = {
+
+#ifdef HAVE_FACCESSAT
+    "HAVE_FACCESSAT",
+#endif
+
+#ifdef HAVE_FCHDIR
+    "HAVE_FCHDIR",
+#endif
+
+#ifdef HAVE_FCHMOD
+    "HAVE_FCHMOD",
+#endif
+
+#ifdef HAVE_FCHMODAT
+    "HAVE_FCHMODAT",
+#endif
+
+#ifdef HAVE_FCHOWN
+    "HAVE_FCHOWN",
+#endif
+
+#ifdef HAVE_FEXECVE
+    "HAVE_FEXECVE",
+#endif
+
+#ifdef HAVE_FDOPENDIR
+    "HAVE_FDOPENDIR",
+#endif
+
+#ifdef HAVE_FPATHCONF
+    "HAVE_FPATHCONF",
+#endif
+
+#ifdef HAVE_FSTATAT
+    "HAVE_FSTATAT",
+#endif
+
+#ifdef HAVE_FSTATVFS
+    "HAVE_FSTATVFS",
+#endif
+
+#ifdef HAVE_FTRUNCATE
+    "HAVE_FTRUNCATE",
+#endif
+
+#ifdef HAVE_FUTIMENS
+    "HAVE_FUTIMENS",
+#endif
+
+#ifdef HAVE_FUTIMES
+    "HAVE_FUTIMES",
+#endif
+
+#ifdef HAVE_FUTIMESAT
+    "HAVE_FUTIMESAT",
+#endif
+
+#ifdef HAVE_LINKAT
+    "HAVE_LINKAT",
+#endif
+
+#ifdef HAVE_LCHFLAGS
+    "HAVE_LCHFLAGS",
+#endif
+
+#ifdef HAVE_LCHMOD
+    "HAVE_LCHMOD",
+#endif
+
+#ifdef HAVE_LCHOWN
+    "HAVE_LCHOWN",
+#endif
+
+#ifdef HAVE_LSTAT
+    "HAVE_LSTAT",
+#endif
+
+#ifdef HAVE_LUTIMES
+    "HAVE_LUTIMES",
+#endif
+
+#ifdef HAVE_MKDIRAT
+    "HAVE_MKDIRAT",
+#endif
+
+#ifdef HAVE_MKFIFOAT
+    "HAVE_MKFIFOAT",
+#endif
+
+#ifdef HAVE_MKNODAT
+    "HAVE_MKNODAT",
+#endif
+
+#ifdef HAVE_OPENAT
+    "HAVE_OPENAT",
+#endif
+
+#ifdef HAVE_READLINKAT
+    "HAVE_READLINKAT",
+#endif
+
+#ifdef HAVE_RENAMEAT
+    "HAVE_RENAMEAT",
+#endif
+
+#ifdef HAVE_SYMLINKAT
+    "HAVE_SYMLINKAT",
+#endif
+
+#ifdef HAVE_UNLINKAT
+    "HAVE_UNLINKAT",
+#endif
+
+#ifdef HAVE_UTIMENSAT
+    "HAVE_UTIMENSAT",
+#endif
+
+#ifdef MS_WINDOWS
+    "MS_WINDOWS",
+#endif
+
+    NULL
+};
+
+
 PyMODINIT_FUNC
 INITFUNC(void)
 {
     PyObject *m, *v;
+    PyObject *list;
+    char **trace;
 
 #if defined(HAVE_SYMLINK) && defined(MS_WINDOWS)
     win32_can_symlink = enable_symlink();
@@ -11608,13 +11851,6 @@ INITFUNC(void)
 
     Py_INCREF(PyExc_OSError);
     PyModule_AddObject(m, "error", PyExc_OSError);
-
-#ifdef HAVE_SCHED_SETAFFINITY
-    if (PyType_Ready(&cpu_set_type) < 0)
-        return NULL;
-    Py_INCREF(&cpu_set_type);
-    PyModule_AddObject(m, "cpu_set", (PyObject *)&cpu_set_type);
-#endif
 
 #ifdef HAVE_PUTENV
     if (posix_putenv_garbage == NULL)
@@ -11655,7 +11891,6 @@ INITFUNC(void)
 
         /* initialize TerminalSize_info */
         PyStructSequence_InitType(&TerminalSizeType, &TerminalSize_desc);
-        Py_INCREF(&TerminalSizeType);
     }
 #if defined(HAVE_WAITID) && !defined(__APPLE__)
     Py_INCREF((PyObject*) &WaitidResultType);
@@ -11671,7 +11906,14 @@ INITFUNC(void)
     Py_INCREF(&SchedParamType);
     PyModule_AddObject(m, "sched_param", (PyObject *)&SchedParamType);
 #endif
-    initialized = 1;
+
+    times_result_desc.name = MODNAME ".times_result";
+    PyStructSequence_InitType(&TimesResultType, &times_result_desc);
+    PyModule_AddObject(m, "times_result", (PyObject *)&TimesResultType);
+
+    uname_result_desc.name = MODNAME ".uname_result";
+    PyStructSequence_InitType(&UnameResultType, &uname_result_desc);
+    PyModule_AddObject(m, "uname_result", (PyObject *)&UnameResultType);
 
 #ifdef __APPLE__
     /*
@@ -11681,7 +11923,7 @@ INITFUNC(void)
      * currently active platform.
      *
      * This block allow one to use a python binary that was build on
-     * OSX 10.4 on OSX 10.3, without loosing access to new APIs on
+     * OSX 10.4 on OSX 10.3, without losing access to new APIs on
      * OSX 10.4.
      */
 #ifdef HAVE_FSTATVFS
@@ -11711,11 +11953,41 @@ INITFUNC(void)
 
 #endif /* __APPLE__ */
 
+    Py_INCREF(&TerminalSizeType);
     PyModule_AddObject(m, "terminal_size", (PyObject*) &TerminalSizeType);
 
     billion = PyLong_FromLong(1000000000);
     if (!billion)
         return NULL;
+
+    /* suppress "function not used" warnings */
+    {
+    int ignored;
+    fd_specified("", -1);
+    follow_symlinks_specified("", 1);
+    dir_fd_and_follow_symlinks_invalid("chmod", DEFAULT_DIR_FD, 1);
+    dir_fd_converter(Py_None, &ignored);
+    dir_fd_unavailable(Py_None, &ignored);
+    }
+
+    /*
+     * provide list of locally available functions
+     * so os.py can populate support_* lists
+     */
+    list = PyList_New(0);
+    if (!list)
+        return NULL;
+    for (trace = have_functions; *trace; trace++) {
+        PyObject *unicode = PyUnicode_DecodeASCII(*trace, strlen(*trace), NULL);
+        if (!unicode)
+            return NULL;
+        if (PyList_Append(list, unicode))
+            return NULL;
+        Py_DECREF(unicode);
+    }
+    PyModule_AddObject(m, "_have_functions", list);
+
+    initialized = 1;
 
     return m;
 

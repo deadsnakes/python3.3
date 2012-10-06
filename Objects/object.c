@@ -1707,6 +1707,9 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&PyZip_Type) < 0)
         Py_FatalError("Can't initialize zip type");
+
+    if (PyType_Ready(&_PyNamespace_Type) < 0)
+        Py_FatalError("Can't initialize namespace type");
 }
 
 
@@ -1849,6 +1852,18 @@ PyMem_Free(void *p)
     PyMem_FREE(p);
 }
 
+void
+_PyObject_DebugTypeStats(FILE *out)
+{
+    _PyCFunction_DebugMallocStats(out);
+    _PyDict_DebugMallocStats(out);
+    _PyFloat_DebugMallocStats(out);
+    _PyFrame_DebugMallocStats(out);
+    _PyList_DebugMallocStats(out);
+    _PyMethod_DebugMallocStats(out);
+    _PySet_DebugMallocStats(out);
+    _PyTuple_DebugMallocStats(out);
+}
 
 /* These methods are used to control infinite recursion in repr, str, print,
    etc.  Container objects that may recursively contain themselves,
@@ -1939,6 +1954,18 @@ _PyTrash_deposit_object(PyObject *op)
     _PyTrash_delete_later = op;
 }
 
+/* The equivalent API, using per-thread state recursion info */
+void
+_PyTrash_thread_deposit_object(PyObject *op)
+{
+    PyThreadState *tstate = PyThreadState_GET();
+    assert(PyObject_IS_GC(op));
+    assert(_Py_AS_GC(op)->gc.gc_refs == _PyGC_REFS_UNTRACKED);
+    assert(op->ob_refcnt == 0);
+    _Py_AS_GC(op)->gc.gc_prev = (PyGC_Head *) tstate->trash_delete_later;
+    tstate->trash_delete_later = op;
+}
+
 /* Dealloccate all the objects in the _PyTrash_delete_later list.  Called when
  * the call-stack unwinds again.
  */
@@ -1962,6 +1989,31 @@ _PyTrash_destroy_chain(void)
         ++_PyTrash_delete_nesting;
         (*dealloc)(op);
         --_PyTrash_delete_nesting;
+    }
+}
+
+/* The equivalent API, using per-thread state recursion info */
+void
+_PyTrash_thread_destroy_chain(void)
+{
+    PyThreadState *tstate = PyThreadState_GET();
+    while (tstate->trash_delete_later) {
+        PyObject *op = tstate->trash_delete_later;
+        destructor dealloc = Py_TYPE(op)->tp_dealloc;
+
+        tstate->trash_delete_later =
+            (PyObject*) _Py_AS_GC(op)->gc.gc_prev;
+
+        /* Call the deallocator directly.  This used to try to
+         * fool Py_DECREF into calling it indirectly, but
+         * Py_DECREF was already called on this object, and in
+         * assorted non-release builds calling Py_DECREF again ends
+         * up distorting allocation statistics.
+         */
+        assert(op->ob_refcnt == 0);
+        ++tstate->trash_delete_nesting;
+        (*dealloc)(op);
+        --tstate->trash_delete_nesting;
     }
 }
 

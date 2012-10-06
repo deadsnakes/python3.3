@@ -7,12 +7,15 @@
 # Licensed to PSF under a Contributor Agreement.
 #
 
+import sys
 import functools
+import os
 import itertools
 import weakref
 import atexit
 import threading        # we want threading to install it's
                         # cleanup function before multiprocessing does
+from subprocess import _args_from_interpreter_flags
 
 from multiprocessing.process import current_process, active_children
 
@@ -159,6 +162,7 @@ class Finalize(object):
         self._args = args
         self._kwargs = kwargs or {}
         self._key = (exitpriority, next(_finalizer_counter))
+        self._pid = os.getpid()
 
         _finalizer_registry[self._key] = self
 
@@ -166,7 +170,7 @@ class Finalize(object):
                  # Need to bind these locally because the globals can have
                  # been cleared at shutdown
                  _finalizer_registry=_finalizer_registry,
-                 sub_debug=sub_debug):
+                 sub_debug=sub_debug, getpid=os.getpid):
         '''
         Run the callback unless it has already been called or cancelled
         '''
@@ -175,9 +179,13 @@ class Finalize(object):
         except KeyError:
             sub_debug('finalizer no longer registered')
         else:
-            sub_debug('finalizer calling %s with args %s and kwargs %s',
-                     self._callback, self._args, self._kwargs)
-            res = self._callback(*self._args, **self._kwargs)
+            if self._pid != getpid():
+                sub_debug('finalizer ignored because different process')
+                res = None
+            else:
+                sub_debug('finalizer calling %s with args %s and kwargs %s',
+                          self._callback, self._args, self._kwargs)
+                res = self._callback(*self._args, **self._kwargs)
             self._weakref = self._callback = self._args = \
                             self._kwargs = self._key = None
             return res
@@ -261,21 +269,24 @@ _exiting = False
 def _exit_function():
     global _exiting
 
-    info('process shutting down')
-    debug('running all "atexit" finalizers with priority >= 0')
-    _run_finalizers(0)
+    if not _exiting:
+        _exiting = True
 
-    for p in active_children():
-        if p._daemonic:
-            info('calling terminate() for daemon %s', p.name)
-            p._popen.terminate()
+        info('process shutting down')
+        debug('running all "atexit" finalizers with priority >= 0')
+        _run_finalizers(0)
 
-    for p in active_children():
-        info('calling join() for process %s', p.name)
-        p.join()
+        for p in active_children():
+            if p._daemonic:
+                info('calling terminate() for daemon %s', p.name)
+                p._popen.terminate()
 
-    debug('running the remaining "atexit" finalizers')
-    _run_finalizers()
+        for p in active_children():
+            info('calling join() for process %s', p.name)
+            p.join()
+
+        debug('running the remaining "atexit" finalizers')
+        _run_finalizers()
 
 atexit.register(_exit_function)
 
@@ -295,18 +306,3 @@ class ForkAwareLocal(threading.local):
         register_after_fork(self, lambda obj : obj.__dict__.clear())
     def __reduce__(self):
         return type(self), ()
-
-
-#
-# Automatic retry after EINTR
-#
-
-def _eintr_retry(func):
-    @functools.wraps(func)
-    def wrapped(*args, **kwargs):
-        while True:
-            try:
-                return func(*args, **kwargs)
-            except InterruptedError:
-                continue
-    return wrapped

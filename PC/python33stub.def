@@ -471,6 +471,8 @@ PySlice_New
 PySlice_Type
 PySortWrapper_Type
 PyState_FindModule
+PyState_AddModule
+PyState_RemoveModule
 PyStructSequence_GetItem
 PyStructSequence_New
 PyStructSequence_NewType
@@ -511,6 +513,7 @@ PyTuple_Size
 PyTuple_Type
 PyType_ClearCache
 PyType_FromSpec
+PyType_FromSpecWithBases
 PyType_GenericAlloc
 PyType_GenericNew
 PyType_GetFlags
@@ -687,3 +690,9 @@ _Py_NotImplementedStruct
 _Py_SwappedOp
 _Py_TrueStruct
 _Py_VaBuildValue_SizeT
+_PyArg_Parse_SizeT
+_PyArg_ParseTuple_SizeT
+_PyArg_ParseTupleAndKeywords_SizeT
+_PyArg_VaParse_SizeT
+_PyArg_VaParseTupleAndKeywords_SizeT
+_Py_BuildValue_SizeT

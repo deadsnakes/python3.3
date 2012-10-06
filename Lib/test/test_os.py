@@ -30,7 +30,9 @@ except ImportError:
     threading = None
 from test.script_helper import assert_python_ok
 
-os.stat_float_times(True)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    os.stat_float_times(True)
 st = os.stat(__file__)
 stat_supports_subsecond = (
     # check if float and int timestamps are different
@@ -192,11 +194,11 @@ class StatAttributeTests(unittest.TestCase):
                 self.assertIn(attr, members)
 
         # Make sure that the st_?time and st_?time_ns fields roughly agree
-        # (they should always agree up to the tens-of-microseconds magnitude)
+        # (they should always agree up to around tens-of-microseconds)
         for name in 'st_atime st_mtime st_ctime'.split():
             floaty = int(getattr(result, name) * 100000)
             nanosecondy = getattr(result, name + "_ns") // 10000
-            self.assertEqual(floaty, nanosecondy)
+            self.assertAlmostEqual(floaty, nanosecondy, delta=2)
 
         try:
             result[200]
@@ -303,20 +305,76 @@ class StatAttributeTests(unittest.TestCase):
         st2 = os.stat(support.TESTFN)
         self.assertEqual(st2.st_mtime, int(st.st_mtime-delta))
 
-    def test_utime_noargs(self):
+    def _test_utime(self, filename, attr, utime, delta):
         # Issue #13327 removed the requirement to pass None as the
         # second argument. Check that the previous methods of passing
         # a time tuple or None work in addition to no argument.
-        st = os.stat(support.TESTFN)
+        st0 = os.stat(filename)
         # Doesn't set anything new, but sets the time tuple way
-        os.utime(support.TESTFN, (st.st_atime, st.st_mtime))
+        utime(filename, (attr(st0, "st_atime"), attr(st0, "st_mtime")))
+        # Setting the time to the time you just read, then reading again,
+        # should always return exactly the same times.
+        st1 = os.stat(filename)
+        self.assertEqual(attr(st0, "st_mtime"), attr(st1, "st_mtime"))
+        self.assertEqual(attr(st0, "st_atime"), attr(st1, "st_atime"))
         # Set to the current time in the old explicit way.
-        os.utime(support.TESTFN, None)
-        st1 = os.stat(support.TESTFN)
-        # Set to the current time in the new way
-        os.utime(support.TESTFN)
+        os.utime(filename, None)
         st2 = os.stat(support.TESTFN)
-        self.assertAlmostEqual(st1.st_mtime, st2.st_mtime, delta=10)
+        # Set to the current time in the new way
+        os.utime(filename)
+        st3 = os.stat(filename)
+        self.assertAlmostEqual(attr(st2, "st_mtime"), attr(st3, "st_mtime"), delta=delta)
+
+    def test_utime(self):
+        def utime(file, times):
+            return os.utime(file, times)
+        self._test_utime(self.fname, getattr, utime, 10)
+        self._test_utime(support.TESTFN, getattr, utime, 10)
+
+
+    def _test_utime_ns(self, set_times_ns, test_dir=True):
+        def getattr_ns(o, attr):
+            return getattr(o, attr + "_ns")
+        ten_s = 10 * 1000 * 1000 * 1000
+        self._test_utime(self.fname, getattr_ns, set_times_ns, ten_s)
+        if test_dir:
+            self._test_utime(support.TESTFN, getattr_ns, set_times_ns, ten_s)
+
+    def test_utime_ns(self):
+        def utime_ns(file, times):
+            return os.utime(file, ns=times)
+        self._test_utime_ns(utime_ns)
+
+    requires_utime_dir_fd = unittest.skipUnless(
+                                os.utime in os.supports_dir_fd,
+                                "dir_fd support for utime required for this test.")
+    requires_utime_fd = unittest.skipUnless(
+                                os.utime in os.supports_fd,
+                                "fd support for utime required for this test.")
+    requires_utime_nofollow_symlinks = unittest.skipUnless(
+                                os.utime in os.supports_follow_symlinks,
+                                "follow_symlinks support for utime required for this test.")
+
+    @requires_utime_nofollow_symlinks
+    def test_lutimes_ns(self):
+        def lutimes_ns(file, times):
+            return os.utime(file, ns=times, follow_symlinks=False)
+        self._test_utime_ns(lutimes_ns)
+
+    @requires_utime_fd
+    def test_futimes_ns(self):
+        def futimes_ns(file, times):
+            with open(file, "wb") as f:
+                os.utime(f.fileno(), ns=times)
+        self._test_utime_ns(futimes_ns, test_dir=False)
+
+    def _utime_invalid_arguments(self, name, arg):
+        with self.assertRaises(ValueError):
+            getattr(os, name)(arg, (5, 5), ns=(5, 5))
+
+    def test_utime_invalid_arguments(self):
+        self._utime_invalid_arguments('utime', self.fname)
+
 
     @unittest.skipUnless(stat_supports_subsecond,
                          "os.stat() doesn't has a subsecond resolution")
@@ -328,7 +386,9 @@ class StatAttributeTests(unittest.TestCase):
         filename = self.fname
         os.utime(filename, (0, 0))
         set_time_func(filename, atime, mtime)
-        os.stat_float_times(True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            os.stat_float_times(True)
         st = os.stat(filename)
         self.assertAlmostEqual(st.st_atime, atime, places=3)
         self.assertAlmostEqual(st.st_mtime, mtime, places=3)
@@ -338,66 +398,46 @@ class StatAttributeTests(unittest.TestCase):
             os.utime(filename, (atime, mtime))
         self._test_utime_subsecond(set_time)
 
-    @unittest.skipUnless(hasattr(os, 'futimes'),
-                         "os.futimes required for this test.")
+    @requires_utime_fd
     def test_futimes_subsecond(self):
         def set_time(filename, atime, mtime):
             with open(filename, "wb") as f:
-                os.futimes(f.fileno(), (atime, mtime))
+                os.utime(f.fileno(), times=(atime, mtime))
         self._test_utime_subsecond(set_time)
 
-    @unittest.skipUnless(hasattr(os, 'futimens'),
-                         "os.futimens required for this test.")
+    @requires_utime_fd
     def test_futimens_subsecond(self):
         def set_time(filename, atime, mtime):
             with open(filename, "wb") as f:
-                asec, ansec = divmod(atime, 1.0)
-                asec = int(asec)
-                ansec = int(ansec * 1e9)
-                msec, mnsec = divmod(mtime, 1.0)
-                msec = int(msec)
-                mnsec = int(mnsec * 1e9)
-                os.futimens(f.fileno(),
-                           (asec, ansec),
-                           (msec, mnsec))
+                os.utime(f.fileno(), times=(atime, mtime))
         self._test_utime_subsecond(set_time)
 
-    @unittest.skipUnless(hasattr(os, 'futimesat'),
-                         "os.futimesat required for this test.")
+    @requires_utime_dir_fd
     def test_futimesat_subsecond(self):
         def set_time(filename, atime, mtime):
             dirname = os.path.dirname(filename)
             dirfd = os.open(dirname, os.O_RDONLY)
             try:
-                os.futimesat(dirfd, os.path.basename(filename),
-                             (atime, mtime))
+                os.utime(os.path.basename(filename), dir_fd=dirfd,
+                             times=(atime, mtime))
             finally:
                 os.close(dirfd)
         self._test_utime_subsecond(set_time)
 
-    @unittest.skipUnless(hasattr(os, 'lutimes'),
-                         "os.lutimes required for this test.")
+    @requires_utime_nofollow_symlinks
     def test_lutimes_subsecond(self):
         def set_time(filename, atime, mtime):
-            os.lutimes(filename, (atime, mtime))
+            os.utime(filename, (atime, mtime), follow_symlinks=False)
         self._test_utime_subsecond(set_time)
 
-    @unittest.skipUnless(hasattr(os, 'utimensat'),
-                         "os.utimensat required for this test.")
+    @requires_utime_dir_fd
     def test_utimensat_subsecond(self):
         def set_time(filename, atime, mtime):
             dirname = os.path.dirname(filename)
             dirfd = os.open(dirname, os.O_RDONLY)
             try:
-                asec, ansec = divmod(atime, 1.0)
-                asec = int(asec)
-                ansec = int(ansec * 1e9)
-                msec, mnsec = divmod(mtime, 1.0)
-                msec = int(msec)
-                mnsec = int(mnsec * 1e9)
-                os.utimensat(dirfd, os.path.basename(filename),
-                             (asec, ansec),
-                             (msec, mnsec))
+                os.utime(os.path.basename(filename), dir_fd=dirfd,
+                             times=(atime, mtime))
             finally:
                 os.close(dirfd)
         self._test_utime_subsecond(set_time)
@@ -432,6 +472,19 @@ class StatAttributeTests(unittest.TestCase):
                 if e.errno == 2: # file does not exist; cannot run test
                     return
                 self.fail("Could not stat pagefile.sys")
+
+        @unittest.skipUnless(hasattr(os, "pipe"), "requires os.pipe()")
+        def test_15261(self):
+            # Verify that stat'ing a closed fd does not cause crash
+            r, w = os.pipe()
+            try:
+                os.stat(r)          # should not raise error
+            finally:
+                os.close(r)
+                os.close(w)
+            with self.assertRaises(OSError) as ctx:
+                os.stat(r)
+            self.assertEqual(ctx.exception.errno, errno.EBADF)
 
 from test import mapping_tests
 
@@ -593,6 +646,7 @@ class WalkTests(unittest.TestCase):
         #         SUB2/             a file kid and a dirsymlink kid
         #           tmp3
         #           link/           a symlink to TESTFN.2
+        #           broken_link
         #       TEST2/
         #         tmp4              a lone file
         walk_path = join(support.TESTFN, "TEST1")
@@ -605,6 +659,8 @@ class WalkTests(unittest.TestCase):
         link_path = join(sub2_path, "link")
         t2_path = join(support.TESTFN, "TEST2")
         tmp4_path = join(support.TESTFN, "TEST2", "tmp4")
+        link_path = join(sub2_path, "link")
+        broken_link_path = join(sub2_path, "broken_link")
 
         # Create stuff.
         os.makedirs(sub11_path)
@@ -621,7 +677,8 @@ class WalkTests(unittest.TestCase):
             else:
                 symlink_to_dir = os.symlink
             symlink_to_dir(os.path.abspath(t2_path), link_path)
-            sub2_tree = (sub2_path, ["link"], ["tmp3"])
+            symlink_to_dir('broken', broken_link_path)
+            sub2_tree = (sub2_path, ["link"], ["broken_link", "tmp3"])
         else:
             sub2_tree = (sub2_path, [], ["tmp3"])
 
@@ -633,6 +690,7 @@ class WalkTests(unittest.TestCase):
         #     flipped:  TESTFN, SUB2, SUB1, SUB11
         flipped = all[0][1][0] != "SUB1"
         all[0][1].sort()
+        all[3 - 2 * flipped][-1].sort()
         self.assertEqual(all[0], (walk_path, ["SUB1", "SUB2"], ["tmp1"]))
         self.assertEqual(all[1 + flipped], (sub1_path, ["SUB11"], ["tmp2"]))
         self.assertEqual(all[2 + flipped], (sub11_path, [], []))
@@ -648,6 +706,7 @@ class WalkTests(unittest.TestCase):
                 dirs.remove('SUB1')
         self.assertEqual(len(all), 2)
         self.assertEqual(all[0], (walk_path, ["SUB2"], ["tmp1"]))
+        all[1][-1].sort()
         self.assertEqual(all[1], sub2_tree)
 
         # Walk bottom-up.
@@ -658,6 +717,7 @@ class WalkTests(unittest.TestCase):
         #     flipped:  SUB2, SUB11, SUB1, TESTFN
         flipped = all[3][1][0] != "SUB1"
         all[3][1].sort()
+        all[2 - 2 * flipped][-1].sort()
         self.assertEqual(all[3], (walk_path, ["SUB1", "SUB2"], ["tmp1"]))
         self.assertEqual(all[flipped], (sub11_path, [], []))
         self.assertEqual(all[flipped + 1], (sub1_path, ["SUB11"], ["tmp2"]))
@@ -694,27 +754,49 @@ class WalkTests(unittest.TestCase):
 class FwalkTests(WalkTests):
     """Tests for os.fwalk()."""
 
-    def test_compare_to_walk(self):
-        # compare with walk() results
-        for topdown, followlinks in itertools.product((True, False), repeat=2):
-            args = support.TESTFN, topdown, None, followlinks
+    def _compare_to_walk(self, walk_kwargs, fwalk_kwargs):
+        """
+        compare with walk() results.
+        """
+        walk_kwargs = walk_kwargs.copy()
+        fwalk_kwargs = fwalk_kwargs.copy()
+        for topdown, follow_symlinks in itertools.product((True, False), repeat=2):
+            walk_kwargs.update(topdown=topdown, followlinks=follow_symlinks)
+            fwalk_kwargs.update(topdown=topdown, follow_symlinks=follow_symlinks)
+
             expected = {}
-            for root, dirs, files in os.walk(*args):
+            for root, dirs, files in os.walk(**walk_kwargs):
                 expected[root] = (set(dirs), set(files))
 
-            for root, dirs, files, rootfd in os.fwalk(*args):
+            for root, dirs, files, rootfd in os.fwalk(**fwalk_kwargs):
                 self.assertIn(root, expected)
                 self.assertEqual(expected[root], (set(dirs), set(files)))
 
+    def test_compare_to_walk(self):
+        kwargs = {'top': support.TESTFN}
+        self._compare_to_walk(kwargs, kwargs)
+
     def test_dir_fd(self):
+        try:
+            fd = os.open(".", os.O_RDONLY)
+            walk_kwargs = {'top': support.TESTFN}
+            fwalk_kwargs = walk_kwargs.copy()
+            fwalk_kwargs['dir_fd'] = fd
+            self._compare_to_walk(walk_kwargs, fwalk_kwargs)
+        finally:
+            os.close(fd)
+
+    def test_yields_correct_dir_fd(self):
         # check returned file descriptors
-        for topdown, followlinks in itertools.product((True, False), repeat=2):
-            args = support.TESTFN, topdown, None, followlinks
-            for root, dirs, files, rootfd in os.fwalk(*args):
+        for topdown, follow_symlinks in itertools.product((True, False), repeat=2):
+            args = support.TESTFN, topdown, None
+            for root, dirs, files, rootfd in os.fwalk(*args, follow_symlinks=follow_symlinks):
                 # check that the FD is valid
                 os.fstat(rootfd)
-                # check that flistdir() returns consistent information
-                self.assertEqual(set(os.flistdir(rootfd)), set(dirs) | set(files))
+                # redundant check
+                os.stat(rootfd)
+                # check that listdir() returns consistent information
+                self.assertEqual(set(os.listdir(rootfd)), set(dirs) | set(files))
 
     def test_fd_leak(self):
         # Since we're opening a lot of FDs, we must be careful to avoid leaks:
@@ -733,13 +815,13 @@ class FwalkTests(WalkTests):
         # cleanup
         for root, dirs, files, rootfd in os.fwalk(support.TESTFN, topdown=False):
             for name in files:
-                os.unlinkat(rootfd, name)
+                os.unlink(name, dir_fd=rootfd)
             for name in dirs:
-                st = os.fstatat(rootfd, name, os.AT_SYMLINK_NOFOLLOW)
+                st = os.stat(name, dir_fd=rootfd, follow_symlinks=False)
                 if stat.S_ISDIR(st.st_mode):
-                    os.unlinkat(rootfd, name, os.AT_REMOVEDIR)
+                    os.rmdir(name, dir_fd=rootfd)
                 else:
-                    os.unlinkat(rootfd, name)
+                    os.unlink(name, dir_fd=rootfd)
         os.rmdir(support.TESTFN)
 
 
@@ -772,6 +854,34 @@ class MakedirTests(unittest.TestCase):
         self.assertRaises(OSError, os.makedirs, path, 0o776, exist_ok=True)
         os.makedirs(path, mode=mode, exist_ok=True)
         os.umask(old_mask)
+
+    def test_exist_ok_s_isgid_directory(self):
+        path = os.path.join(support.TESTFN, 'dir1')
+        S_ISGID = stat.S_ISGID
+        mode = 0o777
+        old_mask = os.umask(0o022)
+        try:
+            existing_testfn_mode = stat.S_IMODE(
+                    os.lstat(support.TESTFN).st_mode)
+            try:
+                os.chmod(support.TESTFN, existing_testfn_mode | S_ISGID)
+            except PermissionError:
+                raise unittest.SkipTest('Cannot set S_ISGID for dir.')
+            if (os.lstat(support.TESTFN).st_mode & S_ISGID != S_ISGID):
+                raise unittest.SkipTest('No support for S_ISGID dir mode.')
+            # The os should apply S_ISGID from the parent dir for us, but
+            # this test need not depend on that behavior.  Be explicit.
+            os.makedirs(path, mode | S_ISGID)
+            # http://bugs.python.org/issue14992
+            # Should not fail when the bit is already set.
+            os.makedirs(path, mode, exist_ok=True)
+            # remove the bit.
+            os.chmod(path, stat.S_IMODE(os.lstat(path).st_mode) & ~S_ISGID)
+            with self.assertRaises(OSError):
+                # Should fail when the bit is not already set when demanded.
+                os.makedirs(path, mode | S_ISGID, exist_ok=True)
+        finally:
+            os.umask(old_mask)
 
     def test_exist_ok_existing_regular_file(self):
         base = support.TESTFN
@@ -1010,10 +1120,12 @@ class TestInvalidFD(unittest.TestCase):
 
     def test_fpathconf(self):
         if hasattr(os, "fpathconf"):
+            self.check(os.pathconf, "PC_NAME_MAX")
             self.check(os.fpathconf, "PC_NAME_MAX")
 
     def test_ftruncate(self):
         if hasattr(os, "ftruncate"):
+            self.check(os.truncate, 0)
             self.check(os.ftruncate, 0)
 
     def test_lseek(self):
@@ -1168,6 +1280,13 @@ if sys.platform != 'win32':
             expected = self.unicodefn
             found = set(os.listdir(self.dir))
             self.assertEqual(found, expected)
+            # test listdir without arguments
+            current_directory = os.getcwd()
+            try:
+                os.chdir(os.sep)
+                self.assertEqual(set(os.listdir()), set(os.listdir(os.sep)))
+            finally:
+                os.chdir(current_directory)
 
         def test_open(self):
             for fn in self.unicodefn:
@@ -1758,7 +1877,7 @@ def supports_extended_attributes():
     try:
         with open(support.TESTFN, "wb") as fp:
             try:
-                os.fsetxattr(fp.fileno(), b"user.test", b"")
+                os.setxattr(fp.fileno(), b"user.test", b"")
             except OSError:
                 return False
     finally:
@@ -1776,73 +1895,73 @@ class ExtendedAttributeTests(unittest.TestCase):
     def tearDown(self):
         support.unlink(support.TESTFN)
 
-    def _check_xattrs_str(self, s, getxattr, setxattr, removexattr, listxattr):
+    def _check_xattrs_str(self, s, getxattr, setxattr, removexattr, listxattr, **kwargs):
         fn = support.TESTFN
         open(fn, "wb").close()
         with self.assertRaises(OSError) as cm:
-            getxattr(fn, s("user.test"))
+            getxattr(fn, s("user.test"), **kwargs)
         self.assertEqual(cm.exception.errno, errno.ENODATA)
         init_xattr = listxattr(fn)
         self.assertIsInstance(init_xattr, list)
-        setxattr(fn, s("user.test"), b"")
+        setxattr(fn, s("user.test"), b"", **kwargs)
         xattr = set(init_xattr)
         xattr.add("user.test")
         self.assertEqual(set(listxattr(fn)), xattr)
-        self.assertEqual(getxattr(fn, b"user.test"), b"")
-        setxattr(fn, s("user.test"), b"hello", os.XATTR_REPLACE)
-        self.assertEqual(getxattr(fn, b"user.test"), b"hello")
+        self.assertEqual(getxattr(fn, b"user.test", **kwargs), b"")
+        setxattr(fn, s("user.test"), b"hello", os.XATTR_REPLACE, **kwargs)
+        self.assertEqual(getxattr(fn, b"user.test", **kwargs), b"hello")
         with self.assertRaises(OSError) as cm:
-            setxattr(fn, s("user.test"), b"bye", os.XATTR_CREATE)
+            setxattr(fn, s("user.test"), b"bye", os.XATTR_CREATE, **kwargs)
         self.assertEqual(cm.exception.errno, errno.EEXIST)
         with self.assertRaises(OSError) as cm:
-            setxattr(fn, s("user.test2"), b"bye", os.XATTR_REPLACE)
+            setxattr(fn, s("user.test2"), b"bye", os.XATTR_REPLACE, **kwargs)
         self.assertEqual(cm.exception.errno, errno.ENODATA)
-        setxattr(fn, s("user.test2"), b"foo", os.XATTR_CREATE)
+        setxattr(fn, s("user.test2"), b"foo", os.XATTR_CREATE, **kwargs)
         xattr.add("user.test2")
         self.assertEqual(set(listxattr(fn)), xattr)
-        removexattr(fn, s("user.test"))
+        removexattr(fn, s("user.test"), **kwargs)
         with self.assertRaises(OSError) as cm:
-            getxattr(fn, s("user.test"))
+            getxattr(fn, s("user.test"), **kwargs)
         self.assertEqual(cm.exception.errno, errno.ENODATA)
         xattr.remove("user.test")
         self.assertEqual(set(listxattr(fn)), xattr)
-        self.assertEqual(getxattr(fn, s("user.test2")), b"foo")
-        setxattr(fn, s("user.test"), b"a"*1024)
-        self.assertEqual(getxattr(fn, s("user.test")), b"a"*1024)
-        removexattr(fn, s("user.test"))
+        self.assertEqual(getxattr(fn, s("user.test2"), **kwargs), b"foo")
+        setxattr(fn, s("user.test"), b"a"*1024, **kwargs)
+        self.assertEqual(getxattr(fn, s("user.test"), **kwargs), b"a"*1024)
+        removexattr(fn, s("user.test"), **kwargs)
         many = sorted("user.test{}".format(i) for i in range(100))
         for thing in many:
-            setxattr(fn, thing, b"x")
+            setxattr(fn, thing, b"x", **kwargs)
         self.assertEqual(set(listxattr(fn)), set(init_xattr) | set(many))
 
-    def _check_xattrs(self, *args):
+    def _check_xattrs(self, *args, **kwargs):
         def make_bytes(s):
             return bytes(s, "ascii")
-        self._check_xattrs_str(str, *args)
+        self._check_xattrs_str(str, *args, **kwargs)
         support.unlink(support.TESTFN)
-        self._check_xattrs_str(make_bytes, *args)
+        self._check_xattrs_str(make_bytes, *args, **kwargs)
 
     def test_simple(self):
         self._check_xattrs(os.getxattr, os.setxattr, os.removexattr,
                            os.listxattr)
 
     def test_lpath(self):
-        self._check_xattrs(os.lgetxattr, os.lsetxattr, os.lremovexattr,
-                           os.llistxattr)
+        self._check_xattrs(os.getxattr, os.setxattr, os.removexattr,
+                           os.listxattr, follow_symlinks=False)
 
     def test_fds(self):
         def getxattr(path, *args):
             with open(path, "rb") as fp:
-                return os.fgetxattr(fp.fileno(), *args)
+                return os.getxattr(fp.fileno(), *args)
         def setxattr(path, *args):
             with open(path, "wb") as fp:
-                os.fsetxattr(fp.fileno(), *args)
+                os.setxattr(fp.fileno(), *args)
         def removexattr(path, *args):
             with open(path, "wb") as fp:
-                os.fremovexattr(fp.fileno(), *args)
+                os.removexattr(fp.fileno(), *args)
         def listxattr(path, *args):
             with open(path, "rb") as fp:
-                return os.flistxattr(fp.fileno(), *args)
+                return os.listxattr(fp.fileno(), *args)
         self._check_xattrs(getxattr, setxattr, removexattr, listxattr)
 
 

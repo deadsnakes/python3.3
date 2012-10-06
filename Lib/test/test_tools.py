@@ -6,7 +6,7 @@ Tools directory of a Python checkout or tarball, such as reindent.py.
 
 import os
 import sys
-import imp
+import importlib.machinery
 import unittest
 from unittest import mock
 import sysconfig
@@ -19,8 +19,8 @@ if not sysconfig.is_python_build():
     # and run the tests in that case too?
     raise unittest.SkipTest('test irrelevant for an installed Python')
 
-srcdir = sysconfig.get_config_var('projectbase')
-basepath = os.path.join(os.getcwd(), srcdir, 'Tools')
+basepath = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                        'Tools')
 scriptsdir = os.path.join(basepath, 'scripts')
 
 
@@ -80,7 +80,8 @@ class PdepsTests(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         path = os.path.join(scriptsdir, 'pdeps.py')
-        self.pdeps = imp.load_source('pdeps', path)
+        loader = importlib.machinery.SourceFileLoader('pdeps', path)
+        self.pdeps = loader.load_module()
 
     @classmethod
     def tearDownClass(self):
@@ -104,7 +105,8 @@ class Gprof2htmlTests(unittest.TestCase):
 
     def setUp(self):
         path = os.path.join(scriptsdir, 'gprof2html.py')
-        self.gprof = imp.load_source('gprof2html', path)
+        loader = importlib.machinery.SourceFileLoader('gprof2html', path)
+        self.gprof = loader.load_module()
         oldargv = sys.argv
         def fixup():
             sys.argv = oldargv
@@ -120,6 +122,12 @@ class Gprof2htmlTests(unittest.TestCase):
             sys.argv = ['gprof2html', fn]
             self.gprof.main()
         self.assertTrue(wmock.open.called)
+
+
+# Run the tests in Tools/parser/test_unparse.py
+with support.DirsOnSysPath(os.path.join(basepath, 'parser')):
+    from test_unparse import UnparseTestCase
+    from test_unparse import DirectoryTestCase
 
 
 def test_main():

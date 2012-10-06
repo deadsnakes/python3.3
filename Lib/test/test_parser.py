@@ -2,6 +2,7 @@ import parser
 import unittest
 import sys
 import operator
+import struct
 from test import support
 
 #
@@ -110,6 +111,8 @@ class RoundtripLegalSyntaxTestCase(unittest.TestCase):
         self.check_expr("lambda x, *y, **z: 0")
         self.check_expr("(x for x in range(10))")
         self.check_expr("foo(x for x in range(10))")
+        self.check_expr("...")
+        self.check_expr("a[...]")
 
     def test_simple_expression(self):
         # expr_stmt
@@ -300,6 +303,37 @@ class RoundtripLegalSyntaxTestCase(unittest.TestCase):
         self.check_suite("x, *b, = m")
         self.check_suite("[*a, *b] = y")
         self.check_suite("for [*x, b] in x: pass")
+
+    def test_raise_statement(self):
+        self.check_suite("raise\n")
+        self.check_suite("raise e\n")
+        self.check_suite("try:\n"
+                         "    suite\n"
+                         "except Exception as e:\n"
+                         "    raise ValueError from e\n")
+
+    def test_set_displays(self):
+        self.check_expr('{2}')
+        self.check_expr('{2,}')
+        self.check_expr('{2, 3}')
+        self.check_expr('{2, 3,}')
+
+    def test_dict_displays(self):
+        self.check_expr('{}')
+        self.check_expr('{a:b}')
+        self.check_expr('{a:b,}')
+        self.check_expr('{a:b, c:d}')
+        self.check_expr('{a:b, c:d,}')
+
+    def test_set_comprehensions(self):
+        self.check_expr('{x for x in seq}')
+        self.check_expr('{f(x) for x in seq}')
+        self.check_expr('{f(x) for x in seq if condition(x)}')
+
+    def test_dict_comprehensions(self):
+        self.check_expr('{x:x for x in seq}')
+        self.check_expr('{x**2:x[3] for x in seq if condition(x)}')
+        self.check_expr('{x:x for x in seq1 for y in seq2 if condition(x, y)}')
 
 
 #
@@ -645,6 +679,44 @@ class STObjectTestCase(unittest.TestCase):
         self.assertRaises(TypeError, operator.le, False, st1)
         self.assertRaises(TypeError, operator.lt, st1, 1815)
         self.assertRaises(TypeError, operator.gt, b'waterloo', st2)
+
+    check_sizeof = support.check_sizeof
+
+    @support.cpython_only
+    def test_sizeof(self):
+        def XXXROUNDUP(n):
+            if n <= 1:
+                return n
+            if n <= 128:
+                return (n + 3) & ~3
+            return 1 << (n - 1).bit_length()
+
+        basesize = support.calcobjsize('Pii')
+        nodesize = struct.calcsize('hP3iP0h')
+        def sizeofchildren(node):
+            if node is None:
+                return 0
+            res = 0
+            hasstr = len(node) > 1 and isinstance(node[-1], str)
+            if hasstr:
+                res += len(node[-1]) + 1
+            children = node[1:-1] if hasstr else node[1:]
+            if children:
+                res += XXXROUNDUP(len(children)) * nodesize
+                for child in children:
+                    res += sizeofchildren(child)
+            return res
+
+        def check_st_sizeof(st):
+            self.check_sizeof(st, basesize + nodesize +
+                                  sizeofchildren(st.totuple()))
+
+        check_st_sizeof(parser.expr('2 + 3'))
+        check_st_sizeof(parser.expr('2 + 3 + 4'))
+        check_st_sizeof(parser.suite('x = 2 + 3'))
+        check_st_sizeof(parser.suite(''))
+        check_st_sizeof(parser.suite('# -*- coding: utf-8 -*-'))
+        check_st_sizeof(parser.expr('[' + '2,' * 1000 + ']'))
 
 
     # XXX tests for pickling and unpickling of ST objects should go here

@@ -35,6 +35,27 @@ AC_CONFIG_HEADER(pyconfig.h)
 
 AC_CANONICAL_HOST
 
+if test "$cross_compiling" = yes; then
+    AC_MSG_CHECKING([for python interpreter for cross build])
+    if test -z "$PYTHON_FOR_BUILD"; then
+        for interp in python$PACKAGE_VERSION python3 python; do
+	    which $interp >/dev/null 2>&1 || continue
+	    if $interp -c 'import sys;sys.exit(not sys.version_info@<:@:2@:>@ >= (3,3))'; then
+	        break
+	    fi
+            interp=
+	done
+        if test x$interp = x; then
+	    AC_MSG_ERROR([python$PACKAGE_VERSION interpreter not found])
+	fi
+        AC_MSG_RESULT($interp)
+	PYTHON_FOR_BUILD="_PYTHON_PROJECT_BASE=$srcdir"' _PYTHON_HOST_PLATFORM=$(_PYTHON_HOST_PLATFORM) PYTHONPATH=$(srcdir)/Lib:$(srcdir)/Lib/plat-$(MACHDEP) '$interp
+    fi
+else
+    PYTHON_FOR_BUILD='./$(BUILDPYTHON) -E'
+fi
+AC_SUBST(PYTHON_FOR_BUILD)
+
 dnl Ensure that if prefix is specified, it does not end in a slash. If
 dnl it does, we get path names containing '//' which is both ugly and
 dnl can cause trouble.
@@ -104,14 +125,20 @@ CONFIG_ARGS="$ac_configure_args"
 
 AC_MSG_CHECKING([for --enable-universalsdk])
 AC_ARG_ENABLE(universalsdk,
-	AS_HELP_STRING([--enable-universalsdk@<:@=SDKDIR@:>@], [Build against Mac OS X 10.4u SDK (ppc/i386)]),
+	AS_HELP_STRING([--enable-universalsdk@<:@=SDKDIR@:>@], [Build fat binary against Mac OS X SDK]),
 [
 	case $enableval in
 	yes)
-		enableval=/Developer/SDKs/MacOSX10.4u.sdk
-		if test ! -d "${enableval}"
+		# Locate the best usable SDK, see Mac/README.txt for more
+		# information
+		enableval="`/usr/bin/xcodebuild -version -sdk macosx Path 2>/dev/null`"
+		if test -z "${enableval}"
 		then
-			enableval=/
+			enableval=/Developer/SDKs/MacOSX10.4u.sdk
+			if test ! -d "${enableval}"
+			then
+				enableval=/
+			fi
 		fi
 		;;
 	esac
@@ -143,7 +170,20 @@ AC_SUBST(UNIVERSALSDK)
 
 AC_SUBST(ARCH_RUN_32BIT)
 
+# For backward compatibility reasons we prefer to select '32-bit' if available,
+# otherwise use 'intel'
 UNIVERSAL_ARCHS="32-bit"
+if test "`uname -s`" = "Darwin"
+then
+	if test -n "${UNIVERSALSDK}"
+	then
+		if test -z "`/usr/bin/file "${UNIVERSALSDK}/usr/lib/libSystem.dylib" | grep ppc`"
+		then
+			UNIVERSAL_ARCHS="intel"
+		fi
+	fi
+fi
+
 AC_SUBST(LIPO_32BIT_FLAGS)
 AC_MSG_CHECKING(for --with-universal-archs)
 AC_ARG_WITH(universal-archs,
@@ -153,7 +193,7 @@ AC_ARG_WITH(universal-archs,
 	UNIVERSAL_ARCHS="$withval"
 ],
 [
- 	AC_MSG_RESULT(32-bit)
+ 	AC_MSG_RESULT(${UNIVERSAL_ARCHS})
 ])
 
 
@@ -329,9 +369,32 @@ then
 	linux*) MACHDEP="linux";;
 	cygwin*) MACHDEP="cygwin";;
 	darwin*) MACHDEP="darwin";;
-        irix646) MACHDEP="irix6";;
+	irix646) MACHDEP="irix6";;
 	'')	MACHDEP="unknown";;
     esac
+fi
+
+AC_SUBST(_PYTHON_HOST_PLATFORM)
+if test "$cross_compiling" = yes; then
+	case "$host" in
+	*-*-linux*)
+		case "$host_cpu" in
+		arm*)
+			_host_cpu=arm
+			;;
+		*)
+			_host_cpu=$host_cpu
+		esac
+		;;
+	*-*-cygwin*)
+		_host_cpu=
+		;;
+	*)
+		# for now, limit cross builds to known configurations
+		MACHDEP="unknown"
+		AC_MSG_ERROR([cross build not supported for $host])
+	esac
+	_PYTHON_HOST_PLATFORM="$MACHDEP${_host_cpu:+-$_host_cpu}"
 fi
 	
 # Some systems cannot stand _XOPEN_SOURCE being defined at all; they
@@ -501,6 +564,63 @@ fi
 if test -z "$CFLAGS"; then
         CFLAGS=
 fi
+
+if test "$ac_sys_system" = "Darwin"
+then
+	# Compiler selection on MacOSX is more complicated than
+	# AC_PROG_CC can handle, see Mac/README.txt for more
+	# information
+	if test -z "${CC}"
+	then
+		found_gcc=
+		found_clang=
+		as_save_IFS=$IFS; IFS=:
+		for as_dir in $PATH
+		do
+			IFS=$as_save_IFS
+			if test -x $as_dir/gcc; then
+				if test -z "${found_gcc}"; then
+					found_gcc=$as_dir/gcc
+				fi
+			fi
+			if test -x $as_dir/clang; then
+				if test -z "${found_clang}"; then
+					found_clang=$as_dir/clang
+				fi
+			fi
+		done
+		IFS=$as_save_IFS
+
+		if test -n "$found_gcc" -a -n "$found_clang"
+		then
+			if test -n "`"$found_gcc" --version | grep llvm-gcc`"
+			then
+				AC_MSG_NOTICE([Detected llvm-gcc, falling back to clang])
+				CC="$found_clang"
+				CXX="$found_clang++"
+			fi
+
+
+		elif test -z "$found_gcc" -a -n "$found_clang"
+		then
+			AC_MSG_NOTICE([No GCC found, use CLANG])
+			CC="$found_clang"
+			CXX="$found_clang++"
+
+		elif test -z "$found_gcc" -a -z "$found_clang"
+		then
+			found_clang=`/usr/bin/xcrun -find clang 2>/dev/null`
+			if test -n "${found_clang}"
+			then
+				AC_MSG_NOTICE([Using clang from Xcode.app])
+				CC="${found_clang}"
+				CXX="`/usr/bin/xcrun -find clang++`"
+
+			# else: use default behaviour
+			fi
+		fi
+	fi
+fi
 AC_PROG_CC
 
 AC_SUBST(CXX)
@@ -532,8 +652,9 @@ preset_cxx="$CXX"
 if test -z "$CXX"
 then
         case "$CC" in
-        gcc)    AC_PATH_PROG(CXX, [g++], [g++], [notfound]) ;;
-        cc)     AC_PATH_PROG(CXX, [c++], [c++], [notfound]) ;;
+        gcc)    AC_PATH_TOOL(CXX, [g++], [g++], [notfound]) ;;
+        cc)     AC_PATH_TOOL(CXX, [c++], [c++], [notfound]) ;;
+        clang|*/clang)     AC_PATH_TOOL(CXX, [clang++], [clang++], [notfound]) ;;
         esac
 	if test "$CXX" = "notfound"
 	then
@@ -542,7 +663,7 @@ then
 fi
 if test -z "$CXX"
 then
-	AC_CHECK_PROGS(CXX, $CCC c++ g++ gcc CC cxx cc++ cl, notfound)
+	AC_CHECK_TOOLS(CXX, $CCC c++ g++ gcc CC cxx cc++ cl, notfound)
 	if test "$CXX" = "notfound"
 	then
 		CXX=""
@@ -736,22 +857,23 @@ AC_MSG_RESULT($enable_shared)
 
 AC_MSG_CHECKING(for --enable-profiling)
 AC_ARG_ENABLE(profiling,
-              AS_HELP_STRING([--enable-profiling], [enable C-level code profiling]),
-[ac_save_cc="$CC"
- CC="$CC -pg"
- AC_RUN_IFELSE([AC_LANG_SOURCE([[int main() { return 0; }]])],
-   [ac_enable_profiling="yes"],
-   [ac_enable_profiling="no"],
-   [ac_enable_profiling="no"])
- CC="$ac_save_cc"])
-AC_MSG_RESULT($ac_enable_profiling)
+              AS_HELP_STRING([--enable-profiling], [enable C-level code profiling]))
+if test "x$enable_profiling" = xyes; then
+  ac_save_cc="$CC"
+  CC="$(CC) -pg"
+  AC_LINK_IFELSE([AC_LANG_SOURCE([[int main() { return 0; }]])],
+    [],
+    [enable_profiling=no])
+  CC="$ac_save_cc"
+else
+  enable_profiling=no
+fi
+AC_MSG_RESULT($enable_profiling)
 
-case "$ac_enable_profiling" in
-    "yes")
-	BASECFLAGS="-pg $BASECFLAGS"
-	LDFLAGS="-pg $LDFLAGS"
-    ;;
-esac
+if test "x$enable_profiling" = xyes; then
+  BASECFLAGS="-pg $BASECFLAGS"
+  LDFLAGS="-pg $LDFLAGS"
+fi
 
 AC_MSG_CHECKING(LDLIBRARY)
 
@@ -835,11 +957,15 @@ else # shared is disabled
   esac
 fi
 
+if test "$cross_compiling" = yes; then
+	RUNSHARED=
+fi
+
 AC_MSG_RESULT($LDLIBRARY)
 
 AC_PROG_RANLIB
 AC_SUBST(AR)
-AC_CHECK_PROGS(AR, ar aal, ar)
+AC_CHECK_TOOLS(AR, ar aal, ar)
 
 # tweak ARFLAGS only if the user didn't set it on the command line
 AC_SUBST(ARFLAGS)
@@ -847,6 +973,16 @@ if test -z "$ARFLAGS"
 then
         ARFLAGS="rc"
 fi
+
+AC_CHECK_TOOLS([READELF], [readelf], [:])
+if test "$cross_compiling" = yes; then
+    case "$READELF" in
+	readelf|:)
+	AC_MSG_ERROR([readelf for the host is required for cross builds])
+	;;
+    esac
+fi
+AC_SUBST(READELF)
 
 AC_SUBST(DISABLE_ASDLGEN)
 DISABLE_ASDLGEN=""
@@ -1100,7 +1236,9 @@ yes)
 	    # Calculate the right deployment target for this build.
 	    #
 	    cur_target=`sw_vers -productVersion | sed 's/\(10\.[[0-9]]*\).*/\1/'`
-	    if test ${cur_target} '>' 10.2; then
+	    if test ${cur_target} '>' 10.2 && \
+	       test ${cur_target} '<' 10.6
+	    then
 		    cur_target=10.3
 		    if test ${enable_universalsdk}; then
 			    if test "${UNIVERSAL_ARCHS}" = "all"; then
@@ -1347,6 +1485,8 @@ dnl AC_MSG_RESULT($cpp_type)
 
 # checks for header files
 AC_HEADER_STDC
+ac_save_cppflags="$CPPFLAGS"
+CPPFLAGS="$CPPFLAGS -I/usr/include/ncursesw"
 AC_CHECK_HEADERS(asm/types.h conio.h curses.h direct.h dlfcn.h errno.h \
 fcntl.h grp.h \
 ieeefp.h io.h langinfo.h libintl.h ncurses.h process.h pthread.h \
@@ -1360,6 +1500,7 @@ sys/stat.h sys/syscall.h sys/sys_domain.h sys/termio.h sys/time.h \
 sys/times.h sys/types.h sys/uio.h sys/un.h sys/utsname.h sys/wait.h pty.h \
 libutil.h sys/resource.h netpacket/packet.h sysexits.h bluetooth.h \
 bluetooth/bluetooth.h linux/tipc.h spawn.h util.h)
+CPPFLAGS=$ac_save_cppflags
 AC_HEADER_DIRENT
 AC_HEADER_MAJOR
 
@@ -2514,12 +2655,12 @@ AC_ARG_WITH(pymalloc,
 if test -z "$with_pymalloc"
 then
     with_pymalloc="yes"
-    ABIFLAGS="${ABIFLAGS}m"
 fi
 if test "$with_pymalloc" != "no"
 then
     AC_DEFINE(WITH_PYMALLOC, 1, 
      [Define if you want to compile in Python-specific mallocs])
+    ABIFLAGS="${ABIFLAGS}m"
 fi
 AC_MSG_RESULT($with_pymalloc)
 
@@ -2588,7 +2729,11 @@ then
 else
 	MACHDEP_OBJS="$MACHDEP_OBJS $extra_machdep_objs"
 fi
-AC_MSG_RESULT(MACHDEP_OBJS)
+if test -z "$MACHDEP_OBJS"; then
+  AC_MSG_RESULT([none])
+else
+  AC_MSG_RESULT([$MACHDEP_OBJS])
+fi
 
 # checks for library functions
 AC_CHECK_FUNCS(alarm accept4 setitimer getitimer bind_textdomain_codeset chown \
@@ -3048,7 +3193,7 @@ fi
 
 AC_MSG_RESULT($ac_cv_buggy_getaddrinfo)
 
-if test $have_getaddrinfo = no -o "$ac_cv_buggy_getaddrinfo" = yes
+if test $have_getaddrinfo = no || test "$ac_cv_buggy_getaddrinfo" = yes
 then
 	if test $ipv6 = yes
 	then
@@ -3830,7 +3975,7 @@ LIBS_no_readline=$LIBS
 # with setup.py.
 py_cv_lib_readline=no
 AC_MSG_CHECKING([how to link readline libs])
-for py_libtermcap in "" ncursesw ncurses curses termcap; do
+for py_libtermcap in "" tinfo ncursesw ncurses curses termcap; do
   if test -z "$py_libtermcap"; then
     READLINE_LIBS="-lreadline"
   else
@@ -4073,6 +4218,8 @@ then
   [Define if you have struct stat.st_mtimensec])
 fi
 
+ac_save_cppflags="$CPPFLAGS"
+CPPFLAGS="$CPPFLAGS -I/usr/include/ncursesw"
 # On HP/UX 11.0, mvwdelch is a block with a return statement
 AC_MSG_CHECKING(whether mvwdelch is an expression)
 AC_CACHE_VAL(ac_cv_mvwdelch_is_expression,
@@ -4127,27 +4274,34 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <curses.h>]], [[void *x=resizeterm
    AC_MSG_RESULT(yes)],
   [AC_MSG_RESULT(no)]
 )
+# last curses configure check
+CPPFLAGS=$ac_save_cppflags
 
-AC_MSG_CHECKING(for /dev/ptmx)
+AC_MSG_NOTICE([checking for device files])
 
-if test -r /dev/ptmx
-then
-  AC_MSG_RESULT(yes)
-  AC_DEFINE(HAVE_DEV_PTMX, 1,
-  [Define if we have /dev/ptmx.])
-else
-  AC_MSG_RESULT(no)
+dnl NOTE: Inform user how to proceed with files when cross compiling.
+if test "x$cross_compiling" = xyes; then
+  if test "${ac_cv_file__dev_ptmx+set}" != set; then
+    AC_MSG_CHECKING([for /dev/ptmx])
+    AC_MSG_RESULT([not set])
+    AC_MSG_ERROR([set ac_cv_file__dev_ptmx to yes/no in your CONFIG_SITE file when cross compiling])
+  fi
+  if test "${ac_cv_file__dev_ptc+set}" != set; then
+    AC_MSG_CHECKING([for /dev/ptc])
+    AC_MSG_RESULT([not set])
+    AC_MSG_ERROR([set ac_cv_file__dev_ptc to yes/no in your CONFIG_SITE file when cross compiling])
+  fi
 fi
 
-AC_MSG_CHECKING(for /dev/ptc)
-
-if test -r /dev/ptc
-then
-  AC_MSG_RESULT(yes)
+AC_CHECK_FILE(/dev/ptmx, [], [])
+if test "x$ac_cv_file__dev_ptmx" = xyes; then
+  AC_DEFINE(HAVE_DEV_PTMX, 1,
+  [Define to 1 if you have the /dev/ptmx device file.])
+fi
+AC_CHECK_FILE(/dev/ptc, [], [])
+if test "x$ac_cv_file__dev_ptc" = xyes; then
   AC_DEFINE(HAVE_DEV_PTC, 1,
-  [Define if we have /dev/ptc.])
-else
-  AC_MSG_RESULT(no)
+  [Define to 1 if you have the /dev/ptc device file.])
 fi
 
 if test "$have_long_long" = yes

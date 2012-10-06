@@ -1,11 +1,12 @@
 import imp
+import importlib
 import os
 import os.path
 import shutil
 import sys
-import unittest
 from test import support
-import importlib
+import unittest
+import warnings
 
 class LockTests(unittest.TestCase):
 
@@ -154,18 +155,24 @@ class ImportTests(unittest.TestCase):
                 mod = imp.load_module(temp_mod_name, file, filename, info)
                 self.assertEqual(mod.a, 1)
 
-            mod = imp.load_source(temp_mod_name, temp_mod_name + '.py')
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                mod = imp.load_source(temp_mod_name, temp_mod_name + '.py')
             self.assertEqual(mod.a, 1)
 
-            mod = imp.load_compiled(
-                temp_mod_name, imp.cache_from_source(temp_mod_name + '.py'))
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                mod = imp.load_compiled(
+                    temp_mod_name, imp.cache_from_source(temp_mod_name + '.py'))
             self.assertEqual(mod.a, 1)
 
             if not os.path.exists(test_package_name):
                 os.mkdir(test_package_name)
             with open(init_file_name, 'w') as file:
                 file.write('b = 2\n')
-            package = imp.load_package(test_package_name, test_package_name)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                package = imp.load_package(test_package_name, test_package_name)
             self.assertEqual(package.b, 2)
         finally:
             del sys.path[0]
@@ -178,6 +185,37 @@ class ImportTests(unittest.TestCase):
         path = os.path.dirname(__file__)
         self.assertRaises(SyntaxError,
                           imp.find_module, "badsyntax_pep3120", [path])
+
+    def test_load_from_source(self):
+        # Verify that the imp module can correctly load and find .py files
+        # XXX (ncoghlan): It would be nice to use support.CleanImport
+        # here, but that breaks because the os module registers some
+        # handlers in copy_reg on import. Since CleanImport doesn't
+        # revert that registration, the module is left in a broken
+        # state after reversion. Reinitialising the module contents
+        # and just reverting os.environ to its previous state is an OK
+        # workaround
+        orig_path = os.path
+        orig_getenv = os.getenv
+        with support.EnvironmentVarGuard():
+            x = imp.find_module("os")
+            self.addCleanup(x[0].close)
+            new_os = imp.load_module("os", *x)
+            self.assertIs(os, new_os)
+            self.assertIs(orig_path, new_os.path)
+            self.assertIsNot(orig_getenv, new_os.getenv)
+
+    @support.cpython_only
+    def test_issue15828_load_extensions(self):
+        # Issue 15828 picked up that the adapter between the old imp API
+        # and importlib couldn't handle C extensions
+        example = "_heapq"
+        x = imp.find_module(example)
+        file_ = x[0]
+        if file_ is not None:
+            self.addCleanup(file_.close)
+        mod = imp.load_module(example, *x)
+        self.assertEqual(mod.__name__, example)
 
     def test_load_dynamic_ImportError_path(self):
         # Issue #1559549 added `name` and `path` attributes to ImportError
@@ -224,6 +262,8 @@ class PEP3147Tests(unittest.TestCase):
 
     tag = imp.get_tag()
 
+    @unittest.skipUnless(sys.implementation.cache_tag is not None,
+                         'requires sys.implementation.cache_tag not be None')
     def test_cache_from_source(self):
         # Given the path to a .py file, return the path to its PEP 3147
         # defined .pyc file (i.e. under __pycache__).
@@ -231,6 +271,12 @@ class PEP3147Tests(unittest.TestCase):
         expect = os.path.join('foo', 'bar', 'baz', '__pycache__',
                               'qux.{}.pyc'.format(self.tag))
         self.assertEqual(imp.cache_from_source(path, True), expect)
+
+    def test_cache_from_source_no_cache_tag(self):
+        # Non cache tag means NotImplementedError.
+        with support.swap_attr(sys.implementation, 'cache_tag', None):
+            with self.assertRaises(NotImplementedError):
+                imp.cache_from_source('whatever.py')
 
     def test_cache_from_source_no_dot(self):
         # Directory with a dot, filename without dot.
@@ -276,6 +322,9 @@ class PEP3147Tests(unittest.TestCase):
             imp.cache_from_source('\\foo\\bar\\baz/qux.py', True),
             '\\foo\\bar\\baz\\__pycache__\\qux.{}.pyc'.format(self.tag))
 
+    @unittest.skipUnless(sys.implementation.cache_tag is not None,
+                         'requires sys.implementation.cache_tag to not be '
+                         'None')
     def test_source_from_cache(self):
         # Given the path to a PEP 3147 defined .pyc file, return the path to
         # its source.  This tests the good path.
@@ -283,6 +332,13 @@ class PEP3147Tests(unittest.TestCase):
                             'qux.{}.pyc'.format(self.tag))
         expect = os.path.join('foo', 'bar', 'baz', 'qux.py')
         self.assertEqual(imp.source_from_cache(path), expect)
+
+    def test_source_from_cache_no_cache_tag(self):
+        # If sys.implementation.cache_tag is None, raise NotImplementedError.
+        path = os.path.join('blah', '__pycache__', 'whatever.pyc')
+        with support.swap_attr(sys.implementation, 'cache_tag', None):
+            with self.assertRaises(NotImplementedError):
+                imp.source_from_cache(path)
 
     def test_source_from_cache_bad_path(self):
         # When the path to a pyc file is not in PEP 3147 format, a ValueError
@@ -313,6 +369,12 @@ class PEP3147Tests(unittest.TestCase):
             '/foo/bar/foo.cpython-32.foo.pyc')
 
     def test_package___file__(self):
+        try:
+            m = __import__('pep3147')
+        except ImportError:
+            pass
+        else:
+            self.fail("pep3147 module already exists: %r" % (m,))
         # Test that a package's __file__ points to the right source directory.
         os.mkdir('pep3147')
         sys.path.insert(0, os.curdir)

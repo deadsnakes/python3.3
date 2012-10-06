@@ -11,7 +11,7 @@
  #_pickle _pickle.c	# pickle accelerator
  #_datetime _datetimemodule.c	# datetime accelerator
  #_bisect _bisectmodule.c	# Bisection algorithms
-@@ -367,7 +367,7 @@
+@@ -366,7 +366,7 @@
  #
  # More information on Expat can be found at www.libexpat.org.
  #

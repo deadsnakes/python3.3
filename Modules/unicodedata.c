@@ -526,13 +526,16 @@ nfd_nfkd(PyObject *self, PyObject *input, int k)
             /* Hangul Decomposition adds three characters in
                a single step, so we need atleast that much room. */
             if (space < 3) {
+                Py_UCS4 *new_output;
                 osize += 10;
                 space += 10;
-                output = PyMem_Realloc(output, osize*sizeof(Py_UCS4));
-                if (output == NULL) {
+                new_output = PyMem_Realloc(output, osize*sizeof(Py_UCS4));
+                if (new_output == NULL) {
+                    PyMem_Free(output);
                     PyErr_NoMemory();
                     return NULL;
                 }
+                output = new_output;
             }
             /* Hangul Decomposition. */
             if (SBase <= code && code < (SBase+SCount)) {
@@ -1233,8 +1236,8 @@ unicodedata_lookup(PyObject* self, PyObject* args)
         PyErr_Format(PyExc_KeyError, "undefined character name '%s'", name);
         return NULL;
     }
-    // check if code is in the PUA range that we use for named sequences
-    // and convert it
+    /* check if code is in the PUA range that we use for named sequences
+       and convert it */
     if (IS_NAMED_SEQ(code)) {
         index = code-named_sequences_start;
         return PyUnicode_FromKindAndData(PyUnicode_2BYTE_KIND,

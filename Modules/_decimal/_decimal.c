@@ -76,6 +76,9 @@ typedef struct {
     PyObject *traps;
     PyObject *flags;
     int capitals;
+#ifndef WITHOUT_THREADS
+    PyThreadState *tstate;
+#endif
 } PyDecContextObject;
 
 typedef struct {
@@ -123,6 +126,8 @@ static PyObject *module_context = NULL;
 #else
 /* Key for thread state dictionary */
 static PyObject *tls_context_key = NULL;
+/* Invariant: NULL or the most recently accessed thread local context */
+static PyDecContextObject *cached_context = NULL;
 #endif
 
 /* Template for creating new thread contexts, calling Context() without
@@ -627,7 +632,7 @@ signaldict_richcompare(PyObject *v, PyObject *w, int op)
 }
 
 static PyObject *
-signaldict_copy(PyObject *self)
+signaldict_copy(PyObject *self, PyObject *args UNUSED)
 {
     return flags_as_dict(SdFlags(self));
 }
@@ -1182,6 +1187,9 @@ context_new(PyTypeObject *type, PyObject *args UNUSED, PyObject *kwds UNUSED)
     SdFlagAddr(self->flags) = &ctx->status;
 
     CtxCaps(self) = 1;
+#ifndef WITHOUT_THREADS
+    self->tstate = NULL;
+#endif
 
     return (PyObject *)self;
 }
@@ -1189,6 +1197,11 @@ context_new(PyTypeObject *type, PyObject *args UNUSED, PyObject *kwds UNUSED)
 static void
 context_dealloc(PyDecContextObject *self)
 {
+#ifndef WITHOUT_THREADS
+    if (self == cached_context) {
+        cached_context = NULL;
+    }
+#endif
     Py_XDECREF(self->traps);
     Py_XDECREF(self->flags);
     Py_TYPE(self)->tp_free(self);
@@ -1399,7 +1412,7 @@ error:
 #endif
 
 static PyObject *
-context_copy(PyObject *self)
+context_copy(PyObject *self, PyObject *args UNUSED)
 {
     PyObject *copy;
 
@@ -1517,7 +1530,7 @@ current_context(void)
 
 /* Return a new reference to the current context */
 static PyObject *
-PyDec_GetCurrentContext(void)
+PyDec_GetCurrentContext(PyObject *self UNUSED, PyObject *args UNUSED)
 {
     PyObject *context;
 
@@ -1538,7 +1551,7 @@ PyDec_SetCurrentContext(PyObject *self UNUSED, PyObject *v)
     if (v == default_context_template ||
         v == basic_context_template ||
         v == extended_context_template) {
-        v = context_copy(v);
+        v = context_copy(v, NULL);
         if (v == NULL) {
             return NULL;
         }
@@ -1555,18 +1568,19 @@ PyDec_SetCurrentContext(PyObject *self UNUSED, PyObject *v)
 }
 #else
 /*
- * Thread local storage currently has a speed penalty of about 16%.
+ * Thread local storage currently has a speed penalty of about 4%.
  * All functions that map Python's arithmetic operators to mpdecimal
  * functions have to look up the current context for each and every
  * operation.
  */
 
-/* Return borrowed reference to thread local context. */
+/* Get the context from the thread state dictionary. */
 static PyObject *
-current_context(void)
+current_context_from_dict(void)
 {
-    PyObject *dict = NULL;
-    PyObject *tl_context = NULL;
+    PyObject *dict;
+    PyObject *tl_context;
+    PyThreadState *tstate;
 
     dict = PyThreadState_GetDict();
     if (dict == NULL) {
@@ -1577,30 +1591,52 @@ current_context(void)
 
     tl_context = PyDict_GetItemWithError(dict, tls_context_key);
     if (tl_context != NULL) {
-        /* We already have a thread local context and
-         * return a borrowed reference. */
+        /* We already have a thread local context. */
         CONTEXT_CHECK(tl_context);
-        return tl_context;
     }
-    if (PyErr_Occurred()) {
-        return NULL;
-    }
+    else {
+        if (PyErr_Occurred()) {
+            return NULL;
+        }
 
-    /* Otherwise, set up a new thread local context. */
-    tl_context = context_copy(default_context_template);
-    if (tl_context == NULL) {
-        return NULL;
-    }
-    CTX(tl_context)->status = 0;
+        /* Set up a new thread local context. */
+        tl_context = context_copy(default_context_template, NULL);
+        if (tl_context == NULL) {
+            return NULL;
+        }
+        CTX(tl_context)->status = 0;
 
-    if (PyDict_SetItem(dict, tls_context_key, tl_context) < 0) {
+        if (PyDict_SetItem(dict, tls_context_key, tl_context) < 0) {
+            Py_DECREF(tl_context);
+            return NULL;
+        }
         Py_DECREF(tl_context);
-        return NULL;
     }
-    Py_DECREF(tl_context);
 
-    /* refcount is 1 */
+    /* Cache the context of the current thread, assuming that it
+     * will be accessed several times before a thread switch. */
+    tstate = PyThreadState_GET();
+    if (tstate) {
+        cached_context = (PyDecContextObject *)tl_context;
+        cached_context->tstate = tstate;
+    }
+
+    /* Borrowed reference with refcount==1 */
     return tl_context;
+}
+
+/* Return borrowed reference to thread local context. */
+static PyObject *
+current_context(void)
+{
+    PyThreadState *tstate;
+
+    tstate = PyThreadState_GET();
+    if (cached_context && cached_context->tstate == tstate) {
+        return (PyObject *)cached_context;
+    }
+
+    return current_context_from_dict();
 }
 
 /* ctxobj := borrowed reference to the current context */
@@ -1621,7 +1657,7 @@ current_context(void)
 
 /* Return a new reference to the current context */
 static PyObject *
-PyDec_GetCurrentContext(void)
+PyDec_GetCurrentContext(PyObject *self UNUSED, PyObject *args UNUSED)
 {
     PyObject *context;
 
@@ -1654,7 +1690,7 @@ PyDec_SetCurrentContext(PyObject *self UNUSED, PyObject *v)
     if (v == default_context_template ||
         v == basic_context_template ||
         v == extended_context_template) {
-        v = context_copy(v);
+        v = context_copy(v, NULL);
         if (v == NULL) {
             return NULL;
         }
@@ -1664,6 +1700,7 @@ PyDec_SetCurrentContext(PyObject *self UNUSED, PyObject *v)
         Py_INCREF(v);
     }
 
+    cached_context = NULL;
     if (PyDict_SetItem(dict, tls_context_key, v) < 0) {
         Py_DECREF(v);
         return NULL;
@@ -1697,7 +1734,7 @@ ctxmanager_new(PyTypeObject *type UNUSED, PyObject *args)
         return NULL;
     }
 
-    self->local = context_copy(local);
+    self->local = context_copy(local, NULL);
     if (self->local == NULL) {
         self->global = NULL;
         Py_DECREF(self);
@@ -2327,6 +2364,7 @@ dectuple_as_str(PyObject *dectuple)
     long sign, l;
     mpd_ssize_t exp = 0;
     Py_ssize_t i, mem, tsize;
+    int is_infinite = 0;
     int n;
 
     assert(PyTuple_Check(dectuple));
@@ -2362,6 +2400,7 @@ dectuple_as_str(PyObject *dectuple)
         /* special */
         if (PyUnicode_CompareWithASCIIString(tmp, "F") == 0) {
             strcat(sign_special, "Inf");
+            is_infinite = 1;
         }
         else if (PyUnicode_CompareWithASCIIString(tmp, "n") == 0) {
             strcat(sign_special, "NaN");
@@ -2432,6 +2471,11 @@ dectuple_as_str(PyObject *dectuple)
             PyErr_SetString(PyExc_ValueError,
                 "coefficient must be a tuple of digits");
             goto error;
+        }
+        if (is_infinite) {
+            /* accept but ignore any well-formed coefficient for compatibility
+               with decimal.py */
+            continue;
         }
         *cp++ = (char)l + '0';
     }
@@ -3166,7 +3210,8 @@ static PyObject *
 dec_as_long(PyObject *dec, PyObject *context, int round)
 {
     PyLongObject *pylong;
-    size_t maxsize, n;
+    digit *ob_digit;
+    size_t n;
     Py_ssize_t i;
     mpd_t *x;
     mpd_context_t workctx;
@@ -3197,31 +3242,32 @@ dec_as_long(PyObject *dec, PyObject *context, int round)
         return NULL;
     }
 
-    maxsize = mpd_sizeinbase(x, PyLong_BASE);
-    if (maxsize > PY_SSIZE_T_MAX) {
-        mpd_del(x);
+    status = 0;
+    ob_digit = NULL;
+#if PYLONG_BITS_IN_DIGIT == 30
+    n = mpd_qexport_u32(&ob_digit, 0, PyLong_BASE, x, &status);
+#elif PYLONG_BITS_IN_DIGIT == 15
+    n = mpd_qexport_u16(&ob_digit, 0, PyLong_BASE, x, &status);
+#else
+    #error "PYLONG_BITS_IN_DIGIT should be 15 or 30"
+#endif
+
+    if (n == SIZE_MAX) {
         PyErr_NoMemory();
-        return NULL;
-    }
-    pylong = _PyLong_New(maxsize);
-    if (pylong == NULL) {
         mpd_del(x);
         return NULL;
     }
 
-    status = 0;
-#if PYLONG_BITS_IN_DIGIT == 30
-    n = mpd_qexport_u32(pylong->ob_digit, maxsize, PyLong_BASE, x, &status);
-#elif PYLONG_BITS_IN_DIGIT == 15
-    n = mpd_qexport_u16(pylong->ob_digit, maxsize, PyLong_BASE, x, &status);
-#else
-  #error "PYLONG_BITS_IN_DIGIT should be 15 or 30"
-#endif
-    if (dec_addstatus(context, status)) {
-        Py_DECREF((PyObject *) pylong);
+    assert(n > 0);
+    pylong = _PyLong_New(n);
+    if (pylong == NULL) {
+        mpd_free(ob_digit);
         mpd_del(x);
         return NULL;
     }
+
+    memcpy(pylong->ob_digit, ob_digit, n * sizeof(digit));
+    mpd_free(ob_digit);
 
     i = n;
     while ((i > 0) && (pylong->ob_digit[i-1] == 0)) {
@@ -3318,7 +3364,23 @@ PyDec_AsFloat(PyObject *dec)
 {
     PyObject *f, *s;
 
-    s = dec_str(dec);
+    if (mpd_isnan(MPD(dec))) {
+        if (mpd_issnan(MPD(dec))) {
+            PyErr_SetString(PyExc_ValueError,
+                "cannot convert signaling NaN to float");
+            return NULL;
+        }
+        if (mpd_isnegative(MPD(dec))) {
+            s = PyUnicode_FromString("-nan");
+        }
+        else {
+            s = PyUnicode_FromString("nan");
+        }
+    }
+    else {
+        s = dec_str(dec);
+    }
+
     if (s == NULL) {
         return NULL;
     }
@@ -3833,10 +3895,6 @@ nm_mpd_qpow(PyObject *base, PyObject *exp, PyObject *mod)
     else {
         mpd_qpowmod(MPD(result), MPD(a), MPD(b), MPD(c),
                     CTX(context), &status);
-        status = (status == MPD_Clamped) ? 0 : status;
-        /* remove ideal exponent for compatibility with decimal.py */
-        mpd_qquantize(MPD(result), MPD(result), &zero,
-                      CTX(context), &status);
         Py_DECREF(c);
     }
     Py_DECREF(a);
@@ -4299,6 +4357,11 @@ _dec_hash(PyDecObject *v)
     }
     tmp->exp = 0;
     mpd_set_positive(tmp);
+
+    maxctx.prec = MPD_MAX_PREC + 21;
+    maxctx.emax = MPD_MAX_EMAX + 21;
+    maxctx.emin = MPD_MIN_EMIN - 21;
+
     mpd_qmul(tmp, tmp, exp_hash, &maxctx, &status);
     mpd_qrem(tmp, tmp, &p, &maxctx, &status);
 
@@ -4307,11 +4370,14 @@ _dec_hash(PyDecObject *v)
     result = (result == -1) ? -2 : result;
 
     if (status != 0) {
-        status |= MPD_Invalid_operation;
-        if (dec_addstatus(context, status)) {
-            result = -1;
-            goto finish;
+        if (status & MPD_Malloc_error) {
+            goto malloc_error;
         }
+        else {
+            PyErr_SetString(PyExc_RuntimeError,
+                "dec_hash: internal error: please report");
+        }
+        result = -1;
     }
 
 
@@ -4858,10 +4924,6 @@ ctx_mpd_qpow(PyObject *context, PyObject *args, PyObject *kwds)
     else {
         mpd_qpowmod(MPD(result), MPD(a), MPD(b), MPD(c),
                     CTX(context), &status);
-        status = (status == MPD_Clamped) ? 0 : status;
-        /* remove ideal exponent for compatibility with decimal.py */
-        mpd_qquantize(MPD(result), MPD(result), &zero,
-                      CTX(context), &status);
         Py_DECREF(c);
     }
     Py_DECREF(a);

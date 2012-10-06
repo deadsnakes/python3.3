@@ -840,7 +840,7 @@ new_sockobject(SOCKET_T fd, int family, int type, int proto)
 /* Lock to allow python interpreter to continue, but only allow one
    thread to be in gethostbyname or getaddrinfo */
 #if defined(USE_GETHOSTBYNAME_LOCK) || defined(USE_GETADDRINFO_LOCK)
-PyThread_type_lock netdb_lock;
+static PyThread_type_lock netdb_lock;
 #endif
 
 
@@ -1437,7 +1437,7 @@ getsockaddrarg(PySocketSockObject *s, PyObject *args,
                 "getsockaddrarg: port must be 0-65535.");
             return 0;
         }
-        if (flowinfo < 0 || flowinfo > 0xfffff) {
+        if (flowinfo > 0xfffff) {
             PyErr_SetString(
                 PyExc_OverflowError,
                 "getsockaddrarg: flowinfo must be 0-1048575.");
@@ -5119,7 +5119,7 @@ socket_getnameinfo(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(sa, "si|II",
                           &hostp, &port, &flowinfo, &scope_id))
         return NULL;
-    if (flowinfo < 0 || flowinfo > 0xfffff) {
+    if (flowinfo > 0xfffff) {
         PyErr_SetString(PyExc_OverflowError,
                         "getsockaddrarg: flowinfo must be 0-1048575.");
         return NULL;

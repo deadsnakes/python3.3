@@ -14,7 +14,6 @@ bdist-wininst-notfound.diff
 no-zip-on-sys.path.diff
 doc-nodownload.diff
 doc-build.diff
-profiled-build.diff
 makesetup-bashism.diff
 hurd-broken-poll.diff
 hurd-disable-nonworking-constants.diff
@@ -26,5 +25,7 @@ link-system-expat.diff
 plat-gnukfreebsd.diff
 disable-sem-check.diff
 lib-argparse.diff
-db-5.3.diff
 deadsnakes-fix-timemodule-build.diff
+deadsnakes-assert-use-system-ffi.diff
+deadsnakes-fix-libffi-header-search-path.diff
+deadsnakes-no-rpath.diff

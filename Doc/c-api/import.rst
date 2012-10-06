@@ -30,13 +30,13 @@ Importing Modules
 
 .. c:function:: PyObject* PyImport_ImportModuleNoBlock(const char *name)
 
-   This version of :c:func:`PyImport_ImportModule` does not block. It's intended
-   to be used in C functions that import other modules to execute a function.
-   The import may block if another thread holds the import lock. The function
-   :c:func:`PyImport_ImportModuleNoBlock` never blocks. It first tries to fetch
-   the module from sys.modules and falls back to :c:func:`PyImport_ImportModule`
-   unless the lock is held, in which case the function will raise an
-   :exc:`ImportError`.
+   This function is a deprecated alias of :c:func:`PyImport_ImportModule`.
+
+   .. versionchanged:: 3.3
+      This function used to fail immediately when the import lock was held
+      by another thread.  In Python 3.3 though, the locking scheme switched
+      to per-module locks for most purposes, so this function's special
+      behaviour isn't needed anymore.
 
 
 .. c:function:: PyObject* PyImport_ImportModuleEx(char *name, PyObject *globals, PyObject *locals, PyObject *fromlist)
@@ -44,8 +44,7 @@ Importing Modules
    .. index:: builtin: __import__
 
    Import a module.  This is best described by referring to the built-in Python
-   function :func:`__import__`, as the standard :func:`__import__` function calls
-   this function directly.
+   function :func:`__import__`.
 
    The return value is a new reference to the imported module or top-level
    package, or *NULL* with an exception set on failure.  Like for
@@ -75,6 +74,9 @@ Importing Modules
 
    Similar to :c:func:`PyImport_ImportModuleLevelObject`, but the name is an
    UTF-8 encoded string instead of a Unicode object.
+
+   .. versionchanged:: 3.3
+         Negative values for **level** are no longer accepted.
 
 .. c:function:: PyObject* PyImport_Import(PyObject *name)
 
@@ -163,22 +165,31 @@ Importing Modules
 .. c:function:: PyObject* PyImport_ExecCodeModuleWithPathnames(char *name, PyObject *co, char *pathname, char *cpathname)
 
    Like :c:func:`PyImport_ExecCodeModuleObject`, but *name*, *pathname* and
-   *cpathname* are UTF-8 encoded strings.
+   *cpathname* are UTF-8 encoded strings. Attempts are also made to figure out
+   what the value for *pathname* should be from *cpathname* if the former is
+   set to ``NULL``.
 
    .. versionadded:: 3.2
+   .. versionchanged:: 3.3
+      Uses :func:`imp.source_from_cache()` in calculating the source path if
+      only the bytecode path is provided.
 
 
 .. c:function:: long PyImport_GetMagicNumber()
 
    Return the magic number for Python bytecode files (a.k.a. :file:`.pyc` and
    :file:`.pyo` files).  The magic number should be present in the first four bytes
-   of the bytecode file, in little-endian byte order.
+   of the bytecode file, in little-endian byte order. Returns -1 on error.
+
+   .. versionchanged:: 3.3
+      Return value of -1 upon failure.
 
 
 .. c:function:: const char * PyImport_GetMagicTag()
 
    Return the magic tag string for :pep:`3147` format Python bytecode file
-   names.
+   names.  Keep in mind that the value at ``sys.implementation.cache_tag`` is
+   authoritative and should be used instead of this function.
 
    .. versionadded:: 3.2
 

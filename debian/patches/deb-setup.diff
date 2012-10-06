@@ -2,23 +2,27 @@
 
 --- a/setup.py
 +++ b/setup.py
-@@ -390,11 +390,9 @@
+@@ -455,12 +455,12 @@
              os.unlink(tmpfile)
  
      def detect_modules(self):
 -        # Ensure that /usr/local is always used, but the local build
 -        # directories (i.e. '.' and 'Include') must be first.  See issue
 -        # 10520.
--        add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
--        add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+-        if not cross_compiling:
+-            add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+-            add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
 +        # On Debian /usr/local is always used, so we don't include it twice
 +        #add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
 +        #add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
-         self.add_multiarch_paths()
- 
-         # Add paths specified in the environment variables LDFLAGS and
-@@ -615,7 +613,7 @@
-             os.unlink(tmpfile)
++        #if not cross_compiling:
++        #    add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
++        #    add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+         # only change this for cross builds for 3.3, issues on Mageia
+         if cross_compiling:
+             self.add_gcc_paths()
+@@ -692,7 +692,7 @@
+                 os.unlink(tmpfile)
          # Issue 7384: If readline is already linked against curses,
          # use the same library for the readline and curses modules.
 -        if 'curses' in readline_termcap_library:

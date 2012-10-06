@@ -1,6 +1,7 @@
 """Unit tests for the memoryview
 
-XXX We need more tests! Some tests are in test_bytes
+   Some tests are in test_bytes. Many tests that require _testbuffer.ndarray
+   are in test_buffer.
 """
 
 import unittest
@@ -335,6 +336,21 @@ class AbstractMemoryTests:
         b = tp(self._source)
         m = self._view(b)
         self.assertRaises(ValueError, hash, m)
+
+    def test_weakref(self):
+        # Check memoryviews are weakrefable
+        for tp in self._types:
+            b = tp(self._source)
+            m = self._view(b)
+            L = []
+            def callback(wr, b=b):
+                L.append(b)
+            wr = weakref.ref(m, callback)
+            self.assertIs(wr(), m)
+            del m
+            test.support.gc_collect()
+            self.assertIs(wr(), None)
+            self.assertIs(L[0], b)
 
 # Variations on source objects for the buffer: bytes-like objects, then arrays
 # with itemsize > 1.

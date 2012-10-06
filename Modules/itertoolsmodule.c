@@ -533,7 +533,8 @@ teedataobject_new(PyTypeObject *type, PyObject *args, PyObject *kw)
         tdo->values[i] = PyList_GET_ITEM(values, i);
         Py_INCREF(tdo->values[i]);
     }
-    tdo->numread = len;
+    /* len <= LINKCELLS < INT_MAX */
+    tdo->numread = Py_SAFE_DOWNCAST(len, Py_ssize_t, int);
 
     if (len == LINKCELLS) {
         if (next != Py_None) {
@@ -1104,11 +1105,13 @@ dropwhile_next(dropwhileobject *lz)
         }
         ok = PyObject_IsTrue(good);
         Py_DECREF(good);
-        if (!ok) {
+        if (ok == 0) {
             lz->start = 1;
             return item;
         }
         Py_DECREF(item);
+        if (ok < 0)
+            return NULL;
     }
 }
 
@@ -1123,7 +1126,7 @@ static PyObject *
 dropwhile_setstate(dropwhileobject *lz, PyObject *state)
 {
     int start = PyObject_IsTrue(state);
-    if (start == -1)
+    if (start < 0)
         return NULL;
     lz->start = start;
     Py_RETURN_NONE;
@@ -1269,10 +1272,11 @@ takewhile_next(takewhileobject *lz)
     }
     ok = PyObject_IsTrue(good);
     Py_DECREF(good);
-    if (ok)
+    if (ok == 1)
         return item;
     Py_DECREF(item);
-    lz->stop = 1;
+    if (ok == 0)
+        lz->stop = 1;
     return NULL;
 }
 
@@ -1287,7 +1291,7 @@ static PyObject *
 takewhile_reduce_setstate(takewhileobject *lz, PyObject *state)
 {
     int stop = PyObject_IsTrue(state);
-    if (stop == -1)
+    if (stop < 0)
         return NULL;
     lz->stop = stop;
     Py_RETURN_NONE;
@@ -3535,7 +3539,7 @@ compress_next(compressobject *lz)
         if (ok == 1)
             return datum;
         Py_DECREF(datum);
-        if (ok == -1)
+        if (ok < 0)
             return NULL;
     }
 }
@@ -3691,9 +3695,11 @@ filterfalse_next(filterfalseobject *lz)
             ok = PyObject_IsTrue(good);
             Py_DECREF(good);
         }
-        if (!ok)
+        if (ok == 0)
             return item;
         Py_DECREF(item);
+        if (ok < 0)
+            return NULL;
     }
 }
 

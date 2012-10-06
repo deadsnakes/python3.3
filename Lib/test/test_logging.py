@@ -582,6 +582,7 @@ class HandlerTest(BaseTest):
         self.assertFalse(h.shouldFlush(r))
         h.close()
 
+    @unittest.skipIf(os.name == 'nt', 'WatchedFileHandler not appropriate for Windows.')
     @unittest.skipUnless(threading, 'Threading required for this test.')
     def test_race(self):
         # Issue #14632 refers.
@@ -611,8 +612,8 @@ class HandlerTest(BaseTest):
                     r = logging.makeLogRecord({'msg': 'testing' })
                     h.handle(r)
             finally:
-                h.close()
                 remover.join()
+                h.close()
                 if os.path.exists(fn):
                     os.unlink(fn)
 
@@ -663,6 +664,7 @@ if threading:
             self.smtp_server = server
             self.conn = conn
             self.addr = addr
+            self.data_size_limit = None
             self.received_lines = []
             self.smtp_state = self.COMMAND
             self.seen_greeting = ''
@@ -682,6 +684,7 @@ if threading:
                 return
             self.push('220 %s %s' % (self.fqdn, smtpd.__version__))
             self.set_terminator(b'\r\n')
+            self.extended_smtp = False
 
 
     class TestSMTPServer(smtpd.SMTPServer):
@@ -709,6 +712,7 @@ if threading:
         def __init__(self, addr, handler, poll_interval, sockmap):
             self._localaddr = addr
             self._remoteaddr = None
+            self.data_size_limit = None
             self.sockmap = sockmap
             asyncore.dispatcher.__init__(self, map=sockmap)
             try:
@@ -2895,8 +2899,10 @@ class FormatterTest(unittest.TestCase):
 
     def test_time(self):
         r = self.get_record()
-        dt = datetime.datetime(1993,4,21,8,3,0,0,utc)
-        r.created = time.mktime(dt.timetuple()) - time.timezone
+        dt = datetime.datetime(1993, 4, 21, 8, 3, 0, 0, utc)
+        # We use None to indicate we want the local timezone
+        # We're essentially converting a UTC time to local time
+        r.created = time.mktime(dt.astimezone(None).timetuple())
         r.msecs = 123
         f = logging.Formatter('%(asctime)s %(message)s')
         f.converter = time.gmtime

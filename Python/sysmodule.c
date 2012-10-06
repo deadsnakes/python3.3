@@ -997,6 +997,27 @@ a 11-tuple where the entries in the tuple are counts of:\n\
 extern "C" {
 #endif
 
+static PyObject *
+sys_debugmallocstats(PyObject *self, PyObject *args)
+{
+#ifdef WITH_PYMALLOC
+    _PyObject_DebugMallocStats(stderr);
+    fputc('\n', stderr);
+#endif
+    _PyObject_DebugTypeStats(stderr);
+
+    Py_RETURN_NONE;
+}
+PyDoc_STRVAR(debugmallocstats_doc,
+"_debugmallocstats()\n\
+\n\
+Print summary info to stderr about the state of\n\
+pymalloc's structures.\n\
+\n\
+In Py_DEBUG mode, also perform some expensive internal consistency\n\
+checks.\n\
+");
+
 #ifdef Py_TRACE_REFS
 /* Defined in objects.c because it uses static globals if that file */
 extern PyObject *_Py_GetObjects(PyObject *, PyObject *);
@@ -1093,6 +1114,8 @@ static PyMethodDef sys_methods[] = {
     {"settrace",        sys_settrace, METH_O, settrace_doc},
     {"gettrace",        sys_gettrace, METH_NOARGS, gettrace_doc},
     {"call_tracing", sys_call_tracing, METH_VARARGS, call_tracing_doc},
+    {"_debugmallocstats", sys_debugmallocstats, METH_VARARGS,
+     debugmallocstats_doc},
     {NULL,              NULL}           /* sentinel */
 };
 
@@ -1261,6 +1284,7 @@ executable -- absolute path of the executable binary of the Python interpreter\n
 float_info -- a struct sequence with information about the float implementation.\n\
 float_repr_style -- string indicating the style of repr() output for floats\n\
 hexversion -- version information encoded as a single integer\n\
+implementation -- Python implementation information.\n\
 int_info -- a struct sequence with information about the int implementation.\n\
 maxsize -- the largest supported length of containers.\n\
 maxunicode -- the value of the largest Unicode codepoint\n\
@@ -1454,6 +1478,73 @@ make_version_info(void)
     return version_info;
 }
 
+/* sys.implementation values */
+#define NAME "cpython"
+const char *_PySys_ImplName = NAME;
+#define QUOTE(arg) #arg
+#define STRIFY(name) QUOTE(name)
+#define MAJOR STRIFY(PY_MAJOR_VERSION)
+#define MINOR STRIFY(PY_MINOR_VERSION)
+#define TAG NAME "-" MAJOR MINOR;
+const char *_PySys_ImplCacheTag = TAG;
+#undef NAME
+#undef QUOTE
+#undef STRIFY
+#undef MAJOR
+#undef MINOR
+#undef TAG
+
+static PyObject *
+make_impl_info(PyObject *version_info)
+{
+    int res;
+    PyObject *impl_info, *value, *ns;
+
+    impl_info = PyDict_New();
+    if (impl_info == NULL)
+        return NULL;
+
+    /* populate the dict */
+
+    value = PyUnicode_FromString(_PySys_ImplName);
+    if (value == NULL)
+        goto error;
+    res = PyDict_SetItemString(impl_info, "name", value);
+    Py_DECREF(value);
+    if (res < 0)
+        goto error;
+
+    value = PyUnicode_FromString(_PySys_ImplCacheTag);
+    if (value == NULL)
+        goto error;
+    res = PyDict_SetItemString(impl_info, "cache_tag", value);
+    Py_DECREF(value);
+    if (res < 0)
+        goto error;
+
+    res = PyDict_SetItemString(impl_info, "version", version_info);
+    if (res < 0)
+        goto error;
+
+    value = PyLong_FromLong(PY_VERSION_HEX);
+    if (value == NULL)
+        goto error;
+    res = PyDict_SetItemString(impl_info, "hexversion", value);
+    Py_DECREF(value);
+    if (res < 0)
+        goto error;
+
+    /* dict ready */
+
+    ns = _PyNamespace_New(impl_info);
+    Py_DECREF(impl_info);
+    return ns;
+
+error:
+    Py_CLEAR(impl_info);
+    return NULL;
+}
+
 static struct PyModuleDef sysmodule = {
     PyModuleDef_HEAD_INIT,
     "sys",
@@ -1469,7 +1560,7 @@ static struct PyModuleDef sysmodule = {
 PyObject *
 _PySys_Init(void)
 {
-    PyObject *m, *v, *sysdict;
+    PyObject *m, *v, *sysdict, *version_info;
     char *s;
 
     m = PyModule_Create(&sysmodule);
@@ -1528,6 +1619,10 @@ _PySys_Init(void)
                         PyUnicode_FromWideChar(Py_GetPrefix(), -1));
     SET_SYS_FROM_STRING("exec_prefix",
                         PyUnicode_FromWideChar(Py_GetExecPrefix(), -1));
+    SET_SYS_FROM_STRING("base_prefix",
+                        PyUnicode_FromWideChar(Py_GetPrefix(), -1));
+    SET_SYS_FROM_STRING("base_exec_prefix",
+                        PyUnicode_FromWideChar(Py_GetExecPrefix(), -1));
     SET_SYS_FROM_STRING("maxsize",
                         PyLong_FromSsize_t(PY_SSIZE_T_MAX));
     SET_SYS_FROM_STRING("float_info",
@@ -1585,10 +1680,14 @@ _PySys_Init(void)
     /* version_info */
     if (VersionInfoType.tp_name == 0)
         PyStructSequence_InitType(&VersionInfoType, &version_info_desc);
-    SET_SYS_FROM_STRING("version_info", make_version_info());
+    version_info = make_version_info();
+    SET_SYS_FROM_STRING("version_info", version_info);
     /* prevent user from creating new instances */
     VersionInfoType.tp_init = NULL;
     VersionInfoType.tp_new = NULL;
+
+    /* implementation */
+    SET_SYS_FROM_STRING("implementation", make_impl_info(version_info));
 
     /* flags */
     if (FlagsType.tp_name == 0)

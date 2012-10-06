@@ -814,6 +814,18 @@ convertsimple(PyObject *arg, const char **p_format, va_list *p_va, int flags,
         break;
     }
 
+    case 'p': {/* boolean *p*redicate */
+        int *p = va_arg(*p_va, int *);
+        int val = PyObject_IsTrue(arg);
+        if (val > 0)
+            *p = 1;
+        else if (val == 0)
+            *p = 0;
+        else
+            RETURN_ERR_OCCURRED;
+        break;
+    }
+
     /* XXX WAAAAH!  's', 'y', 'z', 'u', 'Z', 'e', 'w' codes all
        need to be cleaned up! */
 
@@ -1155,8 +1167,11 @@ convertsimple(PyObject *arg, const char **p_format, va_list *p_va, int flags,
 
     case 'U': { /* PyUnicode object */
         PyObject **p = va_arg(*p_va, PyObject **);
-        if (PyUnicode_Check(arg))
+        if (PyUnicode_Check(arg)) {
+            if (PyUnicode_READY(arg) == -1)
+                RETURN_ERR_OCCURRED;
             *p = arg;
+        }
         else
             return converterr("str", arg, msgbuf, bufsize);
         break;
@@ -1597,8 +1612,10 @@ skipitem(const char **p_format, va_list *p_va, int flags)
 
     switch (c) {
 
-    /* simple codes
-     * The individual types (second arg of va_arg) are irrelevant */
+    /*
+     * codes that take a single data pointer as an argument
+     * (the type of the pointer is irrelevant)
+     */
 
     case 'b': /* byte -- very short int */
     case 'B': /* byte as bitfield */
@@ -1612,19 +1629,18 @@ skipitem(const char **p_format, va_list *p_va, int flags)
     case 'L': /* PY_LONG_LONG */
     case 'K': /* PY_LONG_LONG sized bitfield */
 #endif
+    case 'n': /* Py_ssize_t */
     case 'f': /* float */
     case 'd': /* double */
     case 'D': /* complex double */
     case 'c': /* char */
     case 'C': /* unicode char */
+    case 'p': /* boolean predicate */
+    case 'S': /* string object */
+    case 'Y': /* string object */
+    case 'U': /* unicode string object */
         {
             (void) va_arg(*p_va, void *);
-            break;
-        }
-
-    case 'n': /* Py_ssize_t */
-        {
-            (void) va_arg(*p_va, Py_ssize_t *);
             break;
         }
 
@@ -1644,6 +1660,7 @@ skipitem(const char **p_format, va_list *p_va, int flags)
     case 'z': /* string or None */
     case 'y': /* bytes */
     case 'u': /* unicode string */
+    case 'Z': /* unicode string or None */
     case 'w': /* buffer, read-write */
         {
             (void) va_arg(*p_va, char **);
@@ -1656,16 +1673,6 @@ skipitem(const char **p_format, va_list *p_va, int flags)
             } else if ((c == 's' || c == 'z' || c == 'y') && *format == '*') {
                 format++;
             }
-            break;
-        }
-
-    /* object codes */
-
-    case 'S': /* string object */
-    case 'Y': /* string object */
-    case 'U': /* unicode string object */
-        {
-            (void) va_arg(*p_va, PyObject **);
             break;
         }
 

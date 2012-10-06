@@ -24,9 +24,13 @@ are:
   _imp			builtin
   _io			builtin
   _locale		extension
+  _md5			extension
   _pickle		extension
   _posixsubprocess	extension
   _random		extension
+  _sha1			extension
+  _sha256		extension
+  _sha512		extension
   _socket		extension
   _sre			builtin
   _ssl			extension

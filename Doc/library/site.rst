@@ -38,6 +38,15 @@ Unix and Macintosh).  For each of the distinct head-tail combinations, it sees
 if it refers to an existing directory, and if so, adds it to ``sys.path`` and
 also inspects the newly added path for configuration files.
 
+If a file named "pyvenv.cfg" exists one directory above sys.executable,
+sys.prefix and sys.exec_prefix are set to that directory and
+it is also checked for site-packages and site-python (sys.base_prefix and
+sys.base_exec_prefix will always be the "real" prefixes of the Python
+installation). If "pyvenv.cfg" (a bootstrap configuration file) contains
+the key "include-system-site-packages" set to anything other than "false"
+(case-insensitive), the system-level prefixes will still also be
+searched for site-packages; otherwise they won't.
+
 A path configuration file is a file whose name has the form :file:`{name}.pth`
 and exists in one of the four directories mentioned above; its contents are
 additional items (one per line) to be added to ``sys.path``.  Non-existing items
@@ -134,9 +143,9 @@ empty, and the path manipulations are skipped; however the import of
    :func:`getuserbase` hasn't been called yet.  Default value is
    :file:`~/.local` for UNIX and Mac OS X non-framework builds,
    :file:`~/Library/Python/{X.Y}` for Mac framework builds, and
-   :file:`{%APPDATA%}\\Python` for Windows.  This value is used by Packaging to
+   :file:`{%APPDATA%}\\Python` for Windows.  This value is used by Distutils to
    compute the installation directories for scripts, data files, Python modules,
-   etc. for the :ref:`user installation scheme <packaging-alt-install-user>`.
+   etc. for the :ref:`user installation scheme <inst-alt-install-user>`.
    See also :envvar:`PYTHONUSERBASE`.
 
 

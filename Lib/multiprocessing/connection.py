@@ -23,8 +23,7 @@ import itertools
 
 import _multiprocessing
 from multiprocessing import current_process, AuthenticationError, BufferTooShort
-from multiprocessing.util import (
-    get_temp_dir, Finalize, sub_debug, debug, _eintr_retry)
+from multiprocessing.util import get_temp_dir, Finalize, sub_debug, debug
 from multiprocessing.forking import ForkingPickler
 try:
     import _winapi
@@ -258,6 +257,12 @@ class _ConnectionBase:
         self._check_readable()
         return self._poll(timeout)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.close()
+
 
 if _winapi:
 
@@ -323,8 +328,6 @@ if _winapi:
             if (self._got_empty_message or
                         _winapi.PeekNamedPipe(self._handle)[0] != 0):
                 return True
-            if timeout < 0:
-                timeout = None
             return bool(wait([self], timeout))
 
         def _get_more_data(self, ov, maxsize):
@@ -402,8 +405,6 @@ class Connection(_ConnectionBase):
         return self._recv(size)
 
     def _poll(self, timeout):
-        if timeout < 0.0:
-            timeout = None
         r = wait([self._handle], timeout)
         return bool(r)
 
@@ -441,6 +442,8 @@ class Listener(object):
 
         Returns a `Connection` object.
         '''
+        if self._listener is None:
+            raise IOError('listener is closed')
         c = self._listener.accept()
         if self._authkey:
             deliver_challenge(c, self._authkey)
@@ -451,10 +454,18 @@ class Listener(object):
         '''
         Close the bound socket or named pipe of `self`.
         '''
-        return self._listener.close()
+        if self._listener is not None:
+            self._listener.close()
+            self._listener = None
 
     address = property(lambda self: self._listener._address)
     last_accepted = property(lambda self: self._listener._last_accepted)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.close()
 
 
 def Client(address, family=None, authkey=None):
@@ -486,6 +497,8 @@ if sys.platform != 'win32':
         '''
         if duplex:
             s1, s2 = socket.socketpair()
+            s1.setblocking(True)
+            s2.setblocking(True)
             c1 = Connection(s1.detach())
             c2 = Connection(s2.detach())
         else:
@@ -550,6 +563,7 @@ class SocketListener(object):
             if os.name == 'posix':
                 self._socket.setsockopt(socket.SOL_SOCKET,
                                         socket.SO_REUSEADDR, 1)
+            self._socket.setblocking(True)
             self._socket.bind(address)
             self._socket.listen(backlog)
             self._address = self._socket.getsockname()
@@ -568,6 +582,7 @@ class SocketListener(object):
 
     def accept(self):
         s, self._last_accepted = self._socket.accept()
+        s.setblocking(True)
         return Connection(s.detach())
 
     def close(self):
@@ -582,6 +597,7 @@ def SocketClient(address):
     '''
     family = address_type(address)
     with socket.socket( getattr(socket, family) ) as s:
+        s.setblocking(True)
         s.connect(address)
         return Connection(s.detach())
 
@@ -621,16 +637,24 @@ if sys.platform == 'win32':
         def accept(self):
             self._handle_queue.append(self._new_handle())
             handle = self._handle_queue.pop(0)
-            ov = _winapi.ConnectNamedPipe(handle, overlapped=True)
             try:
-                res = _winapi.WaitForMultipleObjects([ov.event], False, INFINITE)
-            except:
-                ov.cancel()
-                _winapi.CloseHandle(handle)
-                raise
-            finally:
-                _, err = ov.GetOverlappedResult(True)
-            assert err == 0
+                ov = _winapi.ConnectNamedPipe(handle, overlapped=True)
+            except OSError as e:
+                if e.winerror != _winapi.ERROR_NO_DATA:
+                    raise
+                # ERROR_NO_DATA can occur if a client has already connected,
+                # written data and then disconnected -- see Issue 14725.
+            else:
+                try:
+                    res = _winapi.WaitForMultipleObjects(
+                        [ov.event], False, INFINITE)
+                except:
+                    ov.cancel()
+                    _winapi.CloseHandle(handle)
+                    raise
+                finally:
+                    _, err = ov.GetOverlappedResult(True)
+                    assert err == 0
             return PipeConnection(handle)
 
         @staticmethod

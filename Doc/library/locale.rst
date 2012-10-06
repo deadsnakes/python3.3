@@ -160,22 +160,22 @@ The :mod:`locale` module defines the following exception and functions:
 
    .. data:: D_T_FMT
 
-      Get a string that can be used as a format string for :func:`strftime` to
+      Get a string that can be used as a format string for :func:`time.strftime` to
       represent date and time in a locale-specific way.
 
    .. data:: D_FMT
 
-      Get a string that can be used as a format string for :func:`strftime` to
+      Get a string that can be used as a format string for :func:`time.strftime` to
       represent a date in a locale-specific way.
 
    .. data:: T_FMT
 
-      Get a string that can be used as a format string for :func:`strftime` to
+      Get a string that can be used as a format string for :func:`time.strftime` to
       represent a time in a locale-specific way.
 
    .. data:: T_FMT_AMPM
 
-      Get a format string for :func:`strftime` to represent time in the am/pm
+      Get a format string for :func:`time.strftime` to represent time in the am/pm
       format.
 
    .. data:: DAY_1 ... DAY_7
@@ -239,24 +239,24 @@ The :mod:`locale` module defines the following exception and functions:
       then-emperor's reign.
 
       Normally it should not be necessary to use this value directly. Specifying
-      the ``E`` modifier in their format strings causes the :func:`strftime`
+      the ``E`` modifier in their format strings causes the :func:`time.strftime`
       function to use this information.  The format of the returned string is not
       specified, and therefore you should not assume knowledge of it on different
       systems.
 
    .. data:: ERA_D_T_FMT
 
-      Get a format string for :func:`strftime` to represent date and time in a
+      Get a format string for :func:`time.strftime` to represent date and time in a
       locale-specific era-based way.
 
    .. data:: ERA_D_FMT
 
-      Get a format string for :func:`strftime` to represent a date in a
+      Get a format string for :func:`time.strftime` to represent a date in a
       locale-specific era-based way.
 
    .. data:: ERA_T_FMT
 
-      Get a format string for :func:`strftime` to represent a time in a
+      Get a format string for :func:`time.strftime` to represent a time in a
       locale-specific era-based way.
 
    .. data:: ALT_DIGITS
@@ -475,8 +475,11 @@ in such a way that frequent locale changes may cause core dumps.  This makes the
 locale somewhat painful to use correctly.
 
 Initially, when a program is started, the locale is the ``C`` locale, no matter
-what the user's preferred locale is.  The program must explicitly say that it
-wants the user's preferred locale settings by calling ``setlocale(LC_ALL, '')``.
+what the user's preferred locale is.  There is one exception: the
+:data:`LC_CTYPE` category is changed at startup to set the current locale
+encoding to the user's preferred locale encoding. The program must explicitly
+say that it wants the user's preferred locale settings for other categories by
+calling ``setlocale(LC_ALL, '')``.
 
 It is generally a bad idea to call :func:`setlocale` in some library routine,
 since as a side effect it affects the entire program.  Saving and restoring it

@@ -1,3 +1,4 @@
+; When changing this file, run python33gen.py
 LIBRARY	"python3"
 EXPORTS
   PyArg_Parse=python33.PyArg_Parse
@@ -471,6 +472,8 @@ EXPORTS
   PySlice_Type=python33.PySlice_Type DATA
   PySortWrapper_Type=python33.PySortWrapper_Type DATA
   PyState_FindModule=python33.PyState_FindModule
+  PyState_AddModule=python33.PyState_AddModule
+  PyState_RemoveModule=python33.PyState_RemoveModule
   PyStructSequence_GetItem=python33.PyStructSequence_GetItem
   PyStructSequence_New=python33.PyStructSequence_New
   PyStructSequence_NewType=python33.PyStructSequence_NewType
@@ -511,6 +514,7 @@ EXPORTS
   PyTuple_Type=python33.PyTuple_Type DATA
   PyType_ClearCache=python33.PyType_ClearCache
   PyType_FromSpec=python33.PyType_FromSpec
+  PyType_FromSpecWithBases=python33.PyType_FromSpecWithBases
   PyType_GenericAlloc=python33.PyType_GenericAlloc
   PyType_GenericNew=python33.PyType_GenericNew
   PyType_GetFlags=python33.PyType_GetFlags
@@ -687,3 +691,9 @@ EXPORTS
   _Py_SwappedOp=python33._Py_SwappedOp DATA
   _Py_TrueStruct=python33._Py_TrueStruct DATA
   _Py_VaBuildValue_SizeT=python33._Py_VaBuildValue_SizeT
+  _PyArg_Parse_SizeT=python33._PyArg_Parse_SizeT
+  _PyArg_ParseTuple_SizeT=python33._PyArg_ParseTuple_SizeT
+  _PyArg_ParseTupleAndKeywords_SizeT=python33._PyArg_ParseTupleAndKeywords_SizeT
+  _PyArg_VaParse_SizeT=python33._PyArg_VaParse_SizeT
+  _PyArg_VaParseTupleAndKeywords_SizeT=python33._PyArg_VaParseTupleAndKeywords_SizeT
+  _Py_BuildValue_SizeT=python33._Py_BuildValue_SizeT

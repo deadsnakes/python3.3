@@ -177,8 +177,15 @@ _close_fds_by_brute_force(int start_fd, int end_fd, PyObject *py_fds_to_keep)
  * chooses to break compatibility with all existing binaries.  Highly Unlikely.
  */
 struct linux_dirent {
+#if defined(__x86_64__) && defined(__ILP32__)
+   /* Support the wacky x32 ABI (fake 32-bit userspace speaking to x86_64
+    * kernel interfaces) - https://sites.google.com/site/x32abi/ */
+   unsigned long long d_ino;
+   unsigned long long d_off;
+#else
    unsigned long  d_ino;        /* Inode number */
    unsigned long  d_off;        /* Offset to next linux_dirent */
+#endif
    unsigned short d_reclen;     /* Length of this linux_dirent */
    char           d_name[256];  /* Filename (null-terminated) */
 };
@@ -496,7 +503,7 @@ static PyObject *
 subprocess_fork_exec(PyObject* self, PyObject *args)
 {
     PyObject *gc_module = NULL;
-    PyObject *executable_list, *py_close_fds, *py_fds_to_keep;
+    PyObject *executable_list, *py_fds_to_keep;
     PyObject *env_list, *preexec_fn;
     PyObject *process_args, *converted_args = NULL, *fast_args = NULL;
     PyObject *preexec_fn_args_tuple = NULL;
@@ -511,15 +518,14 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     Py_ssize_t arg_num;
 
     if (!PyArg_ParseTuple(
-            args, "OOOOOOiiiiiiiiiiO:fork_exec",
-            &process_args, &executable_list, &py_close_fds, &py_fds_to_keep,
+            args, "OOpOOOiiiiiiiiiiO:fork_exec",
+            &process_args, &executable_list, &close_fds, &py_fds_to_keep,
             &cwd_obj, &env_list,
             &p2cread, &p2cwrite, &c2pread, &c2pwrite,
             &errread, &errwrite, &errpipe_read, &errpipe_write,
             &restore_signals, &call_setsid, &preexec_fn))
         return NULL;
 
-    close_fds = PyObject_IsTrue(py_close_fds);
     if (close_fds && errpipe_write < 3) {  /* precondition */
         PyErr_SetString(PyExc_ValueError, "errpipe_write must be >= 3");
         return NULL;
@@ -562,8 +568,10 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
     }
 
     exec_array = _PySequence_BytesToCharpArray(executable_list);
-    if (!exec_array)
+    if (!exec_array) {
+        Py_XDECREF(gc_module);
         return NULL;
+    }
 
     /* Convert args and env into appropriate arguments for exec() */
     /* These conversions are done in the parent process to avoid allocating
@@ -573,6 +581,8 @@ subprocess_fork_exec(PyObject* self, PyObject *args)
         /* Equivalent to:  */
         /*  tuple(PyUnicode_FSConverter(arg) for arg in process_args)  */
         fast_args = PySequence_Fast(process_args, "argv must be a tuple");
+        if (fast_args == NULL)
+            goto cleanup;
         num_args = PySequence_Fast_GET_SIZE(fast_args);
         converted_args = PyTuple_New(num_args);
         if (converted_args == NULL)

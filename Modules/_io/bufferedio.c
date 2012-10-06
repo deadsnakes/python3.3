@@ -398,6 +398,17 @@ buffered_dealloc(buffered *self)
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
+static PyObject *
+buffered_sizeof(buffered *self, void *unused)
+{
+    Py_ssize_t res;
+
+    res = sizeof(buffered);
+    if (self->buffer)
+        res += self->buffer_size;
+    return PyLong_FromSsize_t(res);
+}
+
 static int
 buffered_traverse(buffered *self, visitproc visit, void *arg)
 {
@@ -746,8 +757,8 @@ _buffered_init(buffered *self)
    clears the error indicator), 0 otherwise.
    Should only be called when PyErr_Occurred() is true.
 */
-static int
-_trap_eintr(void)
+int
+_PyIO_trap_eintr(void)
 {
     static PyObject *eintr_int = NULL;
     PyObject *typ, *val, *tb;
@@ -1157,9 +1168,20 @@ buffered_seek(buffered *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O|i:seek", &targetobj, &whence)) {
         return NULL;
     }
-    if (whence < 0 || whence > 2) {
+
+    /* Do some error checking instead of trusting OS 'seek()'
+    ** error detection, just in case.
+    */
+    if ((whence < 0 || whence >2)
+#ifdef SEEK_HOLE
+        && (whence != SEEK_HOLE)
+#endif
+#ifdef SEEK_DATA
+        && (whence != SEEK_DATA)
+#endif
+        ) {
         PyErr_Format(PyExc_ValueError,
-                     "whence must be between 0 and 2, not %d", whence);
+                     "whence value %d unsupported", whence);
         return NULL;
     }
 
@@ -1172,7 +1194,11 @@ buffered_seek(buffered *self, PyObject *args)
     if (target == -1 && PyErr_Occurred())
         return NULL;
 
-    if (whence != 2 && self->readable) {
+    /* SEEK_SET and SEEK_CUR are special because we could seek inside the
+       buffer. Other whence values must be managed without this optimization.
+       Some Operating Systems can provide additional values, like
+       SEEK_HOLE/SEEK_DATA. */
+    if (((whence == 0) || (whence == 1)) && self->readable) {
         Py_off_t current, avail;
         /* Check if seeking leaves us inside the current buffer,
            so as to return quickly if possible. Also, we needn't take the
@@ -1381,7 +1407,7 @@ _bufferedreader_raw_read(buffered *self, char *start, Py_ssize_t len)
     */
     do {
         res = PyObject_CallMethodObjArgs(self->raw, _PyIO_str_readinto, memobj, NULL);
-    } while (res == NULL && _trap_eintr());
+    } while (res == NULL && _PyIO_trap_eintr());
     Py_DECREF(memobj);
     if (res == NULL)
         return -1;
@@ -1473,8 +1499,10 @@ _bufferedreader_read_all(buffered *self)
     }
 
     chunks = PyList_New(0);
-    if (chunks == NULL)
+    if (chunks == NULL) {
+        Py_XDECREF(data);
         return NULL;
+    }
 
     while (1) {
         if (data) {
@@ -1684,6 +1712,7 @@ static PyMethodDef bufferedreader_methods[] = {
     {"seek", (PyCFunction)buffered_seek, METH_VARARGS},
     {"tell", (PyCFunction)buffered_tell, METH_NOARGS},
     {"truncate", (PyCFunction)buffered_truncate, METH_VARARGS},
+    {"__sizeof__", (PyCFunction)buffered_sizeof, METH_NOARGS},
     {NULL, NULL}
 };
 
@@ -1744,15 +1773,6 @@ PyTypeObject PyBufferedReader_Type = {
 
 
 
-static int
-complain_about_max_buffer_size(void)
-{
-    if (PyErr_WarnEx(PyExc_DeprecationWarning,
-                     "max_buffer_size is deprecated", 1) < 0)
-        return 0;
-    return 1;
-}
-
 /*
  * class BufferedWriter
  */
@@ -1761,7 +1781,7 @@ PyDoc_STRVAR(bufferedwriter_doc,
     "\n"
     "The constructor creates a BufferedWriter for the given writeable raw\n"
     "stream. If the buffer_size is not given, it defaults to\n"
-    "DEFAULT_BUFFER_SIZE. max_buffer_size isn't used anymore.\n"
+    "DEFAULT_BUFFER_SIZE.\n"
     );
 
 static void
@@ -1774,22 +1794,17 @@ _bufferedwriter_reset_buf(buffered *self)
 static int
 bufferedwriter_init(buffered *self, PyObject *args, PyObject *kwds)
 {
-    /* TODO: properly deprecate max_buffer_size */
-    char *kwlist[] = {"raw", "buffer_size", "max_buffer_size", NULL};
+    char *kwlist[] = {"raw", "buffer_size", NULL};
     Py_ssize_t buffer_size = DEFAULT_BUFFER_SIZE;
-    Py_ssize_t max_buffer_size = -234;
     PyObject *raw;
 
     self->ok = 0;
     self->detached = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|nn:BufferedReader", kwlist,
-                                     &raw, &buffer_size, &max_buffer_size)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|n:BufferedReader", kwlist,
+                                     &raw, &buffer_size)) {
         return -1;
     }
-
-    if (max_buffer_size != -234 && !complain_about_max_buffer_size())
-        return -1;
 
     if (_PyIOBase_check_writable(raw, Py_True) == NULL)
         return -1;
@@ -1835,7 +1850,7 @@ _bufferedwriter_raw_write(buffered *self, char *start, Py_ssize_t len)
         errno = 0;
         res = PyObject_CallMethodObjArgs(self->raw, _PyIO_str_write, memobj, NULL);
         errnum = errno;
-    } while (res == NULL && _trap_eintr());
+    } while (res == NULL && _PyIO_trap_eintr());
     Py_DECREF(memobj);
     if (res == NULL)
         return -1;
@@ -2078,6 +2093,7 @@ static PyMethodDef bufferedwriter_methods[] = {
     {"flush", (PyCFunction)buffered_flush, METH_NOARGS},
     {"seek", (PyCFunction)buffered_seek, METH_VARARGS},
     {"tell", (PyCFunction)buffered_tell, METH_NOARGS},
+    {"__sizeof__", (PyCFunction)buffered_sizeof, METH_NOARGS},
     {NULL, NULL}
 };
 
@@ -2171,15 +2187,11 @@ bufferedrwpair_init(rwpair *self, PyObject *args, PyObject *kwds)
 {
     PyObject *reader, *writer;
     Py_ssize_t buffer_size = DEFAULT_BUFFER_SIZE;
-    Py_ssize_t max_buffer_size = -234;
 
-    if (!PyArg_ParseTuple(args, "OO|nn:BufferedRWPair", &reader, &writer,
-                          &buffer_size, &max_buffer_size)) {
+    if (!PyArg_ParseTuple(args, "OO|n:BufferedRWPair", &reader, &writer,
+                          &buffer_size)) {
         return -1;
     }
-
-    if (max_buffer_size != -234 && !complain_about_max_buffer_size())
-        return -1;
 
     if (_PyIOBase_check_readable(reader, Py_True) == NULL)
         return -1;
@@ -2405,27 +2417,23 @@ PyDoc_STRVAR(bufferedrandom_doc,
     "\n"
     "The constructor creates a reader and writer for a seekable stream,\n"
     "raw, given in the first argument. If the buffer_size is omitted it\n"
-    "defaults to DEFAULT_BUFFER_SIZE. max_buffer_size isn't used anymore.\n"
+    "defaults to DEFAULT_BUFFER_SIZE.\n"
     );
 
 static int
 bufferedrandom_init(buffered *self, PyObject *args, PyObject *kwds)
 {
-    char *kwlist[] = {"raw", "buffer_size", "max_buffer_size", NULL};
+    char *kwlist[] = {"raw", "buffer_size", NULL};
     Py_ssize_t buffer_size = DEFAULT_BUFFER_SIZE;
-    Py_ssize_t max_buffer_size = -234;
     PyObject *raw;
 
     self->ok = 0;
     self->detached = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|nn:BufferedReader", kwlist,
-                                     &raw, &buffer_size, &max_buffer_size)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|n:BufferedReader", kwlist,
+                                     &raw, &buffer_size)) {
         return -1;
     }
-
-    if (max_buffer_size != -234 && !complain_about_max_buffer_size())
-        return -1;
 
     if (_PyIOBase_check_seekable(raw, Py_True) == NULL)
         return -1;
@@ -2477,6 +2485,7 @@ static PyMethodDef bufferedrandom_methods[] = {
     {"readline", (PyCFunction)buffered_readline, METH_VARARGS},
     {"peek", (PyCFunction)buffered_peek, METH_VARARGS},
     {"write", (PyCFunction)bufferedwriter_write, METH_VARARGS},
+    {"__sizeof__", (PyCFunction)buffered_sizeof, METH_NOARGS},
     {NULL, NULL}
 };
 

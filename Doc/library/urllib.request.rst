@@ -16,7 +16,7 @@ authentication, redirections, cookies and more.
 The :mod:`urllib.request` module defines the following functions:
 
 
-.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None)
+.. function:: urlopen(url, data=None[, timeout], *, cafile=None, capath=None, cadefault=True)
 
    Open the URL *url*, which can be either a string or a
    :class:`Request` object.
@@ -53,9 +53,15 @@ The :mod:`urllib.request` module defines the following functions:
    point to a directory of hashed certificate files.  More information can
    be found in :meth:`ssl.SSLContext.load_verify_locations`.
 
+   The *cadefault* parameter specifies whether to fall back to loading a
+   default certificate store defined by the underlying OpenSSL library if the
+   *cafile* and *capath* parameters are omitted.  This will only work on
+   some non-Windows platforms.
+
    .. warning::
-      If neither *cafile* nor *capath* is specified, an HTTPS request
-      will not do any verification of the server's certificate.
+      If neither *cafile* nor *capath* is specified, and *cadefault* is False,
+      an HTTPS request will not do any verification of the server's
+      certificate.
 
    This function returns a file-like object that works as a :term:`context manager`,
    with two additional methods from the :mod:`urllib.response` module
@@ -91,6 +97,9 @@ The :mod:`urllib.request` module defines the following functions:
 
    .. versionadded:: 3.2
       *data* can be an iterable object.
+
+   .. versionchanged:: 3.3
+      *cadefault* was added.
 
 .. function:: install_opener(opener)
 
@@ -203,7 +212,7 @@ The following classes are provided:
    :attr:`~Request.method` attribute and is used by :meth:`get_method()`.
 
    .. versionchanged:: 3.3
-    :attr:`Request.method` argument is added to the Request class.
+      :attr:`Request.method` argument is added to the Request class.
 
 
 .. class:: OpenerDirector()
@@ -528,7 +537,7 @@ request.
 
    Return whether the request is unverifiable, as defined by RFC 2965. See the
    documentation for the :class:`Request` constructor.  Deprecated in 3.3, use
-   :attr:`Request.is_unverifiable`.
+   :attr:`Request.unverifiable`.
 
    .. deprecated:: 3.3
 
@@ -958,10 +967,9 @@ FileHandler Objects
    Open the file locally, if there is no host name, or the host name is
    ``'localhost'``.
 
-   This method is applicable only for local hostnames. When a remote hostname
-   is given, an :exc:`URLError` is raised.
-
-.. versionchanged:: 3.2
+   .. versionchanged:: 3.2
+      This method is applicable only for local hostnames.  When a remote
+      hostname is given, an :exc:`URLError` is raised.
 
 
 .. _ftp-handler-objects:

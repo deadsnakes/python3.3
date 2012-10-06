@@ -35,7 +35,7 @@
 __all__ = [
     'Process', 'current_process', 'active_children', 'freeze_support',
     'Lock', 'RLock', 'Semaphore', 'BoundedSemaphore', 'Condition',
-    'Event', 'Queue', 'Manager', 'Pipe', 'Pool', 'JoinableQueue'
+    'Event', 'Barrier', 'Queue', 'Manager', 'Pipe', 'Pool', 'JoinableQueue'
     ]
 
 #
@@ -49,7 +49,7 @@ import array
 
 from multiprocessing.dummy.connection import Pipe
 from threading import Lock, RLock, Semaphore, BoundedSemaphore
-from threading import Event, Condition
+from threading import Event, Condition, Barrier
 from queue import Queue
 
 #
@@ -68,7 +68,8 @@ class DummyProcess(threading.Thread):
     def start(self):
         assert self._parent is current_process()
         self._start_called = True
-        self._parent._children[self] = None
+        if hasattr(self._parent, '_children'):
+            self._parent._children[self] = None
         threading.Thread.start(self)
 
     @property

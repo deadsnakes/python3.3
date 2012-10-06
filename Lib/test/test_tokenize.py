@@ -289,6 +289,64 @@ String literals
     OP         '+'           (1, 29) (1, 30)
     STRING     'R"ABC"'      (1, 31) (1, 37)
 
+    >>> dump_tokens("u'abc' + U'abc'")
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     "u'abc'"      (1, 0) (1, 6)
+    OP         '+'           (1, 7) (1, 8)
+    STRING     "U'abc'"      (1, 9) (1, 15)
+    >>> dump_tokens('u"abc" + U"abc"')
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     'u"abc"'      (1, 0) (1, 6)
+    OP         '+'           (1, 7) (1, 8)
+    STRING     'U"abc"'      (1, 9) (1, 15)
+
+    >>> dump_tokens("b'abc' + B'abc'")
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     "b'abc'"      (1, 0) (1, 6)
+    OP         '+'           (1, 7) (1, 8)
+    STRING     "B'abc'"      (1, 9) (1, 15)
+    >>> dump_tokens('b"abc" + B"abc"')
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     'b"abc"'      (1, 0) (1, 6)
+    OP         '+'           (1, 7) (1, 8)
+    STRING     'B"abc"'      (1, 9) (1, 15)
+    >>> dump_tokens("br'abc' + bR'abc' + Br'abc' + BR'abc'")
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     "br'abc'"     (1, 0) (1, 7)
+    OP         '+'           (1, 8) (1, 9)
+    STRING     "bR'abc'"     (1, 10) (1, 17)
+    OP         '+'           (1, 18) (1, 19)
+    STRING     "Br'abc'"     (1, 20) (1, 27)
+    OP         '+'           (1, 28) (1, 29)
+    STRING     "BR'abc'"     (1, 30) (1, 37)
+    >>> dump_tokens('br"abc" + bR"abc" + Br"abc" + BR"abc"')
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     'br"abc"'     (1, 0) (1, 7)
+    OP         '+'           (1, 8) (1, 9)
+    STRING     'bR"abc"'     (1, 10) (1, 17)
+    OP         '+'           (1, 18) (1, 19)
+    STRING     'Br"abc"'     (1, 20) (1, 27)
+    OP         '+'           (1, 28) (1, 29)
+    STRING     'BR"abc"'     (1, 30) (1, 37)
+    >>> dump_tokens("rb'abc' + rB'abc' + Rb'abc' + RB'abc'")
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     "rb'abc'"     (1, 0) (1, 7)
+    OP         '+'           (1, 8) (1, 9)
+    STRING     "rB'abc'"     (1, 10) (1, 17)
+    OP         '+'           (1, 18) (1, 19)
+    STRING     "Rb'abc'"     (1, 20) (1, 27)
+    OP         '+'           (1, 28) (1, 29)
+    STRING     "RB'abc'"     (1, 30) (1, 37)
+    >>> dump_tokens('rb"abc" + rB"abc" + Rb"abc" + RB"abc"')
+    ENCODING   'utf-8'       (0, 0) (0, 0)
+    STRING     'rb"abc"'     (1, 0) (1, 7)
+    OP         '+'           (1, 8) (1, 9)
+    STRING     'rB"abc"'     (1, 10) (1, 17)
+    OP         '+'           (1, 18) (1, 19)
+    STRING     'Rb"abc"'     (1, 20) (1, 27)
+    OP         '+'           (1, 28) (1, 29)
+    STRING     'RB"abc"'     (1, 30) (1, 37)
+
 Operators
 
     >>> dump_tokens("def d22(a, b, c=2, d=2, *k): pass")
@@ -566,7 +624,7 @@ Non-ascii identifiers
 
 Legacy unicode literals:
 
-    >>> dump_tokens("Örter = u'places'\\ngrün = UR'green'")
+    >>> dump_tokens("Örter = u'places'\\ngrün = U'green'")
     ENCODING   'utf-8'       (0, 0) (0, 0)
     NAME       'Örter'       (1, 0) (1, 5)
     OP         '='           (1, 6) (1, 7)
@@ -574,7 +632,7 @@ Legacy unicode literals:
     NEWLINE    '\\n'          (1, 17) (1, 18)
     NAME       'grün'        (2, 0) (2, 4)
     OP         '='           (2, 5) (2, 6)
-    STRING     "UR'green'"   (2, 7) (2, 16)
+    STRING     "U'green'"    (2, 7) (2, 15)
 """
 
 from test import support
@@ -686,6 +744,10 @@ class TestTokenizerAdheresToPep0263(TestCase):
     def test_utf8_coding_cookie_and_utf8_bom(self):
         f = 'tokenize_tests-utf8-coding-cookie-and-utf8-bom-sig.txt'
         self.assertTrue(self._testFile(f))
+
+    def test_bad_coding_cookie(self):
+        self.assertRaises(SyntaxError, self._testFile, 'bad_coding.py')
+        self.assertRaises(SyntaxError, self._testFile, 'bad_coding2.py')
 
 
 class Test_Tokenize(TestCase):

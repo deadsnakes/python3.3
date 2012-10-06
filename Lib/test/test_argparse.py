@@ -1323,20 +1323,21 @@ class TestParserDefaultSuppress(ParserTestCase):
 class TestParserDefault42(ParserTestCase):
     """Test actions with a parser-level default of 42"""
 
-    parser_signature = Sig(argument_default=42, version='1.0')
+    parser_signature = Sig(argument_default=42)
     argument_signatures = [
+        Sig('--version', action='version', version='1.0'),
         Sig('foo', nargs='?'),
         Sig('bar', nargs='*'),
         Sig('--baz', action='store_true'),
     ]
     failures = ['-x']
     successes = [
-        ('', NS(foo=42, bar=42, baz=42)),
-        ('a', NS(foo='a', bar=42, baz=42)),
-        ('a b', NS(foo='a', bar=['b'], baz=42)),
-        ('--baz', NS(foo=42, bar=42, baz=True)),
-        ('a --baz', NS(foo='a', bar=42, baz=True)),
-        ('--baz a b', NS(foo='a', bar=['b'], baz=True)),
+        ('', NS(foo=42, bar=42, baz=42, version=42)),
+        ('a', NS(foo='a', bar=42, baz=42, version=42)),
+        ('a b', NS(foo='a', bar=['b'], baz=42, version=42)),
+        ('--baz', NS(foo=42, bar=42, baz=True, version=42)),
+        ('a --baz', NS(foo='a', bar=42, baz=True, version=42)),
+        ('--baz a b', NS(foo='a', bar=['b'], baz=True, version=42)),
     ]
 
 
@@ -1371,6 +1372,7 @@ class TestArgumentsFromFile(TempDirMixin, ParserTestCase):
         ('X @hello', NS(a=None, x='X', y=['hello world!'])),
         ('-a B @recursive Y Z', NS(a='A', x='hello world!', y=['Y', 'Z'])),
         ('X @recursive Z -a B', NS(a='B', x='X', y=['hello world!', 'Z'])),
+        (["-a", "", "X", "Y"], NS(a='', x='X', y=['Y'])),
     ]
 
 
@@ -1760,6 +1762,14 @@ class TestAddSubparsers(TestCase):
         parser2.add_argument('-y', choices='123', help='y help')
         parser2.add_argument('z', type=complex, nargs='*', help='z help')
 
+        # add third sub-parser
+        parser3_kwargs = dict(description='3 description')
+        if subparser_help:
+            parser3_kwargs['help'] = '3 help'
+        parser3 = subparsers.add_parser('3', **parser3_kwargs)
+        parser3.add_argument('t', type=int, help='t help')
+        parser3.add_argument('u', nargs='...', help='u help')
+
         # return the main parser
         return parser
 
@@ -1788,6 +1798,10 @@ class TestAddSubparsers(TestCase):
         self.assertEqual(
             self.parser.parse_args('--foo 0.125 1 c'.split()),
             NS(foo=True, bar=0.125, w=None, x='c'),
+        )
+        self.assertEqual(
+            self.parser.parse_args('-1.5 3 11 -- a --foo 7 -- b'.split()),
+            NS(foo=False, bar=-1.5, t=11, u=['a', '--foo', '7', '--', 'b']),
         )
 
     def test_parse_known_args(self):
@@ -1823,15 +1837,15 @@ class TestAddSubparsers(TestCase):
 
     def test_help(self):
         self.assertEqual(self.parser.format_usage(),
-                         'usage: PROG [-h] [--foo] bar {1,2} ...\n')
+                         'usage: PROG [-h] [--foo] bar {1,2,3} ...\n')
         self.assertEqual(self.parser.format_help(), textwrap.dedent('''\
-            usage: PROG [-h] [--foo] bar {1,2} ...
+            usage: PROG [-h] [--foo] bar {1,2,3} ...
 
             main description
 
             positional arguments:
               bar         bar help
-              {1,2}       command help
+              {1,2,3}     command help
 
             optional arguments:
               -h, --help  show this help message and exit
@@ -1842,15 +1856,15 @@ class TestAddSubparsers(TestCase):
         # Make sure - is still used for help if it is a non-first prefix char
         parser = self._get_parser(prefix_chars='+:-')
         self.assertEqual(parser.format_usage(),
-                         'usage: PROG [-h] [++foo] bar {1,2} ...\n')
+                         'usage: PROG [-h] [++foo] bar {1,2,3} ...\n')
         self.assertEqual(parser.format_help(), textwrap.dedent('''\
-            usage: PROG [-h] [++foo] bar {1,2} ...
+            usage: PROG [-h] [++foo] bar {1,2,3} ...
 
             main description
 
             positional arguments:
               bar         bar help
-              {1,2}       command help
+              {1,2,3}     command help
 
             optional arguments:
               -h, --help  show this help message and exit
@@ -1861,15 +1875,15 @@ class TestAddSubparsers(TestCase):
     def test_help_alternate_prefix_chars(self):
         parser = self._get_parser(prefix_chars='+:/')
         self.assertEqual(parser.format_usage(),
-                         'usage: PROG [+h] [++foo] bar {1,2} ...\n')
+                         'usage: PROG [+h] [++foo] bar {1,2,3} ...\n')
         self.assertEqual(parser.format_help(), textwrap.dedent('''\
-            usage: PROG [+h] [++foo] bar {1,2} ...
+            usage: PROG [+h] [++foo] bar {1,2,3} ...
 
             main description
 
             positional arguments:
               bar         bar help
-              {1,2}       command help
+              {1,2,3}     command help
 
             optional arguments:
               +h, ++help  show this help message and exit
@@ -1878,18 +1892,19 @@ class TestAddSubparsers(TestCase):
 
     def test_parser_command_help(self):
         self.assertEqual(self.command_help_parser.format_usage(),
-                         'usage: PROG [-h] [--foo] bar {1,2} ...\n')
+                         'usage: PROG [-h] [--foo] bar {1,2,3} ...\n')
         self.assertEqual(self.command_help_parser.format_help(),
                          textwrap.dedent('''\
-            usage: PROG [-h] [--foo] bar {1,2} ...
+            usage: PROG [-h] [--foo] bar {1,2,3} ...
 
             main description
 
             positional arguments:
               bar         bar help
-              {1,2}       command help
+              {1,2,3}     command help
                 1         1 help
                 2         2 help
+                3         3 help
 
             optional arguments:
               -h, --help  show this help message and exit
@@ -2000,6 +2015,7 @@ class TestAddSubparsers(TestCase):
                 1 (1alias1, 1alias2)
                                     1 help
                 2                   2 help
+                3                   3 help
             """))
 
 # ============
@@ -2896,10 +2912,9 @@ class TestHelpFormattingMetaclass(type):
                 parser_text = sfile.getvalue()
                 self._test(tester, parser_text)
 
-        # add tests for {format,print}_{usage,help,version}
+        # add tests for {format,print}_{usage,help}
         for func_suffix, std_name in [('usage', 'stdout'),
-                                      ('help', 'stdout'),
-                                      ('version', 'stderr')]:
+                                      ('help', 'stdout')]:
             AddTests(cls, func_suffix, std_name)
 
 bases = TestCase,
@@ -2910,8 +2925,9 @@ class TestHelpBiggerOptionals(HelpTestCase):
     """Make sure that argument help aligns when options are longer"""
 
     parser_signature = Sig(prog='PROG', description='DESCRIPTION',
-                           epilog='EPILOG', version='0.1')
+                           epilog='EPILOG')
     argument_signatures = [
+        Sig('-v', '--version', action='version', version='0.1'),
         Sig('-x', action='store_true', help='X HELP'),
         Sig('--y', help='Y HELP'),
         Sig('foo', help='FOO HELP'),
@@ -2946,8 +2962,9 @@ class TestHelpBiggerOptionalGroups(HelpTestCase):
     """Make sure that argument help aligns when options are longer"""
 
     parser_signature = Sig(prog='PROG', description='DESCRIPTION',
-                           epilog='EPILOG', version='0.1')
+                           epilog='EPILOG')
     argument_signatures = [
+        Sig('-v', '--version', action='version', version='0.1'),
         Sig('-x', action='store_true', help='X HELP'),
         Sig('--y', help='Y HELP'),
         Sig('foo', help='FOO HELP'),
@@ -3114,9 +3131,9 @@ HHAAHHH
 class TestHelpWrappingLongNames(HelpTestCase):
     """Make sure that text after long names starts on the next line"""
 
-    parser_signature = Sig(usage='USAGE', description= 'D D' * 30,
-                           version='V V'*30)
+    parser_signature = Sig(usage='USAGE', description= 'D D' * 30)
     argument_signatures = [
+        Sig('-v', '--version', action='version', version='V V' * 30),
         Sig('-x', metavar='X' * 25, help='XH XH' * 20),
         Sig('y', metavar='y' * 25, help='YH YH' * 20),
     ]
@@ -3719,8 +3736,9 @@ class TestHelpNoHelpOptional(HelpTestCase):
 class TestHelpVersionOptional(HelpTestCase):
     """Test that the --version argument can be suppressed help messages"""
 
-    parser_signature = Sig(prog='PROG', version='1.0')
+    parser_signature = Sig(prog='PROG')
     argument_signatures = [
+        Sig('-v', '--version', action='version', version='1.0'),
         Sig('--foo', help='foo help'),
         Sig('spam', help='spam help'),
     ]
@@ -3953,8 +3971,8 @@ class TestHelpVersionAction(HelpTestCase):
 class TestHelpSubparsersOrdering(HelpTestCase):
     """Test ordering of subcommands in help matches the code"""
     parser_signature = Sig(prog='PROG',
-                           description='display some subcommands',
-                           version='0.1')
+                           description='display some subcommands')
+    argument_signatures = [Sig('-v', '--version', action='version', version='0.1')]
 
     subparsers_signatures = [Sig(name=name)
                              for name in ('a', 'b', 'c', 'd', 'e')]
@@ -3982,8 +4000,8 @@ class TestHelpSubparsersOrdering(HelpTestCase):
 class TestHelpSubparsersWithHelpOrdering(HelpTestCase):
     """Test ordering of subcommands in help matches the code"""
     parser_signature = Sig(prog='PROG',
-                           description='display some subcommands',
-                           version='0.1')
+                           description='display some subcommands')
+    argument_signatures = [Sig('-v', '--version', action='version', version='0.1')]
 
     subcommand_data = (('a', 'a subcommand help'),
                        ('b', 'b subcommand help'),
@@ -4280,32 +4298,28 @@ class TestOptionalsHelpVersionActions(TestCase):
             parser.format_help(),
             self._get_error(parser.parse_args, args_str.split()).stdout)
 
-    def assertPrintVersionExit(self, parser, args_str):
-        self.assertEqual(
-            parser.format_version(),
-            self._get_error(parser.parse_args, args_str.split()).stderr)
-
     def assertArgumentParserError(self, parser, *args):
         self.assertRaises(ArgumentParserError, parser.parse_args, args)
 
     def test_version(self):
-        parser = ErrorRaisingArgumentParser(version='1.0')
+        parser = ErrorRaisingArgumentParser()
+        parser.add_argument('-v', '--version', action='version', version='1.0')
         self.assertPrintHelpExit(parser, '-h')
         self.assertPrintHelpExit(parser, '--help')
-        self.assertPrintVersionExit(parser, '-v')
-        self.assertPrintVersionExit(parser, '--version')
+        self.assertRaises(AttributeError, getattr, parser, 'format_version')
 
     def test_version_format(self):
-        parser = ErrorRaisingArgumentParser(prog='PPP', version='%(prog)s 3.5')
+        parser = ErrorRaisingArgumentParser(prog='PPP')
+        parser.add_argument('-v', '--version', action='version', version='%(prog)s 3.5')
         msg = self._get_error(parser.parse_args, ['-v']).stderr
         self.assertEqual('PPP 3.5\n', msg)
 
     def test_version_no_help(self):
-        parser = ErrorRaisingArgumentParser(add_help=False, version='1.0')
+        parser = ErrorRaisingArgumentParser(add_help=False)
+        parser.add_argument('-v', '--version', action='version', version='1.0')
         self.assertArgumentParserError(parser, '-h')
         self.assertArgumentParserError(parser, '--help')
-        self.assertPrintVersionExit(parser, '-v')
-        self.assertPrintVersionExit(parser, '--version')
+        self.assertRaises(AttributeError, getattr, parser, 'format_version')
 
     def test_version_action(self):
         parser = ErrorRaisingArgumentParser(prog='XXX')
@@ -4325,12 +4339,13 @@ class TestOptionalsHelpVersionActions(TestCase):
         parser.add_argument('-x', action='help')
         parser.add_argument('-y', action='version')
         self.assertPrintHelpExit(parser, '-x')
-        self.assertPrintVersionExit(parser, '-y')
         self.assertArgumentParserError(parser, '-v')
         self.assertArgumentParserError(parser, '--version')
+        self.assertRaises(AttributeError, getattr, parser, 'format_version')
 
     def test_help_version_extra_arguments(self):
-        parser = ErrorRaisingArgumentParser(version='1.0')
+        parser = ErrorRaisingArgumentParser()
+        parser.add_argument('--version', action='version', version='1.0')
         parser.add_argument('-x', action='store_true')
         parser.add_argument('y')
 
@@ -4342,8 +4357,7 @@ class TestOptionalsHelpVersionActions(TestCase):
                 format = '%s %%s %s' % (prefix, suffix)
             self.assertPrintHelpExit(parser, format % '-h')
             self.assertPrintHelpExit(parser, format % '--help')
-            self.assertPrintVersionExit(parser, format % '-v')
-            self.assertPrintVersionExit(parser, format % '--version')
+            self.assertRaises(AttributeError, getattr, parser, 'format_version')
 
 
 # ======================
@@ -4398,7 +4412,7 @@ class TestStrings(TestCase):
         parser = argparse.ArgumentParser(prog='PROG')
         string = (
             "ArgumentParser(prog='PROG', usage=None, description=None, "
-            "version=None, formatter_class=%r, conflict_handler='error', "
+            "formatter_class=%r, conflict_handler='error', "
             "add_help=True)" % argparse.HelpFormatter)
         self.assertStringEqual(parser, string)
 
@@ -4550,6 +4564,24 @@ class TestMessageContentError(TestCase):
 # ======================
 
 class TestParseKnownArgs(TestCase):
+
+    def test_arguments_tuple(self):
+        parser = argparse.ArgumentParser()
+        parser.parse_args(())
+
+    def test_arguments_list(self):
+        parser = argparse.ArgumentParser()
+        parser.parse_args([])
+
+    def test_arguments_tuple_positional(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument('x')
+        parser.parse_args(('x',))
+
+    def test_arguments_list_positional(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument('x')
+        parser.parse_args(['x'])
 
     def test_optionals(self):
         parser = argparse.ArgumentParser()
@@ -4760,13 +4792,7 @@ class TestImportStar(TestCase):
         self.assertEqual(sorted(items), sorted(argparse.__all__))
 
 def test_main():
-    # silence warnings about version argument - these are expected
-    with support.check_warnings(
-            ('The "version" argument to ArgumentParser is deprecated.',
-             DeprecationWarning),
-            ('The (format|print)_version method is deprecated',
-             DeprecationWarning)):
-        support.run_unittest(__name__)
+    support.run_unittest(__name__)
     # Remove global references to avoid looking like we have refleaks.
     RFile.seen = {}
     WFile.seen = set()

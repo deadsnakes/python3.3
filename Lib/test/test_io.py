@@ -19,20 +19,21 @@
 # test both implementations. This file has lots of examples.
 ################################################################################
 
+import abc
+import array
+import errno
+import locale
 import os
+import pickle
+import random
+import signal
 import sys
 import time
-import array
-import random
 import unittest
-import weakref
-import abc
-import signal
-import errno
 import warnings
-import pickle
-from itertools import cycle, count
+import weakref
 from collections import deque
+from itertools import cycle, count
 from test import support
 
 import codecs
@@ -643,6 +644,19 @@ class IOTest(unittest.TestCase):
         with self.open("non-existent", "r", opener=opener) as f:
             self.assertEqual(f.read(), "egg\n")
 
+    def test_fileio_closefd(self):
+        # Issue #4841
+        with self.open(__file__, 'rb') as f1, \
+             self.open(__file__, 'rb') as f2:
+            fileio = self.FileIO(f1.fileno(), closefd=False)
+            # .__init__() must not close f1
+            fileio.__init__(f2.fileno(), closefd=False)
+            f1.readline()
+            # .close() must not close f2
+            fileio.close()
+            f2.readline()
+
+
 class CIOTest(IOTest):
 
     def test_IOBase_finalize(self):
@@ -692,7 +706,7 @@ class CommonBufferedTests:
         bufio = self.tp(rawio)
         # Invalid whence
         self.assertRaises(ValueError, bufio.seek, 0, -1)
-        self.assertRaises(ValueError, bufio.seek, 0, 3)
+        self.assertRaises(ValueError, bufio.seek, 0, 9)
 
     def test_override_destructor(self):
         tp = self.tp
@@ -786,6 +800,20 @@ class CommonBufferedTests:
         x = self.MockRawIO()
         with self.assertRaises(AttributeError):
             buf.raw = x
+
+
+class SizeofTest:
+
+    @support.cpython_only
+    def test_sizeof(self):
+        bufsize1 = 4096
+        bufsize2 = 8192
+        rawio = self.MockRawIO()
+        bufio = self.tp(rawio, buffer_size=bufsize1)
+        size = sys.getsizeof(bufio) - bufsize1
+        rawio = self.MockRawIO()
+        bufio = self.tp(rawio, buffer_size=bufsize2)
+        self.assertEqual(sys.getsizeof(bufio), size + bufsize2)
 
 
 class BufferedReaderTest(unittest.TestCase, CommonBufferedTests):
@@ -985,7 +1013,7 @@ class BufferedReaderTest(unittest.TestCase, CommonBufferedTests):
                              "failed for {}: {} != 0".format(n, rawio._extraneous_reads))
 
 
-class CBufferedReaderTest(BufferedReaderTest):
+class CBufferedReaderTest(BufferedReaderTest, SizeofTest):
     tp = io.BufferedReader
 
     def test_constructor(self):
@@ -1241,13 +1269,12 @@ class BufferedWriterTest(unittest.TestCase, CommonBufferedTests):
         self.assertRaises(IOError, bufio.tell)
         self.assertRaises(IOError, bufio.write, b"abcdef")
 
-    def test_max_buffer_size_deprecation(self):
-        with support.check_warnings(("max_buffer_size is deprecated",
-                                     DeprecationWarning)):
+    def test_max_buffer_size_removal(self):
+        with self.assertRaises(TypeError):
             self.tp(self.MockRawIO(), 8, 12)
 
 
-class CBufferedWriterTest(BufferedWriterTest):
+class CBufferedWriterTest(BufferedWriterTest, SizeofTest):
     tp = io.BufferedWriter
 
     def test_constructor(self):
@@ -1299,9 +1326,8 @@ class BufferedRWPairTest(unittest.TestCase):
         pair = self.tp(self.MockRawIO(), self.MockRawIO())
         self.assertRaises(self.UnsupportedOperation, pair.detach)
 
-    def test_constructor_max_buffer_size_deprecation(self):
-        with support.check_warnings(("max_buffer_size is deprecated",
-                                     DeprecationWarning)):
+    def test_constructor_max_buffer_size_removal(self):
+        with self.assertRaises(TypeError):
             self.tp(self.MockRawIO(), self.MockRawIO(), 8, 12)
 
     def test_constructor_with_not_readable(self):
@@ -1638,7 +1664,7 @@ class BufferedRandomTest(BufferedReaderTest, BufferedWriterTest):
     # You can't construct a BufferedRandom over a non-seekable stream.
     test_unseekable = None
 
-class CBufferedRandomTest(BufferedRandomTest):
+class CBufferedRandomTest(BufferedRandomTest, SizeofTest):
     tp = io.BufferedRandom
 
     def test_constructor(self):
@@ -1867,6 +1893,24 @@ class TextIOWrapperTest(unittest.TestCase):
         self.assertEqual(r.getvalue(), b"XY\nZ")  # All got flushed
         t.write("A\rB")
         self.assertEqual(r.getvalue(), b"XY\nZA\rB")
+
+    def test_default_encoding(self):
+        old_environ = dict(os.environ)
+        try:
+            # try to get a user preferred encoding different than the current
+            # locale encoding to check that TextIOWrapper() uses the current
+            # locale encoding and not the user preferred encoding
+            for key in ('LC_ALL', 'LANG', 'LC_CTYPE'):
+                if key in os.environ:
+                    del os.environ[key]
+
+            current_locale_encoding = locale.getpreferredencoding(False)
+            b = self.BytesIO()
+            t = self.TextIOWrapper(b)
+            self.assertEqual(t.encoding, current_locale_encoding)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_environ)
 
     def test_encoding(self):
         # Check the encoding attribute is always set, and valid

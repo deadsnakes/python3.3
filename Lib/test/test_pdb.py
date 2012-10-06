@@ -1,5 +1,5 @@
 # A test suite for pdb; not very comprehensive at the moment.
-import os
+
 import imp
 import pdb
 import sys
@@ -631,7 +631,6 @@ class PdbTestCase(unittest.TestCase):
         self.assertNotIn(b'SyntaxError', stdout,
                          "Got a syntax error running test script under PDB")
 
-    @unittest.skipIf(os.name == 'nt', "temporarily disabled on Windows")
     def test_issue13183(self):
         script = """
             from bar import bar
@@ -658,7 +657,7 @@ class PdbTestCase(unittest.TestCase):
         """
         bar = """
             def bar():
-                print('1')
+                pass
         """
         with open('bar.py', 'w') as f:
             f.write(textwrap.dedent(bar))

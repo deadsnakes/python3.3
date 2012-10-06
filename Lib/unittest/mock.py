@@ -39,6 +39,9 @@ if 'java' in sys.platform:
 
 FILTER_DIR = True
 
+# Workaround for issue #12370
+# Without this, the __class__ properties wouldn't be set correctly
+_safe_super = super
 
 def _is_instance_mock(obj):
     # can't use isinstance on Mock objects because they override __class__
@@ -397,7 +400,7 @@ class NonCallableMock(Base):
         if kwargs:
             self.configure_mock(**kwargs)
 
-        super(NonCallableMock, self).__init__(
+        _safe_super(NonCallableMock, self).__init__(
             spec, wraps, name, spec_set, parent,
             _spec_state
         )
@@ -507,6 +510,8 @@ class NonCallableMock(Base):
         self.method_calls = _CallList()
 
         for child in self._mock_children.values():
+            if isinstance(child, _SpecState):
+                continue
             child.reset_mock()
 
         ret = self._mock_return_value
@@ -661,6 +666,7 @@ class NonCallableMock(Base):
                 # but not method calls
                 _check_and_set_parent(self, value, None, name)
                 setattr(type(self), name, value)
+                self._mock_children[name] = value
         elif name == '__class__':
             self._spec_class = value
             return
@@ -820,7 +826,7 @@ class CallableMixin(Base):
                  _spec_state=None, _new_name='', _new_parent=None, **kwargs):
         self.__dict__['_mock_return_value'] = return_value
 
-        super(CallableMixin, self).__init__(
+        _safe_super(CallableMixin, self).__init__(
             spec, wraps, name, spec_set, parent,
             _spec_state, _new_name, _new_parent, **kwargs
         )
@@ -996,6 +1002,7 @@ def _is_started(patcher):
 class _patch(object):
 
     attribute_name = None
+    _active_patches = set()
 
     def __init__(
             self, getter, attribute, new, spec, create,
@@ -1264,8 +1271,18 @@ class _patch(object):
             if _is_started(patcher):
                 patcher.__exit__(*exc_info)
 
-    start = __enter__
-    stop = __exit__
+
+    def start(self):
+        """Activate a patch, returning any created mock."""
+        result = self.__enter__()
+        self._active_patches.add(self)
+        return result
+
+
+    def stop(self):
+        """Stop an active patch."""
+        self._active_patches.discard(self)
+        return self.__exit__()
 
 
 
@@ -1556,9 +1573,16 @@ def _clear_dict(in_dict):
             del in_dict[key]
 
 
+def _patch_stopall():
+    """Stop all active patches."""
+    for patch in list(_patch._active_patches):
+        patch.stop()
+
+
 patch.object = _patch_object
 patch.dict = _patch_dict
 patch.multiple = _patch_multiple
+patch.stopall = _patch_stopall
 patch.TEST_PREFIX = 'test'
 
 magic_methods = (
@@ -1690,7 +1714,7 @@ def _set_return_value(mock, method, name):
 
 class MagicMixin(object):
     def __init__(self, *args, **kw):
-        super(MagicMixin, self).__init__(*args, **kw)
+        _safe_super(MagicMixin, self).__init__(*args, **kw)
         self._mock_set_magics()
 
 
