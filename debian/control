@@ -176,7 +176,7 @@ Depends:
  python3.3-gdbm (>= ${binary:Version}),
  python3.3-tk-dbg (>= ${binary:Version}),
  python3.3-gdbm-dbg (>= ${binary:Version}),
- ${shlibs:Depends}, ${misc:Depends}
+ ${misc:Depends}
 XB-Python-Version: 3.3
 Description: Interactive high-level object-oriented language (version 3.3)
  Version 3.3 of the high-level, interactive object oriented language,
