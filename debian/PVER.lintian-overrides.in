@@ -9,6 +9,6 @@
 
 @PVER@ binary: binary-without-manpage usr/bin/2to3-@VER@
 
-# venv script interpreters are fine
-@PVER@ binary: unusual-interpreter ./usr/lib/@PVER@/venv/scripts/*
-@PVER@ binary: interpreter-not-absolute ./usr/lib/@PVER@/venv/scripts/*
+# venv script interpreters are fine like that
+@PVER@ binary: unusual-interpreter
+@PVER@ binary: interpreter-not-absolute
