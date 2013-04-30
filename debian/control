@@ -158,7 +158,7 @@ Description: GNU dbm database support for Python (version 3.3 debug extension)
  GNU dbm database module for Python (version 3.3). Install this if you want to
  create or read GNU dbm database files with Python.
  .
- This package contains the extensions built for the python debug interpreter.
+ This package contains the extensions built for the Python debug interpreter.
 
 
 Package: python3.3-complete
