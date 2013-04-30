@@ -1120,6 +1120,7 @@
  _PyList_DebugMallocStats@Base @VER@
  _PyList_Extend@Base @VER@
  _PyLong_AsByteArray@Base @VER@
+ _PyLong_AsInt@Base 3.3.1
  _PyLong_AsTime_t@Base @VER@
  _PyLong_Copy@Base @VER@
  _PyLong_DigitValue@Base @VER@
@@ -1129,7 +1130,9 @@
  _PyLong_FormatWriter@Base @VER@
  _PyLong_Frexp@Base @VER@
  _PyLong_FromByteArray@Base @VER@
+ _PyLong_FromGid@Base 3.3.1
  _PyLong_FromTime_t@Base @VER@
+ _PyLong_FromUid@Base 3.3.1
  _PyLong_Init@Base @VER@
  _PyLong_New@Base @VER@
  _PyLong_NumBits@Base @VER@
@@ -1316,6 +1319,7 @@
  _Py_FreeCharPArray@Base @VER@
  _Py_FunctionDef@Base @VER@
  _Py_GeneratorExp@Base @VER@
+ _Py_Gid_Converter@Base 3.3.1
  _Py_Global@Base @VER@
  _Py_HashBytes@Base @VER@
  _Py_HashDouble@Base @VER@
@@ -1358,6 +1362,7 @@
  _Py_TrueStruct@Base @VER@
  _Py_Try@Base @VER@
  _Py_Tuple@Base @VER@
+ _Py_Uid_Converter@Base 3.3.1
  _Py_UnaryOp@Base @VER@
  _Py_VaBuildValue_SizeT@Base @VER@
  _Py_While@Base @VER@
@@ -1435,6 +1440,7 @@
  _Py_meta_grammar@Base @VER@
  _Py_newbitset@Base @VER@
  _Py_newgrammar@Base @VER@
+ _Py_normalize_encoding@Base 3.3.1
  _Py_parse_inf_or_nan@Base @VER@
  _Py_pgen@Base @VER@
  _Py_samebitset@Base @VER@
