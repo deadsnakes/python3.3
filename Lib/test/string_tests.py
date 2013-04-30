@@ -5,6 +5,7 @@ Common tests shared by test_str, test_unicode, test_userstring and test_string.
 import unittest, string, sys, struct
 from test import support
 from collections import UserList
+import _testcapi
 
 class Sequence:
     def __init__(self, seq='wxyz'): self.seq = seq
@@ -19,7 +20,7 @@ class BadSeq2(Sequence):
     def __init__(self): self.seq = ['a', 'b', 'c']
     def __len__(self): return 8
 
-class BaseTest(unittest.TestCase):
+class BaseTest:
     # These tests are for buffers of values (bytes) and not
     # specific to character interpretation, used for bytes objects
     # and various string implementations
@@ -1205,6 +1206,19 @@ class MixinStrUnicodeUserStringTest:
         # Outrageously large width or precision should raise ValueError.
         self.checkraises(ValueError, '%%%df' % (2**64), '__mod__', (3.2))
         self.checkraises(ValueError, '%%.%df' % (2**64), '__mod__', (3.2))
+
+        self.checkraises(OverflowError, '%*s', '__mod__',
+                         (_testcapi.PY_SSIZE_T_MAX + 1, ''))
+        self.checkraises(OverflowError, '%.*f', '__mod__',
+                         (_testcapi.INT_MAX + 1, 1. / 7))
+        # Issue 15989
+        self.checkraises(OverflowError, '%*s', '__mod__',
+                         (1 << (_testcapi.PY_SSIZE_T_MAX.bit_length() + 1), ''))
+        self.checkraises(OverflowError, '%.*f', '__mod__',
+                         (_testcapi.UINT_MAX + 1, 1. / 7))
+
+        class X(object): pass
+        self.checkraises(TypeError, 'abc', '__mod__', X())
 
     def test_floatformatting(self):
         # float formatting

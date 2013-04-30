@@ -1358,16 +1358,21 @@ static set_main_loader(PyObject *d, const char *filename, const char *loader_nam
 {
     PyInterpreterState *interp;
     PyThreadState *tstate;
-    PyObject *loader_type, *loader;
+    PyObject *filename_obj, *loader_type, *loader;
     int result = 0;
+
+    filename_obj = PyUnicode_DecodeFSDefault(filename);
+    if (filename_obj == NULL)
+        return -1;
     /* Get current thread state and interpreter pointer */
     tstate = PyThreadState_GET();
     interp = tstate->interp;
     loader_type = PyObject_GetAttrString(interp->importlib, loader_name);
     if (loader_type == NULL) {
+        Py_DECREF(filename_obj);
         return -1;
     }
-    loader = PyObject_CallFunction(loader_type, "ss", "__main__", filename);
+    loader = PyObject_CallFunction(loader_type, "sN", "__main__", filename_obj);
     Py_DECREF(loader_type);
     if (loader == NULL) {
         return -1;
@@ -1385,25 +1390,26 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
 {
     PyObject *m, *d, *v;
     const char *ext;
-    int set_file_name = 0, ret;
+    int set_file_name = 0, ret = -1;
     size_t len;
 
     m = PyImport_AddModule("__main__");
     if (m == NULL)
         return -1;
+    Py_INCREF(m);
     d = PyModule_GetDict(m);
     if (PyDict_GetItemString(d, "__file__") == NULL) {
         PyObject *f;
         f = PyUnicode_DecodeFSDefault(filename);
         if (f == NULL)
-            return -1;
+            goto done;
         if (PyDict_SetItemString(d, "__file__", f) < 0) {
             Py_DECREF(f);
-            return -1;
+            goto done;
         }
         if (PyDict_SetItemString(d, "__cached__", Py_None) < 0) {
             Py_DECREF(f);
-            return -1;
+            goto done;
         }
         set_file_name = 1;
         Py_DECREF(f);
@@ -1417,7 +1423,6 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
             fclose(fp);
         if ((pyc_fp = fopen(filename, "rb")) == NULL) {
             fprintf(stderr, "python: Can't reopen .pyc file\n");
-            ret = -1;
             goto done;
         }
         /* Turn on optimization if a .pyo file is given */
@@ -1446,7 +1451,6 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
     flush_io();
     if (v == NULL) {
         PyErr_Print();
-        ret = -1;
         goto done;
     }
     Py_DECREF(v);
@@ -1454,6 +1458,7 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
   done:
     if (set_file_name && PyDict_DelItemString(d, "__file__"))
         PyErr_Clear();
+    Py_DECREF(m);
     return ret;
 }
 

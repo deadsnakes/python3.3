@@ -1265,14 +1265,13 @@ wrap_strftime(PyObject *object, PyObject *format, PyObject *timetuple,
         assert(ptoappend != NULL);
         assert(ntoappend > 0);
         while (usednew + ntoappend > totalnew) {
-            size_t bigger = totalnew << 1;
-            if ((bigger >> 1) != totalnew) { /* overflow */
+            if (totalnew > (PY_SSIZE_T_MAX >> 1)) { /* overflow */
                 PyErr_NoMemory();
                 goto Done;
             }
-            if (_PyBytes_Resize(&newfmt, bigger) < 0)
+            totalnew <<= 1;
+            if (_PyBytes_Resize(&newfmt, totalnew) < 0)
                 goto Done;
-            totalnew = bigger;
             pnew = PyBytes_AsString(newfmt) + usednew;
         }
         memcpy(pnew, ptoappend, ntoappend);
@@ -3599,7 +3598,7 @@ time_isoformat(PyDateTime_Time *self, PyObject *unused)
 {
     char buf[100];
     PyObject *result;
-    int us = TIME_GET_MICROSECOND(self);;
+    int us = TIME_GET_MICROSECOND(self);
 
     if (us)
         result = PyUnicode_FromFormat("%02d:%02d:%02d.%06d",

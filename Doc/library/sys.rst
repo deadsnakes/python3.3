@@ -215,21 +215,6 @@ always available.
    a traceback object (see the Reference Manual) which encapsulates the call
    stack at the point where the exception originally occurred.
 
-   .. warning::
-
-      Assigning the *traceback* return value to a local variable in a function
-      that is handling an exception will cause a circular reference.  Since most
-      functions don't need access to the traceback, the best solution is to use
-      something like ``exctype, value = sys.exc_info()[:2]`` to extract only the
-      exception type and value.  If you do need the traceback, make sure to
-      delete it after use (best done with a :keyword:`try`
-      ... :keyword:`finally` statement) or to call :func:`exc_info` in a
-      function that does not itself handle an exception.
-
-      Such cycles are normally automatically reclaimed when garbage collection
-      is enabled and they become unreachable, but it remains more efficient to
-      avoid creating cycles.
-
 
 .. data:: exec_prefix
 
@@ -613,29 +598,7 @@ always available.
    :term:`struct sequence`  :data:`sys.version_info` may be used for a more
    human-friendly encoding of the same information.
 
-   The ``hexversion`` is a 32-bit number with the following layout:
-
-   +-------------------------+------------------------------------------------+
-   | Bits (big endian order) | Meaning                                        |
-   +=========================+================================================+
-   | :const:`1-8`            |  ``PY_MAJOR_VERSION``  (the ``2`` in           |
-   |                         |  ``2.1.0a3``)                                  |
-   +-------------------------+------------------------------------------------+
-   | :const:`9-16`           |  ``PY_MINOR_VERSION``  (the ``1`` in           |
-   |                         |  ``2.1.0a3``)                                  |
-   +-------------------------+------------------------------------------------+
-   | :const:`17-24`          |  ``PY_MICRO_VERSION``  (the ``0`` in           |
-   |                         |  ``2.1.0a3``)                                  |
-   +-------------------------+------------------------------------------------+
-   | :const:`25-28`          |  ``PY_RELEASE_LEVEL``  (``0xA`` for alpha,     |
-   |                         |  ``0xB`` for beta, ``0xC`` for release         |
-   |                         |  candidate and ``0xF`` for final)              |
-   +-------------------------+------------------------------------------------+
-   | :const:`29-32`          |  ``PY_RELEASE_SERIAL``  (the ``3`` in          |
-   |                         |  ``2.1.0a3``, zero for final releases)         |
-   +-------------------------+------------------------------------------------+
-
-   Thus ``2.1.0a3`` is hexversion ``0x020100a3``.
+   More details of ``hexversion`` can be found at :ref:`apiabiversion`
 
 
 .. data:: implementation
@@ -783,7 +746,9 @@ always available.
    current directory first.  Notice that the script directory is inserted *before*
    the entries inserted as a result of :envvar:`PYTHONPATH`.
 
-   A program is free to modify this list for its own purposes.
+   A program is free to modify this list for its own purposes.  Only strings
+   and bytes should be added to :data:`sys.path`; all other data types are
+   ignored during import.
 
 
    .. seealso::
@@ -805,11 +770,14 @@ always available.
     A dictionary acting as a cache for :term:`finder` objects. The keys are
     paths that have been passed to :data:`sys.path_hooks` and the values are
     the finders that are found. If a path is a valid file system path but no
-    explicit finder is found on :data:`sys.path_hooks` then ``None`` is
-    stored to represent the implicit default finder should be used. If the path
-    is not an existing path then :class:`imp.NullImporter` is set.
+    finder is found on :data:`sys.path_hooks` then ``None`` is
+    stored.
 
     Originally specified in :pep:`302`.
+
+    .. versionchanged:: 3.3
+       ``None`` is stored instead of :class:`imp.NullImporter` when no finder
+       is found.
 
 
 .. data:: platform
@@ -831,7 +799,7 @@ always available.
    For other systems, the values are:
 
    ================ ===========================
-   System           :data:`platform` value
+   System           ``platform`` value
    ================ ===========================
    Linux            ``'linux'``
    Windows          ``'win32'``

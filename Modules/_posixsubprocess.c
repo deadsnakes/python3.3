@@ -176,17 +176,11 @@ _close_fds_by_brute_force(int start_fd, int end_fd, PyObject *py_fds_to_keep)
  * This structure is very old and stable: It will not change unless the kernel
  * chooses to break compatibility with all existing binaries.  Highly Unlikely.
  */
-struct linux_dirent {
-#if defined(__x86_64__) && defined(__ILP32__)
-   /* Support the wacky x32 ABI (fake 32-bit userspace speaking to x86_64
-    * kernel interfaces) - https://sites.google.com/site/x32abi/ */
+struct linux_dirent64 {
    unsigned long long d_ino;
-   unsigned long long d_off;
-#else
-   unsigned long  d_ino;        /* Inode number */
-   unsigned long  d_off;        /* Offset to next linux_dirent */
-#endif
+   long long d_off;
    unsigned short d_reclen;     /* Length of this linux_dirent */
+   unsigned char  d_type;
    char           d_name[256];  /* Filename (null-terminated) */
 };
 
@@ -228,16 +222,16 @@ _close_open_fd_range_safe(int start_fd, int end_fd, PyObject* py_fds_to_keep)
         _close_fds_by_brute_force(start_fd, end_fd, py_fds_to_keep);
         return;
     } else {
-        char buffer[sizeof(struct linux_dirent)];
+        char buffer[sizeof(struct linux_dirent64)];
         int bytes;
-        while ((bytes = syscall(SYS_getdents, fd_dir_fd,
-                                (struct linux_dirent *)buffer,
+        while ((bytes = syscall(SYS_getdents64, fd_dir_fd,
+                                (struct linux_dirent64 *)buffer,
                                 sizeof(buffer))) > 0) {
-            struct linux_dirent *entry;
+            struct linux_dirent64 *entry;
             int offset;
             for (offset = 0; offset < bytes; offset += entry->d_reclen) {
                 int fd;
-                entry = (struct linux_dirent *)(buffer + offset);
+                entry = (struct linux_dirent64 *)(buffer + offset);
                 if ((fd = _pos_int_from_ascii(entry->d_name)) < 0)
                     continue;  /* Not a number. */
                 if (fd != fd_dir_fd && fd >= start_fd && fd < end_fd &&
@@ -356,7 +350,7 @@ child_exec(char *const exec_array[],
            PyObject *preexec_fn,
            PyObject *preexec_fn_args_tuple)
 {
-    int i, saved_errno, unused;
+    int i, saved_errno, unused, reached_preexec = 0;
     PyObject *result;
     const char* err_msg = "";
     /* Buffer large enough to hold a hex integer.  We can't malloc. */
@@ -440,6 +434,7 @@ child_exec(char *const exec_array[],
         POSIX_CALL(setsid());
 #endif
 
+    reached_preexec = 1;
     if (preexec_fn != Py_None && preexec_fn_args_tuple) {
         /* This is where the user has asked us to deadlock their program. */
         result = PyObject_Call(preexec_fn, preexec_fn_args_tuple, NULL);
@@ -489,6 +484,10 @@ error:
         }
         unused = write(errpipe_write, cur, hex_errno + sizeof(hex_errno) - cur);
         unused = write(errpipe_write, ":", 1);
+        if (!reached_preexec) {
+            /* Indicate to the parent that the error happened before exec(). */
+            unused = write(errpipe_write, "noexec", 6);
+        }
         /* We can't call strerror(saved_errno).  It is not async signal safe.
          * The parent process will look the error message up. */
     } else {

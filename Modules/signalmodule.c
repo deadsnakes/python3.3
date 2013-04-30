@@ -4,6 +4,9 @@
 /* XXX Signals should be recorded per thread, now we have thread state. */
 
 #include "Python.h"
+#ifndef MS_WINDOWS
+#include "posixmodule.h"
+#endif
 
 #ifdef MS_WINDOWS
 #include <Windows.h>
@@ -427,7 +430,7 @@ signal_set_wakeup_fd(PyObject *self, PyObject *args)
         return NULL;
     }
 #endif
-    if (fd != -1 && fstat(fd, &buf) != 0) {
+    if (fd != -1 && (!_PyVerify_fd(fd) || fstat(fd, &buf) != 0)) {
         PyErr_SetString(PyExc_ValueError, "invalid fd");
         return NULL;
     }
@@ -728,7 +731,7 @@ fill_siginfo(siginfo_t *si)
     PyStructSequence_SET_ITEM(result, 1, PyLong_FromLong((long)(si->si_code)));
     PyStructSequence_SET_ITEM(result, 2, PyLong_FromLong((long)(si->si_errno)));
     PyStructSequence_SET_ITEM(result, 3, PyLong_FromPid(si->si_pid));
-    PyStructSequence_SET_ITEM(result, 4, PyLong_FromLong((long)(si->si_uid)));
+    PyStructSequence_SET_ITEM(result, 4, _PyLong_FromUid(si->si_uid));
     PyStructSequence_SET_ITEM(result, 5,
                                 PyLong_FromLong((long)(si->si_status)));
     PyStructSequence_SET_ITEM(result, 6, PyLong_FromLong(si->si_band));
@@ -1367,9 +1370,8 @@ PyErr_SetInterrupt(void)
 void
 PyOS_InitInterrupts(void)
 {
-    PyObject *m = PyInit_signal();
+    PyObject *m = PyImport_ImportModule("signal");
     if (m) {
-        _PyImport_FixupBuiltin(m, "signal");
         Py_DECREF(m);
     }
 }
@@ -1394,9 +1396,25 @@ PyOS_InterruptOccurred(void)
     return 0;
 }
 
+static void
+_clear_pending_signals(void)
+{
+    int i;
+    if (!is_tripped)
+        return;
+    is_tripped = 0;
+    for (i = 1; i < NSIG; ++i) {
+        Handlers[i].tripped = 0;
+    }
+}
+
 void
 PyOS_AfterFork(void)
 {
+    /* Clear the signal flags after forking so that they aren't handled
+     * in both processes if they came in just before the fork() but before
+     * the interpreter had an opportunity to call the handlers.  issue9535. */
+    _clear_pending_signals();
 #ifdef WITH_THREAD
     /* PyThread_ReInitTLS() must be called early, to make sure that the TLS API
      * can be called safely. */
