@@ -731,8 +731,8 @@ class NonCallableMock(Base):
         arguments."""
         self = _mock_self
         if not self.call_count == 1:
-            msg = ("Expected to be called once. Called %s times." %
-                   self.call_count)
+            msg = ("Expected '%s' to be called once. Called %s times." %
+                   (self._mock_name or 'mock', self.call_count))
             raise AssertionError(msg)
         return self.assert_called_with(*args, **kwargs)
 
@@ -947,9 +947,6 @@ class Mock(CallableMixin, NonCallableMock):
       If `side_effect` is an iterable then each call to the mock will return
       the next value from the iterable. If any of the members of the iterable
       are exceptions they will be raised instead of returned.
-
-      If `side_effect` is an iterable then each call to the mock will return
-      the next value from the iterable.
 
     * `return_value`: The value returned when the mock is called. By default
       this is a new Mock (created on first access). See the
@@ -1417,7 +1414,7 @@ def patch(
     you pass in `create=True`, and the attribute doesn't exist, patch will
     create the attribute for you when the patched function is called, and
     delete it again afterwards. This is useful for writing tests against
-    attributes that your production code creates at runtime. It is off by by
+    attributes that your production code creates at runtime. It is off by
     default because it can be dangerous. With it switched on you can write
     passing tests against APIs that don't actually exist!
 

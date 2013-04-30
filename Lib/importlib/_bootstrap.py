@@ -419,8 +419,8 @@ def cache_from_source(path, debug_override=None):
     .pyc/.pyo file calculated as if the .py file were imported.  The extension
     will be .pyc unless sys.flags.optimize is non-zero, then it will be .pyo.
 
-    If debug_override is not None, then it must be a boolean and is taken as
-    the value of bool(sys.flags.optimize) instead.
+    If debug_override is not None, then it must be a boolean and is used in
+    place of sys.flags.optimize.
 
     If sys.implementation.cache_tag is None then NotImplementedError is raised.
 
@@ -1048,6 +1048,9 @@ class SourceFileLoader(FileLoader, SourceLoader):
             mode = _os.stat(source_path).st_mode
         except OSError:
             mode = 0o666
+        # We always ensure write access so we can update cached files
+        # later even when the source files are read-only on Windows (#6074)
+        mode |= 0o200
         return self.set_data(bytecode_path, data, _mode=mode)
 
     def set_data(self, path, data, *, _mode=0o666):
@@ -1066,17 +1069,17 @@ class SourceFileLoader(FileLoader, SourceLoader):
             except FileExistsError:
                 # Probably another Python process already created the dir.
                 continue
-            except PermissionError:
-                # If can't get proper access, then just forget about writing
-                # the data.
+            except OSError as exc:
+                # Could be a permission error, read-only filesystem: just forget
+                # about writing the data.
+                _verbose_message('could not create {!r}: {!r}', parent, exc)
                 return
         try:
             _write_atomic(path, data, _mode)
             _verbose_message('created {!r}', path)
-        except (PermissionError, FileExistsError):
-            # Don't worry if you can't write bytecode or someone is writing
-            # it at the same time.
-            pass
+        except OSError as exc:
+            # Same as above: just don't write the bytecode.
+            _verbose_message('could not create {!r}: {!r}', path, exc)
 
 
 class SourcelessFileLoader(FileLoader, _LoaderBasics):
@@ -1156,7 +1159,7 @@ class _NamespacePath:
     """Represents a namespace package's path.  It uses the module name
     to find its parent module, and from there it looks up the parent's
     __path__.  When this changes, the module's own path is recomputed,
-    using path_finder.  For top-leve modules, the parent module's path
+    using path_finder.  For top-level modules, the parent module's path
     is sys.path."""
 
     def __init__(self, name, path, path_finder):
@@ -1278,6 +1281,8 @@ class PathFinder:
         #  the list of paths that will become its __path__
         namespace_path = []
         for entry in path:
+            if not isinstance(entry, (str, bytes)):
+                continue
             finder = cls._path_importer_cache(entry)
             if finder is not None:
                 if hasattr(finder, 'find_loader'):
@@ -1325,8 +1330,8 @@ class FileFinder:
 
     def __init__(self, path, *details):
         """Initialize with the path to search on and a variable number of
-        3-tuples containing the loader, file suffixes the loader recognizes,
-        and a boolean of whether the loader handles packages."""
+        2-tuples containing the loader and the file suffixes the loader
+        recognizes."""
         loaders = []
         for loader, suffixes in details:
             loaders.extend((suffix, loader) for suffix in suffixes)
@@ -1390,8 +1395,9 @@ class FileFinder:
         path = self.path
         try:
             contents = _os.listdir(path)
-        except FileNotFoundError:
-            # Directory has been removed since last import
+        except (FileNotFoundError, PermissionError, NotADirectoryError):
+            # Directory has either been removed, turned into a file, or made
+            # unreadable.
             contents = []
         # We store two cached versions, to handle runtime changes of the
         # PYTHONCASEOK environment variable.
@@ -1602,19 +1608,19 @@ def _handle_fromlist(module, fromlist, import_):
                 fromlist.extend(module.__all__)
         for x in fromlist:
             if not hasattr(module, x):
+                from_name = '{}.{}'.format(module.__name__, x)
                 try:
-                    _call_with_frames_removed(import_,
-                                      '{}.{}'.format(module.__name__, x))
+                    _call_with_frames_removed(import_, from_name)
                 except ImportError as exc:
                     # Backwards-compatibility dictates we ignore failed
                     # imports triggered by fromlist for modules that don't
                     # exist.
                     # TODO(brett): In Python 3.4, have import raise
                     #   ModuleNotFound and catch that.
-                    if hasattr(exc, '_not_found') and exc._not_found:
-                        pass
-                    else:
-                        raise
+                    if getattr(exc, '_not_found', False):
+                        if exc.name == from_name:
+                            continue
+                    raise
     return module
 
 
@@ -1669,7 +1675,11 @@ def __import__(name, globals=None, locals=None, fromlist=(), level=0):
         elif not name:
             return module
         else:
+            # Figure out where to slice the module's name up to the first dot
+            # in 'name'.
             cut_off = len(name) - len(name.partition('.')[0])
+            # Slice end needs to be positive to alleviate need to special-case
+            # when ``'.' not in name``.
             return sys.modules[module.__name__[:len(module.__name__)-cut_off]]
     else:
         return _handle_fromlist(module, fromlist, _gcd_import)
@@ -1693,9 +1703,14 @@ def _setup(sys_module, _imp_module):
     else:
         BYTECODE_SUFFIXES = DEBUG_BYTECODE_SUFFIXES
 
-    for module in (_imp, sys):
-        if not hasattr(module, '__loader__'):
-            module.__loader__ = BuiltinImporter
+    module_type = type(sys)
+    for name, module in sys.modules.items():
+        if isinstance(module, module_type):
+            if not hasattr(module, '__loader__'):
+                if name in sys.builtin_module_names:
+                    module.__loader__ = BuiltinImporter
+                elif _imp.is_frozen(name):
+                    module.__loader__ = FrozenImporter
 
     self_module = sys.modules[__name__]
     for builtin_name in ('_io', '_warnings', 'builtins', 'marshal'):

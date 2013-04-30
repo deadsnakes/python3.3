@@ -75,7 +75,7 @@ There's also a subclass for secure connections:
    :class:`ssl.SSLContext` object which allows bundling SSL configuration
    options, certificates and private keys into a single (potentially long-lived)
    structure. Note that the *keyfile*/*certfile* parameters are mutually exclusive with *ssl_context*,
-   a :class:`ValueError` is thrown if *keyfile*/*certfile* is provided along with *ssl_context*.
+   a :class:`ValueError` is raised if *keyfile*/*certfile* is provided along with *ssl_context*.
 
    .. versionchanged:: 3.3
       *ssl_context* parameter added.
@@ -185,9 +185,10 @@ An :class:`IMAP4` instance has the following methods:
 
       data = authobject(response)
 
-   It will be called to process server continuation responses. It should return
-   ``data`` that will be encoded and sent to server. It should return ``None`` if
-   the client abort response ``*`` should be sent instead.
+   It will be called to process server continuation responses; the *response*
+   argument it is passed will be ``bytes``.  It should return ``bytes`` *data*
+   that will be base64 encoded and sent to the server.  It should return
+   ``None`` if the client abort response ``*`` should be sent instead.
 
 
 .. method:: IMAP4.check()

@@ -42,7 +42,8 @@ Compact encoding::
 Pretty printing::
 
     >>> import json
-    >>> print(json.dumps({'4': 5, '6': 7}, sort_keys=True, indent=4))
+    >>> print(json.dumps({'4': 5, '6': 7}, sort_keys=True,
+    ...                  indent=4, separators=(',', ': ')))
     {
         "4": 5,
         "6": 7
@@ -82,6 +83,7 @@ Extending :class:`JSONEncoder`::
     ...     def default(self, obj):
     ...         if isinstance(obj, complex):
     ...             return [obj.real, obj.imag]
+    ...         # Let the base class default method raise the TypeError
     ...         return json.JSONEncoder.default(self, obj)
     ...
     >>> json.dumps(2 + 1j, cls=ComplexEncoder)
@@ -101,7 +103,7 @@ Using json.tool from the shell to validate and pretty-print::
         "json": "obj"
     }
     $ echo '{1.2:3.4}' | python -mjson.tool
-    Expecting property name enclosed in double quotes: line 1 column 1 (char 1)
+    Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
 
 .. highlight:: python3
 
@@ -116,7 +118,10 @@ Using json.tool from the shell to validate and pretty-print::
 Basic Usage
 -----------
 
-.. function:: dump(obj, fp, skipkeys=False, ensure_ascii=True, check_circular=True, allow_nan=True, cls=None, indent=None, separators=None, default=None, **kw)
+.. function:: dump(obj, fp, skipkeys=False, ensure_ascii=True, \
+                   check_circular=True, allow_nan=True, cls=None, \
+                   indent=None, separators=None, default=None, \
+                   sort_keys=False, **kw)
 
    Serialize *obj* as a JSON formatted stream to *fp* (a ``.write()``-supporting
    :term:`file-like object`).
@@ -146,8 +151,17 @@ Basic Usage
    object members will be pretty-printed with that indent level.  An indent level
    of 0, negative, or ``""`` will only insert newlines.  ``None`` (the default)
    selects the most compact representation. Using a positive integer indent
-   indents that many spaces per level.  If *indent* is a string (such at '\t'),
+   indents that many spaces per level.  If *indent* is a string (such as ``"\t"``),
    that string is used to indent each level.
+
+   .. versionchanged:: 3.2
+      Allow strings for *indent* in addition to integers.
+
+   .. note::
+
+      Since the default item separator is ``', '``,  the output might include
+      trailing whitespace when *indent* is specified.  You can use
+      ``separators=(',', ': ')`` to avoid this.
 
    If *separators* is an ``(item_separator, dict_separator)`` tuple, then it
    will be used instead of the default ``(', ', ': ')`` separators.  ``(',',
@@ -156,12 +170,18 @@ Basic Usage
    *default(obj)* is a function that should return a serializable version of
    *obj* or raise :exc:`TypeError`.  The default simply raises :exc:`TypeError`.
 
+   If *sort_keys* is ``True`` (default: ``False``), then the output of
+   dictionaries will be sorted by key.
+
    To use a custom :class:`JSONEncoder` subclass (e.g. one that overrides the
    :meth:`default` method to serialize additional types), specify it with the
    *cls* kwarg; otherwise :class:`JSONEncoder` is used.
 
 
-.. function:: dumps(obj, skipkeys=False, ensure_ascii=True, check_circular=True, allow_nan=True, cls=None, indent=None, separators=None, default=None, **kw)
+.. function:: dumps(obj, skipkeys=False, ensure_ascii=True, \
+                    check_circular=True, allow_nan=True, cls=None, \
+                    indent=None, separators=None, default=None, \
+                    sort_keys=False, **kw)
 
    Serialize *obj* to a JSON formatted :class:`str`.  The arguments have the
    same meaning as in :func:`dump`.
@@ -176,7 +196,7 @@ Basic Usage
 
       Keys in key/value pairs of JSON are always of the type :class:`str`. When
       a dictionary is converted into JSON, all the keys of the dictionary are
-      coerced to strings. As a result of this, if a dictionary is convered
+      coerced to strings. As a result of this, if a dictionary is converted
       into JSON and then back into a dictionary, the dictionary may not equal
       the original one. That is, ``loads(dumps(x)) != x`` if x has non-string
       keys.
@@ -371,10 +391,21 @@ Encoders and Decoders
    will be sorted by key; this is useful for regression tests to ensure that
    JSON serializations can be compared on a day-to-day basis.
 
-   If *indent* is a non-negative integer (it is ``None`` by default), then JSON
-   array elements and object members will be pretty-printed with that indent
-   level.  An indent level of 0 will only insert newlines.  ``None`` is the most
-   compact representation.
+   If *indent* is a non-negative integer or string, then JSON array elements and
+   object members will be pretty-printed with that indent level.  An indent level
+   of 0, negative, or ``""`` will only insert newlines.  ``None`` (the default)
+   selects the most compact representation. Using a positive integer indent
+   indents that many spaces per level.  If *indent* is a string (such as ``"\t"``),
+   that string is used to indent each level.
+
+   .. versionchanged:: 3.2
+      Allow strings for *indent* in addition to integers.
+
+   .. note::
+
+      Since the default item separator is ``', '``,  the output might include
+      trailing whitespace when *indent* is specified.  You can use
+      ``separators=(',', ': ')`` to avoid this.
 
    If specified, *separators* should be an ``(item_separator, key_separator)``
    tuple.  The default is ``(', ', ': ')``.  To get the most compact JSON
@@ -401,6 +432,7 @@ Encoders and Decoders
                 pass
             else:
                 return list(iterable)
+            # Let the base class default method raise the TypeError
             return json.JSONEncoder.default(self, o)
 
 

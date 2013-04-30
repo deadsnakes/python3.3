@@ -24,6 +24,9 @@ try:
 except struct.error:
     have_long_long = False
 
+sizeof_wchar = array.array('u').itemsize
+
+
 class ArraySubclass(array.array):
     pass
 
@@ -31,7 +34,6 @@ class ArraySubclassWithKwargs(array.array):
     def __init__(self, typecode, newarg=None):
         array.array.__init__(self)
 
-tests = [] # list to accumulate all tests
 typecodes = "ubBhHiIlLfd"
 if have_long_long:
     typecodes += 'qQ'
@@ -44,7 +46,6 @@ class BadConstructorTest(unittest.TestCase):
         self.assertRaises(TypeError, array.array, 'xx')
         self.assertRaises(ValueError, array.array, 'x')
 
-tests.append(BadConstructorTest)
 
 # Machine format codes.
 #
@@ -174,10 +175,7 @@ class ArrayReconstructorTest(unittest.TestCase):
                 msg="{0!r} != {1!r}; testcase={2!r}".format(a, b, testcase))
 
 
-tests.append(ArrayReconstructorTest)
-
-
-class BaseTest(unittest.TestCase):
+class BaseTest:
     # Required class attributes (provided by subclasses
     # typecode: the typecode to test
     # example: an initializer usable in the constructor for this type
@@ -1036,7 +1034,7 @@ class StringTest(BaseTest):
         a = array.array(self.typecode, self.example)
         self.assertRaises(TypeError, a.__setitem__, 0, self.example[:2])
 
-class UnicodeTest(StringTest):
+class UnicodeTest(StringTest, unittest.TestCase):
     typecode = 'u'
     example = '\x01\u263a\x00\ufeff'
     smallerexample = '\x01\u263a\x00\ufefe'
@@ -1045,16 +1043,6 @@ class UnicodeTest(StringTest):
     minitemsize = 2
 
     def test_unicode(self):
-        try:
-            import ctypes
-            sizeof_wchar = ctypes.sizeof(ctypes.c_wchar)
-        except ImportError:
-            import sys
-            if sys.platform == 'win32':
-                sizeof_wchar = 2
-            else:
-                sizeof_wchar = 4
-
         self.assertRaises(TypeError, array.array, 'b', 'foo')
 
         a = array.array('u', '\xa0\xc2\u1234')
@@ -1074,7 +1062,17 @@ class UnicodeTest(StringTest):
 
         self.assertRaises(TypeError, a.fromunicode)
 
-tests.append(UnicodeTest)
+    def test_issue17223(self):
+        # this used to crash
+        if sizeof_wchar == 4:
+            # U+FFFFFFFF is an invalid code point in Unicode 6.0
+            invalid_str = b'\xff\xff\xff\xff'
+        else:
+            # PyUnicode_FromUnicode() cannot fail with 16-bit wchar_t
+            self.skipTest("specific to 32-bit wchar_t")
+        a = array.array('u', invalid_str)
+        self.assertRaises(ValueError, a.tounicode)
+        self.assertRaises(ValueError, str, a)
 
 class NumberTest(BaseTest):
 
@@ -1216,57 +1214,47 @@ class UnsignedNumberTest(NumberTest):
         )
 
 
-class ByteTest(SignedNumberTest):
+class ByteTest(SignedNumberTest, unittest.TestCase):
     typecode = 'b'
     minitemsize = 1
-tests.append(ByteTest)
 
-class UnsignedByteTest(UnsignedNumberTest):
+class UnsignedByteTest(UnsignedNumberTest, unittest.TestCase):
     typecode = 'B'
     minitemsize = 1
-tests.append(UnsignedByteTest)
 
-class ShortTest(SignedNumberTest):
+class ShortTest(SignedNumberTest, unittest.TestCase):
     typecode = 'h'
     minitemsize = 2
-tests.append(ShortTest)
 
-class UnsignedShortTest(UnsignedNumberTest):
+class UnsignedShortTest(UnsignedNumberTest, unittest.TestCase):
     typecode = 'H'
     minitemsize = 2
-tests.append(UnsignedShortTest)
 
-class IntTest(SignedNumberTest):
+class IntTest(SignedNumberTest, unittest.TestCase):
     typecode = 'i'
     minitemsize = 2
-tests.append(IntTest)
 
-class UnsignedIntTest(UnsignedNumberTest):
+class UnsignedIntTest(UnsignedNumberTest, unittest.TestCase):
     typecode = 'I'
     minitemsize = 2
-tests.append(UnsignedIntTest)
 
-class LongTest(SignedNumberTest):
+class LongTest(SignedNumberTest, unittest.TestCase):
     typecode = 'l'
     minitemsize = 4
-tests.append(LongTest)
 
-class UnsignedLongTest(UnsignedNumberTest):
+class UnsignedLongTest(UnsignedNumberTest, unittest.TestCase):
     typecode = 'L'
     minitemsize = 4
-tests.append(UnsignedLongTest)
 
 @unittest.skipIf(not have_long_long, 'need long long support')
-class LongLongTest(SignedNumberTest):
+class LongLongTest(SignedNumberTest, unittest.TestCase):
     typecode = 'q'
     minitemsize = 8
-tests.append(LongLongTest)
 
 @unittest.skipIf(not have_long_long, 'need long long support')
-class UnsignedLongLongTest(UnsignedNumberTest):
+class UnsignedLongLongTest(UnsignedNumberTest, unittest.TestCase):
     typecode = 'Q'
     minitemsize = 8
-tests.append(UnsignedLongLongTest)
 
 class FPTest(NumberTest):
     example = [-42.0, 0, 42, 1e5, -1e10]
@@ -1293,12 +1281,11 @@ class FPTest(NumberTest):
             b.byteswap()
             self.assertEqual(a, b)
 
-class FloatTest(FPTest):
+class FloatTest(FPTest, unittest.TestCase):
     typecode = 'f'
     minitemsize = 4
-tests.append(FloatTest)
 
-class DoubleTest(FPTest):
+class DoubleTest(FPTest, unittest.TestCase):
     typecode = 'd'
     minitemsize = 8
 
@@ -1319,22 +1306,6 @@ class DoubleTest(FPTest):
         else:
             self.fail("Array of size > maxsize created - MemoryError expected")
 
-tests.append(DoubleTest)
-
-def test_main(verbose=None):
-    import sys
-
-    support.run_unittest(*tests)
-
-    # verify reference counting
-    if verbose and hasattr(sys, "gettotalrefcount"):
-        import gc
-        counts = [None] * 5
-        for i in range(len(counts)):
-            support.run_unittest(*tests)
-            gc.collect()
-            counts[i] = sys.gettotalrefcount()
-        print(counts)
 
 if __name__ == "__main__":
-    test_main(verbose=True)
+    unittest.main()

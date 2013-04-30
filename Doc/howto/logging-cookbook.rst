@@ -1036,7 +1036,7 @@ arbitrary object as a message format string, and that the logging package will
 call ``str()`` on that object to get the actual format string. Consider the
 following two classes::
 
-    class BraceMessage(object):
+    class BraceMessage:
         def __init__(self, fmt, *args, **kwargs):
             self.fmt = fmt
             self.args = args
@@ -1045,7 +1045,7 @@ following two classes::
         def __str__(self):
             return self.fmt.format(*self.args, **self.kwargs)
 
-    class DollarMessage(object):
+    class DollarMessage:
         def __init__(self, fmt, **kwargs):
             self.fmt = fmt
             self.kwargs = kwargs
@@ -1372,7 +1372,7 @@ works::
     import random
     import time
 
-    class MyHandler(object):
+    class MyHandler:
         """
         A simple handler for logging events. It runs in the listener process and
         dispatches events to loggers based on the name in the received record,
@@ -1614,4 +1614,86 @@ The formatted message *will* be encoded using UTF-8 encoding by
 ``SysLogHandler``. If you follow the above rules, you should be able to produce
 RFC 5424-compliant messages. If you don't, logging may not complain, but your
 messages will not be RFC 5424-compliant, and your syslog daemon may complain.
+
+
+Implementing structured logging
+-------------------------------
+
+Although most logging messages are intended for reading by humans, and thus not
+readily machine-parseable, there might be cirumstances where you want to output
+messages in a structured format which *is* capable of being parsed by a program
+(without needing complex regular expressions to parse the log message). This is
+straightforward to achieve using the logging package. There are a number of
+ways in which this could be achieved, but the following is a simple approach
+which uses JSON to serialise the event in a machine-parseable manner::
+
+    import json
+    import logging
+
+    class StructuredMessage(object):
+        def __init__(self, message, **kwargs):
+            self.message = message
+            self.kwargs = kwargs
+
+        def __str__(self):
+            return '%s >>> %s' % (self.message, json.dumps(self.kwargs))
+
+    _ = StructuredMessage   # optional, to improve readability
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    logging.info(_('message 1', foo='bar', bar='baz', num=123, fnum=123.456))
+
+If the above script is run, it prints::
+
+    message 1 >>> {"fnum": 123.456, "num": 123, "bar": "baz", "foo": "bar"}
+
+Note that the order of items might be different according to the version of
+Python used.
+
+If you need more specialised processing, you can use a custom JSON encoder,
+as in the following complete example::
+
+    from __future__ import unicode_literals
+
+    import json
+    import logging
+
+    # This next bit is to ensure the script runs unchanged on 2.x and 3.x
+    try:
+        unicode
+    except NameError:
+        unicode = str
+
+    class Encoder(json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, set):
+                return tuple(o)
+            elif isinstance(o, unicode):
+                return o.encode('unicode_escape').decode('ascii')
+            return super(Encoder, self).default(o)
+
+    class StructuredMessage(object):
+        def __init__(self, message, **kwargs):
+            self.message = message
+            self.kwargs = kwargs
+
+        def __str__(self):
+            s = Encoder().encode(self.kwargs)
+            return '%s >>> %s' % (self.message, s)
+
+    _ = StructuredMessage   # optional, to improve readability
+
+    def main():
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
+        logging.info(_('message 1', set_value=set([1, 2, 3]), snowman='\u2603'))
+
+    if __name__ == '__main__':
+        main()
+
+When the above script is run, it prints::
+
+    message 1 >>> {"snowman": "\u2603", "set_value": [1, 2, 3]}
+
+Note that the order of items might be different according to the version of
+Python used.
 

@@ -2,7 +2,7 @@
 setlocal
 
 set SVNROOT=http://svn.python.org/projects
-if "%PYTHON%" EQU "" set PYTHON=..\pcbuild\python
+if "%PYTHON%" EQU "" set PYTHON=py -2
 if "%HTMLHELP%" EQU "" set HTMLHELP=%ProgramFiles%\HTML Help Workshop\hhc.exe
 if "%DISTVERSION%" EQU "" for /f "usebackq" %%v in (`%PYTHON% tools/sphinxext/patchlevel.py`) do set DISTVERSION=%%v
 
@@ -37,7 +37,7 @@ goto end
 svn co %SVNROOT%/external/Sphinx-1.0.7/sphinx tools/sphinx
 svn co %SVNROOT%/external/docutils-0.6/docutils tools/docutils
 svn co %SVNROOT%/external/Jinja-2.3.1/jinja2 tools/jinja2
-svn co %SVNROOT%/external/Pygments-1.3.1/pygments tools/pygments
+svn co %SVNROOT%/external/Pygments-1.5dev-20120930/pygments tools/pygments
 goto end
 
 :update

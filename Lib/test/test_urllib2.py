@@ -64,6 +64,9 @@ class TrivialTests(unittest.TestCase):
         for string, list in tests:
             self.assertEqual(urllib.request.parse_http_list(string), list)
 
+    def test_URLError_reasonstr(self):
+        err = urllib.error.URLError('reason')
+        self.assertIn(err.reason, str(err))
 
 def test_request_headers_dict():
     """
@@ -1288,7 +1291,7 @@ class HandlerTests(unittest.TestCase):
                               )
 
     def test_basic_and_digest_auth_handlers(self):
-        # HTTPDigestAuthHandler threw an exception if it couldn't handle a 40*
+        # HTTPDigestAuthHandler raised an exception if it couldn't handle a 40*
         # response (http://python.org/sf/1479302), where it should instead
         # return None to allow another handler (especially
         # HTTPBasicAuthHandler) to handle the response.
@@ -1495,18 +1498,40 @@ class RequestTests(unittest.TestCase):
         req = Request(url)
         self.assertEqual(req.get_full_url(), url)
 
-def test_HTTPError_interface():
-    """
-    Issue 13211 reveals that HTTPError didn't implement the URLError
-    interface even though HTTPError is a subclass of URLError.
+    def test_HTTPError_interface(self):
+        """
+        Issue 13211 reveals that HTTPError didn't implement the URLError
+        interface even though HTTPError is a subclass of URLError.
 
-    >>> msg = 'something bad happened'
-    >>> url = code = hdrs = fp = None
-    >>> err = urllib.error.HTTPError(url, code, msg, hdrs, fp)
-    >>> assert hasattr(err, 'reason')
-    >>> err.reason
-    'something bad happened'
-    """
+        >>> msg = 'something bad happened'
+        >>> url = code = fp = None
+        >>> hdrs = 'Content-Length: 42'
+        >>> err = urllib.error.HTTPError(url, code, msg, hdrs, fp)
+        >>> assert hasattr(err, 'reason')
+        >>> err.reason
+        'something bad happened'
+        >>> assert hasattr(err, 'hdrs')
+        >>> err.hdrs
+        'Content-Length: 42'
+        >>> expected_errmsg = 'HTTP Error %s: %s' % (err.code, err.msg)
+        >>> assert str(err) == expected_errmsg
+        """
+
+    def test_HTTPError_interface_call(self):
+        """
+        Issue 15701 - HTTPError interface has info method available from URLError
+        """
+        err = urllib.request.HTTPError(msg="something bad happened", url=None,
+                                code=None, hdrs='Content-Length:42', fp=None)
+        self.assertTrue(hasattr(err, 'reason'))
+        assert hasattr(err, 'reason')
+        assert hasattr(err, 'info')
+        assert callable(err.info)
+        try:
+            err.info()
+        except AttributeError:
+            self.fail('err.info call failed.')
+        self.assertEqual(err.info(), "Content-Length:42")
 
 def test_main(verbose=None):
     from test import test_urllib2

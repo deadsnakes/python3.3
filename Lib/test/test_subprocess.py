@@ -1,4 +1,5 @@
 import unittest
+from test import script_helper
 from test import support
 import subprocess
 import sys
@@ -67,7 +68,47 @@ class BaseTestCase(unittest.TestCase):
         self.assertEqual(actual, expected, msg)
 
 
+class PopenTestException(Exception):
+    pass
+
+
+class PopenExecuteChildRaises(subprocess.Popen):
+    """Popen subclass for testing cleanup of subprocess.PIPE filehandles when
+    _execute_child fails.
+    """
+    def _execute_child(self, *args, **kwargs):
+        raise PopenTestException("Forced Exception for Test")
+
+
 class ProcessTestCase(BaseTestCase):
+
+    def test_io_buffered_by_default(self):
+        p = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
+        try:
+            self.assertIsInstance(p.stdin, io.BufferedIOBase)
+            self.assertIsInstance(p.stdout, io.BufferedIOBase)
+            self.assertIsInstance(p.stderr, io.BufferedIOBase)
+        finally:
+            p.stdin.close()
+            p.stdout.close()
+            p.stderr.close()
+            p.wait()
+
+    def test_io_unbuffered_works(self):
+        p = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, bufsize=0)
+        try:
+            self.assertIsInstance(p.stdin, io.RawIOBase)
+            self.assertIsInstance(p.stdout, io.RawIOBase)
+            self.assertIsInstance(p.stderr, io.RawIOBase)
+        finally:
+            p.stdin.close()
+            p.stdout.close()
+            p.stderr.close()
+            p.wait()
 
     def test_call_seq(self):
         # call() function with sequence argument
@@ -171,16 +212,27 @@ class ProcessTestCase(BaseTestCase):
         self.assertEqual(p.stdin, None)
 
     def test_stdout_none(self):
-        # .stdout is None when not redirected
-        p = subprocess.Popen([sys.executable, "-c",
-                             'print("    this bit of output is from a '
-                             'test of stdout in a different '
-                             'process ...")'],
-                             stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.addCleanup(p.stdin.close)
+        # .stdout is None when not redirected, and the child's stdout will
+        # be inherited from the parent.  In order to test this we run a
+        # subprocess in a subprocess:
+        # this_test
+        #   \-- subprocess created by this test (parent)
+        #          \-- subprocess created by the parent subprocess (child)
+        # The parent doesn't specify stdout, so the child will use the
+        # parent's stdout.  This test checks that the message printed by the
+        # child goes to the parent stdout.  The parent also checks that the
+        # child's stdout is None.  See #11963.
+        code = ('import sys; from subprocess import Popen, PIPE;'
+                'p = Popen([sys.executable, "-c", "print(\'test_stdout_none\')"],'
+                '          stdin=PIPE, stderr=PIPE);'
+                'p.wait(); assert p.stdout is None;')
+        p = subprocess.Popen([sys.executable, "-c", code],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(p.stdout.close)
         self.addCleanup(p.stderr.close)
-        p.wait()
-        self.assertEqual(p.stdout, None)
+        out, err = p.communicate()
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(out.rstrip(), b'test_stdout_none')
 
     def test_stderr_none(self):
         # .stderr is None when not redirected
@@ -191,15 +243,137 @@ class ProcessTestCase(BaseTestCase):
         p.wait()
         self.assertEqual(p.stderr, None)
 
+    def _assert_python(self, pre_args, **kwargs):
+        # We include sys.exit() to prevent the test runner from hanging
+        # whenever python is found.
+        args = pre_args + ["import sys; sys.exit(47)"]
+        p = subprocess.Popen(args, **kwargs)
+        p.wait()
+        self.assertEqual(47, p.returncode)
+
+    def test_executable(self):
+        # Check that the executable argument works.
+        #
+        # On Unix (non-Mac and non-Windows), Python looks at args[0] to
+        # determine where its standard library is, so we need the directory
+        # of args[0] to be valid for the Popen() call to Python to succeed.
+        # See also issue #16170 and issue #7774.
+        doesnotexist = os.path.join(os.path.dirname(sys.executable),
+                                    "doesnotexist")
+        self._assert_python([doesnotexist, "-c"], executable=sys.executable)
+
+    def test_executable_takes_precedence(self):
+        # Check that the executable argument takes precedence over args[0].
+        #
+        # Verify first that the call succeeds without the executable arg.
+        pre_args = [sys.executable, "-c"]
+        self._assert_python(pre_args)
+        self.assertRaises(FileNotFoundError, self._assert_python, pre_args,
+                          executable="doesnotexist")
+
+    @unittest.skipIf(mswindows, "executable argument replaces shell")
+    def test_executable_replaces_shell(self):
+        # Check that the executable argument replaces the default shell
+        # when shell=True.
+        self._assert_python([], executable=sys.executable, shell=True)
+
+    # For use in the test_cwd* tests below.
+    def _normalize_cwd(self, cwd):
+        # Normalize an expected cwd (for Tru64 support).
+        # We can't use os.path.realpath since it doesn't expand Tru64 {memb}
+        # strings.  See bug #1063571.
+        original_cwd = os.getcwd()
+        os.chdir(cwd)
+        cwd = os.getcwd()
+        os.chdir(original_cwd)
+        return cwd
+
+    # For use in the test_cwd* tests below.
+    def _split_python_path(self):
+        # Return normalized (python_dir, python_base).
+        python_path = os.path.realpath(sys.executable)
+        return os.path.split(python_path)
+
+    # For use in the test_cwd* tests below.
+    def _assert_cwd(self, expected_cwd, python_arg, **kwargs):
+        # Invoke Python via Popen, and assert that (1) the call succeeds,
+        # and that (2) the current working directory of the child process
+        # matches *expected_cwd*.
+        p = subprocess.Popen([python_arg, "-c",
+                              "import os, sys; "
+                              "sys.stdout.write(os.getcwd()); "
+                              "sys.exit(47)"],
+                              stdout=subprocess.PIPE,
+                              **kwargs)
+        self.addCleanup(p.stdout.close)
+        p.wait()
+        self.assertEqual(47, p.returncode)
+        normcase = os.path.normcase
+        self.assertEqual(normcase(expected_cwd),
+                         normcase(p.stdout.read().decode("utf-8")))
+
+    def test_cwd(self):
+        # Check that cwd changes the cwd for the child process.
+        temp_dir = tempfile.gettempdir()
+        temp_dir = self._normalize_cwd(temp_dir)
+        self._assert_cwd(temp_dir, sys.executable, cwd=temp_dir)
+
+    @unittest.skipIf(mswindows, "pending resolution of issue #15533")
+    def test_cwd_with_relative_arg(self):
+        # Check that Popen looks for args[0] relative to cwd if args[0]
+        # is relative.
+        python_dir, python_base = self._split_python_path()
+        rel_python = os.path.join(os.curdir, python_base)
+        with support.temp_cwd() as wrong_dir:
+            # Before calling with the correct cwd, confirm that the call fails
+            # without cwd and with the wrong cwd.
+            self.assertRaises(FileNotFoundError, subprocess.Popen,
+                              [rel_python])
+            self.assertRaises(FileNotFoundError, subprocess.Popen,
+                              [rel_python], cwd=wrong_dir)
+            python_dir = self._normalize_cwd(python_dir)
+            self._assert_cwd(python_dir, rel_python, cwd=python_dir)
+
+    @unittest.skipIf(mswindows, "pending resolution of issue #15533")
+    def test_cwd_with_relative_executable(self):
+        # Check that Popen looks for executable relative to cwd if executable
+        # is relative (and that executable takes precedence over args[0]).
+        python_dir, python_base = self._split_python_path()
+        rel_python = os.path.join(os.curdir, python_base)
+        doesntexist = "somethingyoudonthave"
+        with support.temp_cwd() as wrong_dir:
+            # Before calling with the correct cwd, confirm that the call fails
+            # without cwd and with the wrong cwd.
+            self.assertRaises(FileNotFoundError, subprocess.Popen,
+                              [doesntexist], executable=rel_python)
+            self.assertRaises(FileNotFoundError, subprocess.Popen,
+                              [doesntexist], executable=rel_python,
+                              cwd=wrong_dir)
+            python_dir = self._normalize_cwd(python_dir)
+            self._assert_cwd(python_dir, doesntexist, executable=rel_python,
+                             cwd=python_dir)
+
+    def test_cwd_with_absolute_arg(self):
+        # Check that Popen can find the executable when the cwd is wrong
+        # if args[0] is an absolute path.
+        python_dir, python_base = self._split_python_path()
+        abs_python = os.path.join(python_dir, python_base)
+        rel_python = os.path.join(os.curdir, python_base)
+        with script_helper.temp_dir() as wrong_dir:
+            # Before calling with an absolute path, confirm that using a
+            # relative path fails.
+            self.assertRaises(FileNotFoundError, subprocess.Popen,
+                              [rel_python], cwd=wrong_dir)
+            wrong_dir = self._normalize_cwd(wrong_dir)
+            self._assert_cwd(wrong_dir, abs_python, cwd=wrong_dir)
+
     @unittest.skipIf(sys.base_prefix != sys.prefix,
                      'Test is not venv-compatible')
     def test_executable_with_cwd(self):
-        python_dir = os.path.dirname(os.path.realpath(sys.executable))
-        p = subprocess.Popen(["somethingyoudonthave", "-c",
-                              "import sys; sys.exit(47)"],
-                             executable=sys.executable, cwd=python_dir)
-        p.wait()
-        self.assertEqual(p.returncode, 47)
+        python_dir, python_base = self._split_python_path()
+        python_dir = self._normalize_cwd(python_dir)
+        self._assert_cwd(python_dir, "somethingyoudonthave",
+                         executable=sys.executable, cwd=python_dir)
 
     @unittest.skipIf(sys.base_prefix != sys.prefix,
                      'Test is not venv-compatible')
@@ -208,11 +382,7 @@ class ProcessTestCase(BaseTestCase):
     def test_executable_without_cwd(self):
         # For a normal installation, it should work without 'cwd'
         # argument.  For test runs in the build directory, see #7774.
-        p = subprocess.Popen(["somethingyoudonthave", "-c",
-                              "import sys; sys.exit(47)"],
-                             executable=sys.executable)
-        p.wait()
-        self.assertEqual(p.returncode, 47)
+        self._assert_cwd('', "somethingyoudonthave", executable=sys.executable)
 
     def test_stdin_pipe(self):
         # stdin redirection
@@ -340,9 +510,22 @@ class ProcessTestCase(BaseTestCase):
 
     def test_stdout_filedes_of_stdout(self):
         # stdout is set to 1 (#1531862).
-        cmd = r"import sys, os; sys.exit(os.write(sys.stdout.fileno(), b'.\n'))"
-        rc = subprocess.call([sys.executable, "-c", cmd], stdout=1)
-        self.assertEqual(rc, 2)
+        # To avoid printing the text on stdout, we do something similar to
+        # test_stdout_none (see above).  The parent subprocess calls the child
+        # subprocess passing stdout=1, and this test uses stdout=PIPE in
+        # order to capture and check the output of the parent. See #11963.
+        code = ('import sys, subprocess; '
+                'rc = subprocess.call([sys.executable, "-c", '
+                '    "import os, sys; sys.exit(os.write(sys.stdout.fileno(), '
+                     'b\'test with stdout=1\'))"], stdout=1); '
+                'assert rc == 18')
+        p = subprocess.Popen([sys.executable, "-c", code],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(p.stdout.close)
+        self.addCleanup(p.stderr.close)
+        out, err = p.communicate()
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(out.rstrip(), b'test with stdout=1')
 
     def test_stdout_devnull(self):
         p = subprocess.Popen([sys.executable, "-c",
@@ -368,24 +551,6 @@ class ProcessTestCase(BaseTestCase):
                               stdin=subprocess.DEVNULL)
         p.wait()
         self.assertEqual(p.stdin, None)
-
-    def test_cwd(self):
-        tmpdir = tempfile.gettempdir()
-        # We cannot use os.path.realpath to canonicalize the path,
-        # since it doesn't expand Tru64 {memb} strings. See bug 1063571.
-        cwd = os.getcwd()
-        os.chdir(tmpdir)
-        tmpdir = os.getcwd()
-        os.chdir(cwd)
-        p = subprocess.Popen([sys.executable, "-c",
-                              'import sys,os;'
-                              'sys.stdout.write(os.getcwd())'],
-                             stdout=subprocess.PIPE,
-                             cwd=tmpdir)
-        self.addCleanup(p.stdout.close)
-        normcase = os.path.normcase
-        self.assertEqual(normcase(p.stdout.read().decode("utf-8")),
-                         normcase(tmpdir))
 
     def test_env(self):
         newenv = os.environ.copy()
@@ -894,6 +1059,27 @@ class ProcessTestCase(BaseTestCase):
                 process.communicate()
 
 
+    # This test is Linux-ish specific for simplicity to at least have
+    # some coverage.  It is not a platform specific bug.
+    @unittest.skipUnless(os.path.isdir('/proc/%d/fd' % os.getpid()),
+                         "Linux specific")
+    def test_failed_child_execute_fd_leak(self):
+        """Test for the fork() failure fd leak reported in issue16327."""
+        fd_directory = '/proc/%d/fd' % os.getpid()
+        fds_before_popen = os.listdir(fd_directory)
+        with self.assertRaises(PopenTestException):
+            PopenExecuteChildRaises(
+                    [sys.executable, '-c', 'pass'], stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # NOTE: This test doesn't verify that the real _execute_child
+        # does not close the file descriptors itself on the way out
+        # during an exception.  Code inspection has confirmed that.
+
+        fds_after_exception = os.listdir(fd_directory)
+        self.assertEqual(fds_before_popen, fds_after_exception)
+
+
 # context manager
 class _SuppressCoreFiles(object):
     """Try to prevent core files from being created."""
@@ -937,26 +1123,59 @@ class _SuppressCoreFiles(object):
 @unittest.skipIf(mswindows, "POSIX specific tests")
 class POSIXProcessTestCase(BaseTestCase):
 
-    def test_exceptions(self):
-        nonexistent_dir = "/_this/pa.th/does/not/exist"
+    def setUp(self):
+        super().setUp()
+        self._nonexistent_dir = "/_this/pa.th/does/not/exist"
+
+    def _get_chdir_exception(self):
         try:
-            os.chdir(nonexistent_dir)
+            os.chdir(self._nonexistent_dir)
         except OSError as e:
             # This avoids hard coding the errno value or the OS perror()
             # string and instead capture the exception that we want to see
             # below for comparison.
             desired_exception = e
-            desired_exception.strerror += ': ' + repr(sys.executable)
+            desired_exception.strerror += ': ' + repr(self._nonexistent_dir)
         else:
             self.fail("chdir to nonexistant directory %s succeeded." %
-                      nonexistent_dir)
+                      self._nonexistent_dir)
+        return desired_exception
 
-        # Error in the child re-raised in the parent.
+    def test_exception_cwd(self):
+        """Test error in the child raised in the parent for a bad cwd."""
+        desired_exception = self._get_chdir_exception()
         try:
             p = subprocess.Popen([sys.executable, "-c", ""],
-                                 cwd=nonexistent_dir)
+                                 cwd=self._nonexistent_dir)
         except OSError as e:
             # Test that the child process chdir failure actually makes
+            # it up to the parent process as the correct exception.
+            self.assertEqual(desired_exception.errno, e.errno)
+            self.assertEqual(desired_exception.strerror, e.strerror)
+        else:
+            self.fail("Expected OSError: %s" % desired_exception)
+
+    def test_exception_bad_executable(self):
+        """Test error in the child raised in the parent for a bad executable."""
+        desired_exception = self._get_chdir_exception()
+        try:
+            p = subprocess.Popen([sys.executable, "-c", ""],
+                                 executable=self._nonexistent_dir)
+        except OSError as e:
+            # Test that the child process exec failure actually makes
+            # it up to the parent process as the correct exception.
+            self.assertEqual(desired_exception.errno, e.errno)
+            self.assertEqual(desired_exception.strerror, e.strerror)
+        else:
+            self.fail("Expected OSError: %s" % desired_exception)
+
+    def test_exception_bad_args_0(self):
+        """Test error in the child raised in the parent for a bad args[0]."""
+        desired_exception = self._get_chdir_exception()
+        try:
+            p = subprocess.Popen([self._nonexistent_dir, "-c", ""])
+        except OSError as e:
+            # Test that the child process exec failure actually makes
             # it up to the parent process as the correct exception.
             self.assertEqual(desired_exception.errno, e.errno)
             self.assertEqual(desired_exception.strerror, e.strerror)
@@ -1021,6 +1240,43 @@ class POSIXProcessTestCase(BaseTestCase):
         else:
             self.fail("Exception raised by preexec_fn did not make it "
                       "to the parent process.")
+
+    class _TestExecuteChildPopen(subprocess.Popen):
+        """Used to test behavior at the end of _execute_child."""
+        def __init__(self, testcase, *args, **kwargs):
+            self._testcase = testcase
+            subprocess.Popen.__init__(self, *args, **kwargs)
+
+        def _execute_child(self, *args, **kwargs):
+            try:
+                subprocess.Popen._execute_child(self, *args, **kwargs)
+            finally:
+                # Open a bunch of file descriptors and verify that
+                # none of them are the same as the ones the Popen
+                # instance is using for stdin/stdout/stderr.
+                devzero_fds = [os.open("/dev/zero", os.O_RDONLY)
+                               for _ in range(8)]
+                try:
+                    for fd in devzero_fds:
+                        self._testcase.assertNotIn(
+                                fd, (self.stdin.fileno(), self.stdout.fileno(),
+                                     self.stderr.fileno()),
+                                msg="At least one fd was closed early.")
+                finally:
+                    map(os.close, devzero_fds)
+
+    @unittest.skipIf(not os.path.exists("/dev/zero"), "/dev/zero required.")
+    def test_preexec_errpipe_does_not_double_close_pipes(self):
+        """Issue16140: Don't double close pipes on preexec error."""
+
+        def raise_it():
+            raise RuntimeError("force the _execute_child() errpipe_data path.")
+
+        with self.assertRaises(RuntimeError):
+            self._TestExecuteChildPopen(
+                        self, [sys.executable, "-c", "pass"],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, preexec_fn=raise_it)
 
     def test_preexec_gc_module_failure(self):
         # This tests the code that disables garbage collection if the child
@@ -1156,6 +1412,8 @@ class POSIXProcessTestCase(BaseTestCase):
         getattr(p, method)(*args)
         return p
 
+    @unittest.skipIf(sys.platform.startswith(('netbsd', 'openbsd')),
+                     "Due to known OS bug (issue #16762)")
     def _kill_dead_process(self, method, *args):
         # Do not inherit file handles from the parent.
         # It should fix failures on some platforms.
@@ -1950,14 +2208,11 @@ class ContextManagerTests(BaseTestCase):
             self.assertEqual(proc.returncode, 1)
 
     def test_invalid_args(self):
-        with self.assertRaises(EnvironmentError) as c:
+        with self.assertRaises(FileNotFoundError) as c:
             with subprocess.Popen(['nonexisting_i_hope'],
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE) as proc:
                 pass
-
-            if c.exception.errno != errno.ENOENT:  # ignore "no such file"
-                raise c.exception
 
 
 def test_main():
