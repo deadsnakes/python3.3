@@ -1,3 +1,9 @@
+python3.3 (3.3.1-1+oneiric1) oneiric; urgency=low
+
+  * Import from Lucid package.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 01 May 2013 13:02:38 +0200
+
 python3.3 (3.3.1-1+lucid1) lucid; urgency=low
 
   * Imported new upstream release Python 3.3.1.
