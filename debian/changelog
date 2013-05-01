@@ -1,3 +1,11 @@
+python3.3 (3.3.1-1+precise1) precise; urgency=low
+
+  * Import from Oneiric package.
+  * Remove unnecessary patch.
+  * Use dpkg buildflags for hardening compile time options.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 01 May 2013 13:56:50 +0200
+
 python3.3 (3.3.1-1+oneiric1) oneiric; urgency=low
 
   * Import from Lucid package.
