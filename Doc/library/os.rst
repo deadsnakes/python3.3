@@ -105,7 +105,7 @@ process and user.
 
 .. data:: environ
 
-   A mapping object representing the string environment. For example,
+   A :term:`mapping` object representing the string environment. For example,
    ``environ['HOME']`` is the pathname of your home directory (on some platforms),
    and is equivalent to ``getenv("HOME")`` in C.
 
@@ -145,7 +145,7 @@ process and user.
 
 .. data:: environb
 
-   Bytes version of :data:`environ`: a mapping object representing the
+   Bytes version of :data:`environ`: a :term:`mapping` object representing the
    environment as byte strings. :data:`environ` and :data:`environb` are
    synchronized (modify :data:`environb` updates :data:`environ`, and vice
    versa).
@@ -1171,7 +1171,7 @@ Querying the size of a terminal
    output) specifies which file descriptor should be queried.
 
    If the file descriptor is not connected to a terminal, an :exc:`OSError`
-   is thrown.
+   is raised.
 
    :func:`shutil.get_terminal_size` is the high-level function which
    should normally be used, ``os.get_terminal_size`` is the low-level
@@ -1555,18 +1555,21 @@ features:
       single: UNC paths; and os.makedirs()
 
    Recursive directory creation function.  Like :func:`mkdir`, but makes all
-   intermediate-level directories needed to contain the leaf directory.  If
-   the target directory with the same mode as specified already exists,
-   raises an :exc:`OSError` exception if *exist_ok* is False, otherwise no
-   exception is raised.  If the directory cannot be created in other cases,
-   raises an :exc:`OSError` exception.  The default *mode* is ``0o777`` (octal).
-   On some systems, *mode* is ignored.  Where it is used, the current umask
-   value is first masked out.
+   intermediate-level directories needed to contain the leaf directory.
+
+   The default *mode* is ``0o777`` (octal).  On some systems, *mode* is
+   ignored.  Where it is used, the current umask value is first masked out.
+
+   If *exists_ok* is ``False`` (the default), an :exc:`OSError` is raised if
+   the target directory already exists.  If *exists_ok* is ``True`` an
+   :exc:`OSError` is still raised if the umask-masked *mode* is different from
+   the existing mode, on systems where the mode is used.  :exc:`OSError` will
+   also be raised if the directory creation fails.
 
    .. note::
 
       :func:`makedirs` will become confused if the path elements to create
-      include :data:`pardir`.
+      include :data:`pardir` (eg. ".." on UNIX systems).
 
    This function handles UNC paths correctly.
 
@@ -1855,9 +1858,8 @@ features:
    :attr:`st_mtime`, :attr:`st_ctime`. More items may be added at the end by
    some implementations.
 
-   This function can support :ref:`specifying a file descriptor
-   <path_fd>`, :ref:`specifying a file descriptor <path_fd>` and :ref:`not
-   following symlinks <follow_symlinks>`.
+   This function can support :ref:`specifying a file descriptor <path_fd>` and
+   :ref:`not following symlinks <follow_symlinks>`.
 
    .. index:: module: stat
 
@@ -1943,7 +1945,7 @@ features:
    :mod:`os` module permit use of their *dir_fd* parameter.  Different platforms
    provide different functionality, and an option that might work on one might
    be unsupported on another.  For consistency's sakes, functions that support
-   *dir_fd* always allow specifying the parameter, but will throw an exception
+   *dir_fd* always allow specifying the parameter, but will raise an exception
    if the functionality is not actually available.
 
    To check whether a particular function permits use of its *dir_fd*
@@ -1984,7 +1986,7 @@ features:
    descriptor.  Different platforms provide different functionality, and an
    option that might work on one might be unsupported on another.  For
    consistency's sakes, functions that support *fd* always allow specifying
-   the parameter, but will throw an exception if the functionality is not
+   the parameter, but will raise an exception if the functionality is not
    actually available.
 
    To check whether a particular function permits specifying an open file
@@ -2005,7 +2007,7 @@ features:
    platforms provide different functionality, and an option that might work on
    one might be unsupported on another.  For consistency's sakes, functions that
    support *follow_symlinks* always allow specifying the parameter, but will
-   throw an exception if the functionality is not actually available.
+   raise an exception if the functionality is not actually available.
 
    To check whether a particular function permits use of its *follow_symlinks*
    parameter, use the ``in`` operator on ``supports_follow_symlinks``.  As an
@@ -2327,7 +2329,7 @@ These functions are all available on Linux only.
 .. data:: XATTR_SIZE_MAX
 
    The maximum size the value of an extended attribute can be. Currently, this
-   is 64 kilobytes on Linux.
+   is 64 KiB on Linux.
 
 
 .. data:: XATTR_CREATE
@@ -2923,7 +2925,7 @@ written in Python, such as a mail server's external command delivery program.
    with :const:`P_NOWAIT` return suitable process handles.
 
 
-.. function:: wait3([options])
+.. function:: wait3(options)
 
    Similar to :func:`waitpid`, except no process id argument is given and a
    3-element tuple containing the child's process id, exit status indication, and
@@ -3307,3 +3309,6 @@ Miscellaneous Functions
    though its exact quality depends on the OS implementation.  On a Unix-like
    system this will query /dev/urandom, and on Windows it will use CryptGenRandom.
    If a randomness source is not found, :exc:`NotImplementedError` will be raised.
+
+   For an easy-to-use interface to the random number generator
+   provided by your platform, please see :class:`random.SystemRandom`.

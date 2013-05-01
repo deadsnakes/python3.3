@@ -1,5 +1,6 @@
 # A test suite for pdb; not very comprehensive at the moment.
 
+import doctest
 import imp
 import pdb
 import sys
@@ -667,15 +668,45 @@ class PdbTestCase(unittest.TestCase):
             any('main.py(5)foo()->None' in l for l in stdout.splitlines()),
             'Fail to step into the caller after a return')
 
+    def test_issue13210(self):
+        # invoking "continue" on a non-main thread triggered an exception
+        # inside signal.signal
+
+        # raises SkipTest if python was built without threads
+        support.import_module('threading')
+
+        with open(support.TESTFN, 'wb') as f:
+            f.write(textwrap.dedent("""
+                import threading
+                import pdb
+
+                def start_pdb():
+                    pdb.Pdb().set_trace()
+                    x = 1
+                    y = 1
+
+                t = threading.Thread(target=start_pdb)
+                t.start()""").encode('ascii'))
+        cmd = [sys.executable, '-u', support.TESTFN]
+        proc = subprocess.Popen(cmd,
+            stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            )
+        self.addCleanup(proc.stdout.close)
+        stdout, stderr = proc.communicate(b'cont\n')
+        self.assertNotIn('Error', stdout.decode(),
+                         "Got an error running test script under PDB")
+
     def tearDown(self):
         support.unlink(support.TESTFN)
 
 
-def test_main():
+def load_tests(*args):
     from test import test_pdb
-    support.run_doctest(test_pdb, verbosity=True)
-    support.run_unittest(PdbTestCase)
+    suites = [unittest.makeSuite(PdbTestCase), doctest.DocTestSuite(test_pdb)]
+    return unittest.TestSuite(suites)
 
 
 if __name__ == '__main__':
-    test_main()
+    unittest.main()

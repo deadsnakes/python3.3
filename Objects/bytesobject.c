@@ -465,8 +465,9 @@ PyObject *PyBytes_DecodeEscape(const char *s,
                 break;
             }
             if (!errors || strcmp(errors, "strict") == 0) {
-                PyErr_SetString(PyExc_ValueError,
-                                "invalid \\x escape");
+                PyErr_Format(PyExc_ValueError,
+                             "invalid \\x escape at position %d",
+                             s - 2 - (end - len));
                 goto failed;
             }
             if (strcmp(errors, "replace") == 0) {
@@ -480,6 +481,10 @@ PyObject *PyBytes_DecodeEscape(const char *s,
                              errors);
                 goto failed;
             }
+            /* skip \x */
+            if (s < end && Py_ISXDIGIT(s[0]))
+                s++; /* and a hexdigit */
+            break;
         default:
             *p++ = '\\';
             s--;
@@ -2505,8 +2510,10 @@ bytes_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     const char *encoding = NULL;
     const char *errors = NULL;
     PyObject *new = NULL;
+    PyObject *func;
     Py_ssize_t size;
     static char *kwlist[] = {"source", "encoding", "errors", 0};
+    _Py_IDENTIFIER(__bytes__);
 
     if (type != &PyBytes_Type)
         return str_subtype_new(type, args, kwds);
@@ -2536,6 +2543,28 @@ bytes_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         assert(PyBytes_Check(new));
         return new;
     }
+
+    /* We'd like to call PyObject_Bytes here, but we need to check for an
+       integer argument before deferring to PyBytes_FromObject, something
+       PyObject_Bytes doesn't do. */
+    func = _PyObject_LookupSpecial(x, &PyId___bytes__);
+    if (func != NULL) {
+        new = PyObject_CallFunctionObjArgs(func, NULL);
+        Py_DECREF(func);
+        if (new == NULL)
+            return NULL;
+        if (!PyBytes_Check(new)) {
+            PyErr_Format(PyExc_TypeError,
+                         "__bytes__ returned non-bytes (type %.200s)",
+                         Py_TYPE(new)->tp_name);
+            Py_DECREF(new);
+            return NULL;
+        }
+        return new;
+    }
+    else if (PyErr_Occurred())
+        return NULL;
+
     /* Is it an integer? */
     size = PyNumber_AsSsize_t(x, PyExc_OverflowError);
     if (size == -1 && PyErr_Occurred()) {
@@ -2549,12 +2578,10 @@ bytes_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     }
     else {
         new = PyBytes_FromStringAndSize(NULL, size);
-        if (new == NULL) {
+        if (new == NULL)
             return NULL;
-        }
-        if (size > 0) {
+        if (size > 0)
             memset(((PyBytesObject*)new)->ob_sval, 0, size);
-        }
         return new;
     }
 
@@ -2564,7 +2591,8 @@ bytes_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
             "encoding or errors without a string argument");
         return NULL;
     }
-    return PyObject_Bytes(x);
+
+    return PyBytes_FromObject(x);
 }
 
 PyObject *
@@ -2804,8 +2832,7 @@ PyBytes_Concat(register PyObject **pv, register PyObject *w)
     if (*pv == NULL)
         return;
     if (w == NULL) {
-        Py_DECREF(*pv);
-        *pv = NULL;
+        Py_CLEAR(*pv);
         return;
     }
     v = bytes_concat(*pv, w);
@@ -2869,12 +2896,9 @@ void
 PyBytes_Fini(void)
 {
     int i;
-    for (i = 0; i < UCHAR_MAX + 1; i++) {
-        Py_XDECREF(characters[i]);
-        characters[i] = NULL;
-    }
-    Py_XDECREF(nullstring);
-    nullstring = NULL;
+    for (i = 0; i < UCHAR_MAX + 1; i++)
+        Py_CLEAR(characters[i]);
+    Py_CLEAR(nullstring);
 }
 
 /*********************** Bytes Iterator ****************************/

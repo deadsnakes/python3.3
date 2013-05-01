@@ -158,7 +158,7 @@ Compressing and decompressing data in memory
       In addition to being more CPU-intensive, compression with higher presets
       also requires much more memory (and produces output that needs more memory
       to decompress). With preset ``9`` for example, the overhead for an
-      :class:`LZMACompressor` object can be as high as 800MiB. For this reason,
+      :class:`LZMACompressor` object can be as high as 800 MiB. For this reason,
       it is generally best to stick with the default preset.
 
    The *filters* argument (if provided) should be a filter chain specifier.
@@ -302,8 +302,8 @@ entries in the dictionary representing the filter):
 
    * ``preset``: A compression preset to use as a source of default values for
      options that are not specified explicitly.
-   * ``dict_size``: Dictionary size in bytes. This should be between 4KiB and
-     1.5GiB (inclusive).
+   * ``dict_size``: Dictionary size in bytes. This should be between 4 KiB and
+     1.5 GiB (inclusive).
    * ``lc``: Number of literal context bits.
    * ``lp``: Number of literal position bits. The sum ``lc + lp`` must be at
      most 4.
@@ -335,15 +335,15 @@ Examples
 Reading in a compressed file::
 
    import lzma
-   with lzma.LZMAFile("file.xz") as f:
-      file_content = f.read()
+   with lzma.open("file.xz") as f:
+       file_content = f.read()
 
 Creating a compressed file::
 
    import lzma
    data = b"Insert Data Here"
-   with lzma.LZMAFile("file.xz", "w") as f:
-      f.write(data)
+   with lzma.open("file.xz", "w") as f:
+       f.write(data)
 
 Compressing data in memory::
 
@@ -367,7 +367,7 @@ Writing compressed data to an already-open file::
    import lzma
    with open("file.xz", "wb") as f:
        f.write(b"This data will not be compressed\n")
-       with lzma.LZMAFile(f, "w") as lzf:
+       with lzma.open(f, "w") as lzf:
            lzf.write(b"This *will* be compressed\n")
        f.write(b"Not compressed\n")
 
@@ -378,5 +378,5 @@ Creating a compressed file using a custom filter chain::
        {"id": lzma.FILTER_DELTA, "dist": 5},
        {"id": lzma.FILTER_LZMA2, "preset": 7 | lzma.PRESET_EXTREME},
    ]
-   with lzma.LZMAFile("file.xz", "w", filters=my_filters) as f:
+   with lzma.open("file.xz", "w", filters=my_filters) as f:
        f.write(b"blah blah blah")

@@ -29,7 +29,7 @@ Windows.
     Functionality within this package requires that the ``__main__`` module be
     importable by the children. This is covered in :ref:`multiprocessing-programming`
     however it is worth pointing out here. This means that some examples, such
-    as the :class:`multiprocessing.Pool` examples will not work in the
+    as the :class:`multiprocessing.pool.Pool` examples will not work in the
     interactive interpreter. For example::
 
         >>> from multiprocessing import Pool
@@ -279,7 +279,7 @@ For example::
        return x*x
 
    if __name__ == '__main__':
-       with Pool(processes=4) as pool         # start 4 worker processes
+       with Pool(processes=4) as pool:        # start 4 worker processes
            result = pool.apply_async(f, [10]) # evaluate "f(10)" asynchronously
            print(result.get(timeout=1))       # prints "100" unless your computer is *very* slow
            print(pool.map(f, range(10)))      # prints "[0, 1, 4,..., 81]"
@@ -295,7 +295,8 @@ The :mod:`multiprocessing` package mostly replicates the API of the
 :class:`Process` and exceptions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. class:: Process([group[, target[, name[, args[, kwargs]]]]], *, daemon=None)
+.. class:: Process(group=None, target=None, name=None, args=(), kwargs={}, \
+                   *, daemon=None)
 
    Process objects represent activity that is run in a separate process. The
    :class:`Process` class has equivalents of all the methods of
@@ -607,7 +608,6 @@ For an example of the usage of queues for interprocess communication see
       :exc:`queue.Empty` exception (*timeout* is ignored in that case).
 
    .. method:: get_nowait()
-               get_no_wait()
 
       Equivalent to ``get(False)``.
 
@@ -915,7 +915,7 @@ object -- see :ref:`multiprocessing-managers`.
 
 .. class:: Condition([lock])
 
-   A condition variable: a clone of :class:`threading.Condition`.
+   A condition variable: an alias for :class:`threading.Condition`.
 
    If *lock* is specified then it should be a :class:`Lock` or :class:`RLock`
    object from :mod:`multiprocessing`.
@@ -1147,7 +1147,7 @@ process::
 
        n = Value('i', 7)
        x = Value(c_double, 1.0/3.0, lock=False)
-       s = Array('c', 'hello world', lock=lock)
+       s = Array('c', b'hello world', lock=lock)
        A = Array(Point, [(1.875,-6.25), (-5.75,2.0), (2.375,9.5)], lock=lock)
 
        p = Process(target=modify, args=(n, x, s, A))
@@ -1637,7 +1637,7 @@ Process Pools
 One can create a pool of processes which will carry out tasks submitted to it
 with the :class:`Pool` class.
 
-.. class:: multiprocessing.Pool([processes[, initializer[, initargs[, maxtasksperchild]]]])
+.. class:: Pool([processes[, initializer[, initargs[, maxtasksperchild]]]])
 
    A process pool object which controls a pool of worker processes to which jobs
    can be submitted.  It supports asynchronous results with timeouts and

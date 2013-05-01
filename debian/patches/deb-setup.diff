@@ -2,7 +2,7 @@
 
 --- a/setup.py
 +++ b/setup.py
-@@ -455,12 +455,12 @@
+@@ -435,12 +435,12 @@
              os.unlink(tmpfile)
  
      def detect_modules(self):
@@ -21,7 +21,7 @@
          # only change this for cross builds for 3.3, issues on Mageia
          if cross_compiling:
              self.add_gcc_paths()
-@@ -692,7 +692,7 @@
+@@ -675,7 +675,7 @@
                  os.unlink(tmpfile)
          # Issue 7384: If readline is already linked against curses,
          # use the same library for the readline and curses modules.

@@ -288,13 +288,13 @@ strings, so we provide a new method::
 
        self = (Noddy *)type->tp_alloc(type, 0);
        if (self != NULL) {
-           self->first = PyString_FromString("");
+           self->first = PyUnicode_FromString("");
            if (self->first == NULL) {
                Py_DECREF(self);
                return NULL;
            }
 
-           self->last = PyString_FromString("");
+           self->last = PyUnicode_FromString("");
            if (self->last == NULL) {
                Py_DECREF(self);
                return NULL;
@@ -540,9 +540,9 @@ getting and setting the :attr:`first` attribute::
        return -1;
      }
 
-     if (! PyString_Check(value)) {
+     if (! PyUnicode_Check(value)) {
        PyErr_SetString(PyExc_TypeError,
-                       "The first attribute value must be a string");
+                       "The first attribute value must be a str");
        return -1;
      }
 
@@ -982,12 +982,12 @@ done.  This can be done using the :c:func:`PyErr_Fetch` and
    }
 
 
+.. index::
+   single: string; object representation
+   builtin: repr
+
 Object Presentation
 -------------------
-
-.. index::
-   builtin: repr
-   builtin: str
 
 In Python, there are two ways to generate a textual representation of an object:
 the :func:`repr` function, and the :func:`str` function.  (The :func:`print`
@@ -1005,8 +1005,8 @@ example::
    static PyObject *
    newdatatype_repr(newdatatypeobject * obj)
    {
-       return PyString_FromFormat("Repr-ified_newdatatype{{size:\%d}}",
-                                  obj->obj_UnderlyingDatatypePtr->size);
+       return PyUnicode_FromFormat("Repr-ified_newdatatype{{size:\%d}}",
+                                   obj->obj_UnderlyingDatatypePtr->size);
    }
 
 If no :attr:`tp_repr` handler is specified, the interpreter will supply a
@@ -1025,8 +1025,8 @@ Here is a simple example::
    static PyObject *
    newdatatype_str(newdatatypeobject * obj)
    {
-       return PyString_FromFormat("Stringified_newdatatype{{size:\%d}}",
-                                  obj->obj_UnderlyingDatatypePtr->size);
+       return PyUnicode_FromFormat("Stringified_newdatatype{{size:\%d}}",
+                                   obj->obj_UnderlyingDatatypePtr->size);
    }
 
 
@@ -1277,9 +1277,9 @@ that the slots are present and should be checked by the interpreter.  (The flag
 bit does not indicate that the slot values are non-*NULL*. The flag may be set
 to indicate the presence of a slot, but a slot may still be unfilled.) ::
 
-   PyNumberMethods   tp_as_number;
-   PySequenceMethods tp_as_sequence;
-   PyMappingMethods  tp_as_mapping;
+   PyNumberMethods   *tp_as_number;
+   PySequenceMethods *tp_as_sequence;
+   PyMappingMethods  *tp_as_mapping;
 
 If you wish your object to be able to act like a number, a sequence, or a
 mapping object, then you place the address of a structure that implements the C
@@ -1342,11 +1342,10 @@ Here is a desultory example of the implementation of the call function. ::
        if (!PyArg_ParseTuple(args, "sss:call", &arg1, &arg2, &arg3)) {
            return NULL;
        }
-       result = PyString_FromFormat(
+       result = PyUnicode_FromFormat(
            "Returning -- value: [\%d] arg1: [\%s] arg2: [\%s] arg3: [\%s]\n",
            obj->obj_UnderlyingDatatypePtr->size,
            arg1, arg2, arg3);
-       printf("\%s", PyString_AS_STRING(result));
        return result;
    }
 

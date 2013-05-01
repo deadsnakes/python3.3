@@ -401,7 +401,7 @@ parse_number(PyObject *s, Py_ssize_t pos, Py_ssize_t end,
 {
     Py_ssize_t remainder;
 
-    while (pos<end && isdigit(PyUnicode_READ_CHAR(s, pos)))
+    while (pos<end && Py_ISDIGIT(PyUnicode_READ_CHAR(s, pos)))
         ++pos;
     remainder = pos;
 
@@ -1099,7 +1099,7 @@ format_float_internal(PyObject *value,
                          &locale, 0);
 
 done:
-    Py_DECREF(unicode_tmp);
+    Py_XDECREF(unicode_tmp);
     free_locale_info(&locale);
     return result;
 }

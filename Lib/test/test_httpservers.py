@@ -62,6 +62,7 @@ class BaseTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.thread.stop()
+        self.thread = None
         os.environ.__exit__()
         support.threading_cleanup(*self._threads)
 
@@ -339,8 +340,7 @@ class CGIHTTPServerTestCase(BaseTestCase):
             self.pythonexe.encode('utf-8')
         except UnicodeEncodeError:
             self.tearDown()
-            raise self.skipTest(
-                "Python executable path is not encodable to utf-8")
+            self.skipTest("Python executable path is not encodable to utf-8")
 
         self.file1_path = os.path.join(self.cgi_dir, 'file1.py')
         with open(self.file1_path, 'w', encoding='utf-8') as file1:

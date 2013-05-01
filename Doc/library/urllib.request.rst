@@ -63,15 +63,23 @@ The :mod:`urllib.request` module defines the following functions:
       an HTTPS request will not do any verification of the server's
       certificate.
 
-   This function returns a file-like object that works as a :term:`context manager`,
-   with two additional methods from the :mod:`urllib.response` module
+   For http and https urls, this function returns a
+   :class:`http.client.HTTPResponse` object which has the following
+   :ref:`httpresponse-objects` methods.
 
-   * :meth:`geturl` --- return the URL of the resource retrieved,
+   For ftp, file, and data urls and requests explicity handled by legacy
+   :class:`URLopener` and :class:`FancyURLopener` classes, this function
+   returns a :class:`urllib.response.addinfourl` object which can work as
+   :term:`context manager` and has methods such as
+
+   * :meth:`~urllib.response.addinfourl.geturl` --- return the URL of the resource retrieved,
      commonly used to determine if a redirect was followed
 
-   * :meth:`info` --- return the meta-information of the page, such as headers,
+   * :meth:`~urllib.response.addinfourl.info` --- return the meta-information of the page, such as headers,
      in the form of an :func:`email.message_from_string` instance (see
      `Quick Reference to HTTP Headers <http://www.cs.tut.fi/~jkorpela/http.html>`_)
+
+   * :meth:`~urllib.response.addinfourl.getcode` -- return the HTTP status code of the response.
 
    Raises :exc:`URLError` on errors.
 
@@ -470,7 +478,7 @@ request.
    request to be ``POST`` rather than ``GET``.  Deprecated in 3.3, use
    :attr:`Request.data`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.has_data()
@@ -478,14 +486,14 @@ request.
    Return whether the instance has a non-\ ``None`` data. Deprecated in 3.3,
    use :attr:`Request.data`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.get_data()
 
    Return the instance's data.  Deprecated in 3.3, use :attr:`Request.data`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.get_type()
@@ -493,7 +501,7 @@ request.
    Return the type of the URL --- also known as the scheme.  Deprecated in 3.3,
    use :attr:`Request.type`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.get_host()
@@ -501,7 +509,7 @@ request.
    Return the host to which a connection will be made. Deprecated in 3.3, use
    :attr:`Request.host`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.get_selector()
@@ -509,7 +517,7 @@ request.
    Return the selector --- the part of the URL that is sent to the server.
    Deprecated in 3.3, use :attr:`Request.selector`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 .. method:: Request.get_header(header_name, default=None)
 
@@ -530,7 +538,7 @@ request.
    :rfc:`2965`.  See the documentation for the :class:`Request` constructor.
    Deprecated in 3.3, use :attr:`Request.origin_req_host`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. method:: Request.is_unverifiable()
@@ -539,7 +547,7 @@ request.
    documentation for the :class:`Request` constructor.  Deprecated in 3.3, use
    :attr:`Request.unverifiable`.
 
-   .. deprecated:: 3.3
+   .. deprecated-removed:: 3.3 3.4
 
 
 .. _opener-director-objects:
@@ -1101,6 +1109,15 @@ The code for the sample CGI used in the above example is::
    data = sys.stdin.read()
    print('Content-type: text-plain\n\nGot Data: "%s"' % data)
 
+Here is an example of doing a ``PUT`` request using :class:`Request`::
+
+    import urllib.request
+    DATA=b'some data'
+    req = urllib.request.Request(url='http://localhost:8080', data=DATA,method='PUT')
+    f = urllib.request.urlopen(req)
+    print(f.status)
+    print(f.reason)
+
 Use of Basic HTTP Authentication::
 
    import urllib.request
@@ -1257,6 +1274,8 @@ some point in the future.
 
 .. class:: URLopener(proxies=None, **x509)
 
+   .. deprecated:: 3.3
+
    Base class for opening and reading URLs.  Unless you need to support opening
    objects using schemes other than :file:`http:`, :file:`ftp:`, or :file:`file:`,
    you probably want to use :class:`FancyURLopener`.
@@ -1305,7 +1324,8 @@ some point in the future.
        *filename* is not given, the filename is the output of :func:`tempfile.mktemp`
        with a suffix that matches the suffix of the last path component of the input
        URL.  If *reporthook* is given, it must be a function accepting three numeric
-       parameters.  It will be called after each chunk of data is read from the
+       parameters: A chunk number, the maximum size chunks are read in and the total size of the download
+       (-1 if unknown).  It will be called once at the start and after each chunk of data is read from the
        network.  *reporthook* is ignored for local URLs.
 
        If the *url* uses the :file:`http:` scheme identifier, the optional *data*
@@ -1324,6 +1344,8 @@ some point in the future.
 
 
 .. class:: FancyURLopener(...)
+
+   .. deprecated:: 3.3
 
    :class:`FancyURLopener` subclasses :class:`URLopener` providing default handling
    for the following HTTP response codes: 301, 302, 303, 307 and 401.  For the 30x

@@ -37,7 +37,7 @@ class IdleConfParser(ConfigParser):
         cfgFile - string, fully specified configuration file name
         """
         self.file=cfgFile
-        ConfigParser.__init__(self,defaults=cfgDefaults)
+        ConfigParser.__init__(self, defaults=cfgDefaults, strict=False)
 
     def Get(self, section, option, type=None, default=None, raw=False):
         """
@@ -238,24 +238,39 @@ class IdleConf:
         printed to stderr.
 
         """
-        if self.userCfg[configType].has_option(section,option):
-            return self.userCfg[configType].Get(section, option,
-                                                type=type, raw=raw)
-        elif self.defaultCfg[configType].has_option(section,option):
-            return self.defaultCfg[configType].Get(section, option,
-                                                   type=type, raw=raw)
-        else: #returning default, print warning
-            if warn_on_default:
-                warning = ('\n Warning: configHandler.py - IdleConf.GetOption -\n'
-                           ' problem retrieving configuration option %r\n'
-                           ' from section %r.\n'
-                           ' returning default value: %r\n' %
-                           (option, section, default))
-                try:
-                    sys.stderr.write(warning)
-                except IOError:
-                    pass
-            return default
+        try:
+            if self.userCfg[configType].has_option(section,option):
+                return self.userCfg[configType].Get(section, option,
+                                                    type=type, raw=raw)
+        except ValueError:
+            warning = ('\n Warning: configHandler.py - IdleConf.GetOption -\n'
+                       ' invalid %r value for configuration option %r\n'
+                       ' from section %r: %r\n' %
+                       (type, option, section,
+                        self.userCfg[configType].Get(section, option,
+                                                     raw=raw)))
+            try:
+                sys.stderr.write(warning)
+            except IOError:
+                pass
+        try:
+            if self.defaultCfg[configType].has_option(section,option):
+                return self.defaultCfg[configType].Get(section, option,
+                                                       type=type, raw=raw)
+        except ValueError:
+            pass
+        #returning default, print warning
+        if warn_on_default:
+            warning = ('\n Warning: configHandler.py - IdleConf.GetOption -\n'
+                       ' problem retrieving configuration option %r\n'
+                       ' from section %r.\n'
+                       ' returning default value: %r\n' %
+                       (option, section, default))
+            try:
+                sys.stderr.write(warning)
+            except IOError:
+                pass
+        return default
 
     def SetOption(self, configType, section, option, value):
         """In user's config file, set section's option to value.

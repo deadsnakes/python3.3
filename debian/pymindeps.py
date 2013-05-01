@@ -121,9 +121,11 @@ excluded_imports = {
     'optparse': set(('gettext',)),
     'pickle': set(('argparse', 'doctest', 'pprint')),
     'platform': set(('plistlib', 'tempfile')),
+    'reprlib': set(('_dummy_thread',)),
     #'socket': set(('_ssl',)),
     'subprocess': set(('threading',)),
     'sysconfig': set(('_osx_support',)),
+    'tempfile': set(('_dummy_thread',)),
     }
 
 def main(argv):

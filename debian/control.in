@@ -13,7 +13,7 @@ Build-Depends: debhelper (>= 7), autoconf,
 Build-Depends-Indep: python-sphinx (>= 1.0.7)
 Build-Conflicts: tcl8.4-dev, tk8.4-dev, tcl8.3-dev, tk8.3-dev, @PVER@-xml, python-xml, autoconf2.13
 XS-Python-Version: @VER@
-Standards-Version: 3.9.3
+Standards-Version: 3.9.4
 Homepage: http://python.org/
 Vcs-Browser: https://bitbucket.org/fk/deadsnakes-@PVER@
 Vcs-Hg: https://bitbucket.org/fk/deadsnakes-@PVER@
@@ -103,7 +103,7 @@ Architecture: all
 Depends: ${misc:Depends}, libjs-jquery
 Suggests: @PVER@
 Description: Documentation for the high-level object-oriented language Python (version @VER@)
- These is the official set of documentation for the interactive high-level
+ This is the official set of documentation for the interactive high-level
  object-oriented language Python (version @VER@). All documents are provided
  in HTML format. The package consists of ten documents:
  .
@@ -158,7 +158,7 @@ Description: GNU dbm database support for Python (version @VER@ debug extension)
  GNU dbm database module for Python (version @VER@). Install this if you want to
  create or read GNU dbm database files with Python.
  .
- This package contains the extensions built for the python debug interpreter.
+ This package contains the extensions built for the Python debug interpreter.
 
 
 Package: @PVER@-complete
@@ -176,7 +176,7 @@ Depends:
  @PVER@-gdbm (>= ${binary:Version}),
  @PVER@-tk-dbg (>= ${binary:Version}),
  @PVER@-gdbm-dbg (>= ${binary:Version}),
- ${shlibs:Depends}, ${misc:Depends}
+ ${misc:Depends}
 XB-Python-Version: @VER@
 Description: Interactive high-level object-oriented language (version @VER@)
  Version @VER@ of the high-level, interactive object oriented language,

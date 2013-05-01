@@ -415,7 +415,7 @@ def add_ui(db):
               ("VerdanaRed9", "Verdana", 9, 255, 0),
              ])
 
-    compileargs = r'-Wi "[TARGETDIR]Lib\compileall.py" -f -x "bad_coding|badsyntax|site-packages|py2_|lib2to3\\tests" "[TARGETDIR]Lib"'
+    compileargs = r'-Wi "[TARGETDIR]Lib\compileall.py" -f -x "bad_coding|badsyntax|site-packages|py2_|lib2to3\\tests|venv\\scripts" "[TARGETDIR]Lib"'
     lib2to3args = r'-c "import lib2to3.pygram, lib2to3.patcomp;lib2to3.patcomp.PatternCompiler()"'
     # See "CustomAction Table"
     add_data(db, "CustomAction", [
@@ -977,6 +977,8 @@ def add_files(db):
     launchersrc = PCBUILD
     if launchersrc.lower() == 'pcbuild\\x64-pgo':
         launchersrc = 'PCBuild\\win32-pgo'
+    if launchersrc.lower() == 'pcbuild\\amd64':
+        launchersrc = 'PCBuild'
     launcher = os.path.join(srcdir, launchersrc, "py.exe")
     launcherdir.start_component("launcher", flags = 8+256, keyfile="py.exe")
     launcherdir.add_file(launcher,

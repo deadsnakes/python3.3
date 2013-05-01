@@ -134,7 +134,7 @@
          """Finalizes options for non-posix platforms"""
 --- a/Lib/distutils/sysconfig.py
 +++ b/Lib/distutils/sysconfig.py
-@@ -132,6 +132,7 @@
+@@ -136,6 +136,7 @@
      If 'prefix' is supplied, use it instead of sys.base_prefix or
      sys.base_exec_prefix -- i.e., ignore 'plat_specific'.
      """
@@ -142,7 +142,7 @@
      if prefix is None:
          if standard_lib:
              prefix = plat_specific and BASE_EXEC_PREFIX or BASE_PREFIX
-@@ -143,6 +144,8 @@
+@@ -147,6 +148,8 @@
                                   "lib", "python" + get_python_version())
          if standard_lib:
              return libpython
