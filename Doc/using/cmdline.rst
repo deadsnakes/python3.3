@@ -358,7 +358,8 @@ Miscellaneous options
 .. cmdoption:: -X
 
    Reserved for various implementation-specific options.  CPython currently
-   defines none of them, but allows to pass arbitrary values and retrieve
+   defines just one, you can use ``-X faulthander`` to enable
+   :data:`faulthandler`. It also allows to pass arbitrary values and retrieve
    them through the :data:`sys._xoptions` dictionary.
 
    .. versionchanged:: 3.2
@@ -380,7 +381,10 @@ Options you shouldn't use
 Environment variables
 ---------------------
 
-These environment variables influence Python's behavior.
+These environment variables influence Python's behavior, they are processed
+before the command-line switches other than -E.  It is customary that
+command-line switches override environmental variables where there is a
+conflict.
 
 .. envvar:: PYTHONHOME
 
@@ -577,4 +581,3 @@ if Python was configured with the ``--with-pydebug`` build option.
 
    If set, Python will print memory allocation statistics every time a new
    object arena is created, and on shutdown.
-

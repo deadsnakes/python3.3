@@ -17,6 +17,7 @@ import stat
 import tempfile
 import unittest
 import warnings
+import _testcapi
 
 _DUMMY_SYMLINK = os.path.join(tempfile.gettempdir(),
                               support.TESTFN + '-dummy-symlink')
@@ -358,12 +359,28 @@ class PosixTester(unittest.TestCase):
             try:
                 self.assertTrue(posix.fstat(fp.fileno()))
                 self.assertTrue(posix.stat(fp.fileno()))
+
+                self.assertRaisesRegex(TypeError,
+                        'should be string, bytes or integer, not',
+                        posix.stat, float(fp.fileno()))
             finally:
                 fp.close()
 
     def test_stat(self):
         if hasattr(posix, 'stat'):
             self.assertTrue(posix.stat(support.TESTFN))
+            self.assertTrue(posix.stat(os.fsencode(support.TESTFN)))
+            self.assertTrue(posix.stat(bytearray(os.fsencode(support.TESTFN))))
+
+            self.assertRaisesRegex(TypeError,
+                    'can\'t specify None for path argument',
+                    posix.stat, None)
+            self.assertRaisesRegex(TypeError,
+                    'should be string, bytes or integer, not',
+                    posix.stat, list(support.TESTFN))
+            self.assertRaisesRegex(TypeError,
+                    'should be string, bytes or integer, not',
+                    posix.stat, list(os.fsencode(support.TESTFN)))
 
     @unittest.skipUnless(hasattr(posix, 'mkfifo'), "don't have mkfifo()")
     def test_mkfifo(self):
@@ -387,22 +404,44 @@ class PosixTester(unittest.TestCase):
         else:
             self.assertTrue(stat.S_ISFIFO(posix.stat(support.TESTFN).st_mode))
 
-    def _test_all_chown_common(self, chown_func, first_param):
+    def _test_all_chown_common(self, chown_func, first_param, stat_func):
         """Common code for chown, fchown and lchown tests."""
+        def check_stat(uid, gid):
+            if stat_func is not None:
+                stat = stat_func(first_param)
+                self.assertEqual(stat.st_uid, uid)
+                self.assertEqual(stat.st_gid, gid)
+        uid = os.getuid()
+        gid = os.getgid()
         # test a successful chown call
-        chown_func(first_param, os.getuid(), os.getgid())
+        chown_func(first_param, uid, gid)
+        check_stat(uid, gid)
+        chown_func(first_param, -1, gid)
+        check_stat(uid, gid)
+        chown_func(first_param, uid, -1)
+        check_stat(uid, gid)
 
-        if os.getuid() == 0:
-            try:
-                # Many linux distros have a nfsnobody user as MAX_UID-2
-                # that makes a good test case for signedness issues.
-                #   http://bugs.python.org/issue1747858
-                # This part of the test only runs when run as root.
-                # Only scary people run their tests as root.
-                ent = pwd.getpwnam('nfsnobody')
-                chown_func(first_param, ent.pw_uid, ent.pw_gid)
-            except KeyError:
-                pass
+        if uid == 0:
+            # Try an amusingly large uid/gid to make sure we handle
+            # large unsigned values.  (chown lets you use any
+            # uid/gid you like, even if they aren't defined.)
+            #
+            # This problem keeps coming up:
+            #   http://bugs.python.org/issue1747858
+            #   http://bugs.python.org/issue4591
+            #   http://bugs.python.org/issue15301
+            # Hopefully the fix in 4591 fixes it for good!
+            #
+            # This part of the test only runs when run as root.
+            # Only scary people run their tests as root.
+
+            big_value = 2**31
+            chown_func(first_param, big_value, big_value)
+            check_stat(big_value, big_value)
+            chown_func(first_param, -1, -1)
+            check_stat(big_value, big_value)
+            chown_func(first_param, uid, gid)
+            check_stat(uid, gid)
         elif platform.system() in ('HP-UX', 'SunOS'):
             # HP-UX and Solaris can allow a non-root user to chown() to root
             # (issue #5113)
@@ -410,8 +449,19 @@ class PosixTester(unittest.TestCase):
                                     "behavior")
         else:
             # non-root cannot chown to root, raises OSError
-            self.assertRaises(OSError, chown_func,
-                              first_param, 0, 0)
+            self.assertRaises(OSError, chown_func, first_param, 0, 0)
+            check_stat(uid, gid)
+            self.assertRaises(OSError, chown_func, first_param, 0, -1)
+            check_stat(uid, gid)
+            if 0 not in os.getgroups():
+                self.assertRaises(OSError, chown_func, first_param, -1, 0)
+                check_stat(uid, gid)
+        # test illegal types
+        for t in str, float:
+            self.assertRaises(TypeError, chown_func, first_param, t(uid), gid)
+            check_stat(uid, gid)
+            self.assertRaises(TypeError, chown_func, first_param, uid, t(gid))
+            check_stat(uid, gid)
 
     @unittest.skipUnless(hasattr(posix, 'chown'), "test needs os.chown()")
     def test_chown(self):
@@ -421,7 +471,8 @@ class PosixTester(unittest.TestCase):
 
         # re-create the file
         support.create_empty_file(support.TESTFN)
-        self._test_all_chown_common(posix.chown, support.TESTFN)
+        self._test_all_chown_common(posix.chown, support.TESTFN,
+                                    getattr(posix, 'stat', None))
 
     @unittest.skipUnless(hasattr(posix, 'fchown'), "test needs os.fchown()")
     def test_fchown(self):
@@ -431,7 +482,8 @@ class PosixTester(unittest.TestCase):
         test_file = open(support.TESTFN, 'w')
         try:
             fd = test_file.fileno()
-            self._test_all_chown_common(posix.fchown, fd)
+            self._test_all_chown_common(posix.fchown, fd,
+                                        getattr(posix, 'fstat', None))
         finally:
             test_file.close()
 
@@ -440,7 +492,8 @@ class PosixTester(unittest.TestCase):
         os.unlink(support.TESTFN)
         # create a symlink
         os.symlink(_DUMMY_SYMLINK, support.TESTFN)
-        self._test_all_chown_common(posix.lchown, support.TESTFN)
+        self._test_all_chown_common(posix.lchown, support.TESTFN,
+                                    getattr(posix, 'lstat', None))
 
     def test_chdir(self):
         if hasattr(posix, 'chdir'):
@@ -520,6 +573,10 @@ class PosixTester(unittest.TestCase):
             os.write(w, b'x' * support.PIPE_MAX_SIZE)
         except OSError:
             pass
+
+        # Issue 15989
+        self.assertRaises(OverflowError, os.pipe2, _testcapi.INT_MAX + 1)
+        self.assertRaises(OverflowError, os.pipe2, _testcapi.UINT_MAX + 1)
 
     def test_utime(self):
         if hasattr(posix, 'utime'):
@@ -647,17 +704,10 @@ class PosixTester(unittest.TestCase):
     @unittest.skipUnless(hasattr(pwd, 'getpwuid'), "test needs pwd.getpwuid()")
     @unittest.skipUnless(hasattr(os, 'getuid'), "test needs os.getuid()")
     def test_getgrouplist(self):
-        with os.popen('id -G') as idg:
-            groups = idg.read().strip()
-            ret = idg.close()
+        user = pwd.getpwuid(os.getuid())[0]
+        group = pwd.getpwuid(os.getuid())[3]
+        self.assertIn(group, posix.getgrouplist(user, group))
 
-        if ret != None or not groups:
-            raise unittest.SkipTest("need working 'id -G'")
-
-        self.assertEqual(
-            set([int(x) for x in groups.split()]),
-            set(posix.getgrouplist(pwd.getpwuid(os.getuid())[0],
-                pwd.getpwuid(os.getuid())[3])))
 
     @unittest.skipUnless(hasattr(os, 'getegid'), "test needs os.getegid()")
     def test_getgroups(self):
@@ -665,8 +715,15 @@ class PosixTester(unittest.TestCase):
             groups = idg.read().strip()
             ret = idg.close()
 
-        if ret != None or not groups:
+        if ret is not None or not groups:
             raise unittest.SkipTest("need working 'id -G'")
+
+        # Issues 16698: OS X ABIs prior to 10.6 have limits on getgroups()
+        if sys.platform == 'darwin':
+            import sysconfig
+            dt = sysconfig.get_config_var('MACOSX_DEPLOYMENT_TARGET') or '10.0'
+            if float(dt) < 10.6:
+                raise unittest.SkipTest("getgroups(2) is broken prior to 10.6")
 
         # 'id -G' and 'os.getgroups()' should return the same
         # groups, ignoring order and duplicates.
@@ -721,6 +778,14 @@ class PosixTester(unittest.TestCase):
             s1 = posix.stat(support.TESTFN)
             s2 = posix.stat(support.TESTFN, dir_fd=f)
             self.assertEqual(s1, s2)
+            s2 = posix.stat(support.TESTFN, dir_fd=None)
+            self.assertEqual(s1, s2)
+            self.assertRaisesRegex(TypeError, 'should be integer, not',
+                    posix.stat, support.TESTFN, dir_fd=posix.getcwd())
+            self.assertRaisesRegex(TypeError, 'should be integer, not',
+                    posix.stat, support.TESTFN, dir_fd=float(f))
+            self.assertRaises(OverflowError,
+                    posix.stat, support.TESTFN, dir_fd=10**20)
         finally:
             posix.close(f)
 
@@ -831,7 +896,7 @@ class PosixTester(unittest.TestCase):
             posix.rename(support.TESTFN + 'ren', support.TESTFN)
             raise
         else:
-            posix.stat(support.TESTFN) # should not throw exception
+            posix.stat(support.TESTFN) # should not raise exception
         finally:
             posix.close(f)
 
@@ -849,7 +914,7 @@ class PosixTester(unittest.TestCase):
     def test_unlink_dir_fd(self):
         f = posix.open(posix.getcwd(), posix.O_RDONLY)
         support.create_empty_file(support.TESTFN + 'del')
-        posix.stat(support.TESTFN + 'del') # should not throw exception
+        posix.stat(support.TESTFN + 'del') # should not raise exception
         try:
             posix.unlink(support.TESTFN + 'del', dir_fd=f)
         except:
@@ -913,17 +978,17 @@ class PosixTester(unittest.TestCase):
         self.assertRaises(OSError, posix.sched_getparam, -1)
         param = posix.sched_getparam(0)
         self.assertIsInstance(param.sched_priority, int)
-        try:
-            posix.sched_setscheduler(0, mine, param)
-        except OSError as e:
-            if e.errno != errno.EPERM:
-                raise
 
-        # POSIX states that calling sched_setparam() on a process with a
-        # scheduling policy other than SCHED_FIFO or SCHED_RR is
-        # implementation-defined: FreeBSD returns EINVAL.
-        if not sys.platform.startswith('freebsd'):
-            posix.sched_setparam(0, param)
+        # POSIX states that calling sched_setparam() or sched_setscheduler() on
+        # a process with a scheduling policy other than SCHED_FIFO or SCHED_RR
+        # is implementation-defined: NetBSD and FreeBSD can return EINVAL.
+        if not sys.platform.startswith(('freebsd', 'netbsd')):
+            try:
+                posix.sched_setscheduler(0, mine, param)
+                posix.sched_setparam(0, param)
+            except OSError as e:
+                if e.errno != errno.EPERM:
+                    raise
             self.assertRaises(OSError, posix.sched_setparam, -1, param)
 
         self.assertRaises(OSError, posix.sched_setscheduler, -1, mine, param)

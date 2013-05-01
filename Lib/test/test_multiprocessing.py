@@ -1642,6 +1642,23 @@ class _TestPool(BaseTestCase):
         self.assertEqual(self.pool.starmap_async(mul, tuples).get(),
                          list(itertools.starmap(mul, tuples)))
 
+    def test_map_async(self):
+        self.assertEqual(self.pool.map_async(sqr, list(range(10))).get(),
+                         list(map(sqr, list(range(10)))))
+
+    def test_map_async_callbacks(self):
+        call_args = self.manager.list() if self.TYPE == 'manager' else []
+        self.pool.map_async(int, ['1'],
+                            callback=call_args.append,
+                            error_callback=call_args.append).wait()
+        self.assertEqual(1, len(call_args))
+        self.assertEqual([1], call_args[0])
+        self.pool.map_async(int, ['a'],
+                            callback=call_args.append,
+                            error_callback=call_args.append).wait()
+        self.assertEqual(2, len(call_args))
+        self.assertIsInstance(call_args[1], ValueError)
+
     def test_map_chunksize(self):
         try:
             self.pool.map_async(sqr, [], chunksize=1).get(timeout=TIMEOUT1)
@@ -1727,7 +1744,8 @@ class _TestPool(BaseTestCase):
             with multiprocessing.Pool(2) as p:
                 r = p.map_async(sqr, L)
                 self.assertEqual(r.get(), expected)
-            self.assertRaises(AssertionError, p.map_async, sqr, L)
+            print(p._state)
+            self.assertRaises(ValueError, p.map_async, sqr, L)
 
 def raising():
     raise KeyError("key")
@@ -2109,6 +2127,7 @@ class _TestConnection(BaseTestCase):
         self.assertTimingAlmostEqual(poll.elapsed, TIMEOUT1)
 
         conn.send(None)
+        time.sleep(.1)
 
         self.assertEqual(poll(TIMEOUT1), True)
         self.assertTimingAlmostEqual(poll.elapsed, 0)
@@ -2363,6 +2382,17 @@ class _TestListenerClient(BaseTestCase):
         conn.close()
         p.join()
         l.close()
+
+    def test_issue16955(self):
+        for fam in self.connection.families:
+            l = self.connection.Listener(family=fam)
+            c = self.connection.Client(l.address)
+            a = l.accept()
+            a.send_bytes(b"hello")
+            self.assertTrue(c.poll(1))
+            a.close()
+            c.close()
+            l.close()
 
 class _TestPoll(unittest.TestCase):
 
@@ -2864,6 +2894,38 @@ class _TestLogging(BaseTestCase):
 #         assert self.__handled
 
 #
+# Check that Process.join() retries if os.waitpid() fails with EINTR
+#
+
+class _TestPollEintr(BaseTestCase):
+
+    ALLOWED_TYPES = ('processes',)
+
+    @classmethod
+    def _killer(cls, pid):
+        time.sleep(0.5)
+        os.kill(pid, signal.SIGUSR1)
+
+    @unittest.skipUnless(hasattr(signal, 'SIGUSR1'), 'requires SIGUSR1')
+    def test_poll_eintr(self):
+        got_signal = [False]
+        def record(*args):
+            got_signal[0] = True
+        pid = os.getpid()
+        oldhandler = signal.signal(signal.SIGUSR1, record)
+        try:
+            killer = self.Process(target=self._killer, args=(pid,))
+            killer.start()
+            p = self.Process(target=time.sleep, args=(1,))
+            p.start()
+            p.join()
+            self.assertTrue(got_signal[0])
+            self.assertEqual(p.exitcode, 0)
+            killer.join()
+        finally:
+            signal.signal(signal.SIGUSR1, oldhandler)
+
+#
 # Test to verify handle verification, see issue 3321
 #
 
@@ -3214,6 +3276,7 @@ class TestWait(unittest.TestCase):
         from multiprocessing.connection import wait
 
         expected = 3
+        sorted_ = lambda l: sorted(l, key=lambda x: id(x))
         sem = multiprocessing.Semaphore(0)
         a, b = multiprocessing.Pipe()
         p = multiprocessing.Process(target=self.signal_and_sleep,
@@ -3237,7 +3300,7 @@ class TestWait(unittest.TestCase):
         res = wait([a, p.sentinel, b], 20)
         delta = time.time() - start
 
-        self.assertEqual(res, [p.sentinel, b])
+        self.assertEqual(sorted_(res), sorted_([p.sentinel, b]))
         self.assertLess(delta, 0.4)
 
         b.send(None)
@@ -3246,7 +3309,7 @@ class TestWait(unittest.TestCase):
         res = wait([a, p.sentinel, b], 20)
         delta = time.time() - start
 
-        self.assertEqual(res, [a, p.sentinel, b])
+        self.assertEqual(sorted_(res), sorted_([a, p.sentinel, b]))
         self.assertLess(delta, 0.4)
 
         p.terminate()

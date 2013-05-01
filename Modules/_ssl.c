@@ -2177,6 +2177,7 @@ load_dh_params(PySSLContext *self, PyObject *filepath)
     errno = 0;
     PySSL_BEGIN_ALLOW_THREADS
     dh = PEM_read_DHparams(f, NULL, NULL, NULL);
+    fclose(f);
     PySSL_END_ALLOW_THREADS
     if (dh == NULL) {
         if (errno != 0) {
@@ -2488,7 +2489,7 @@ PySSL_RAND_egd(PyObject *self, PyObject *args)
     PyObject *path;
     int bytes;
 
-    if (!PyArg_ParseTuple(args, "O&|i:RAND_egd",
+    if (!PyArg_ParseTuple(args, "O&:RAND_egd",
                           PyUnicode_FSConverter, &path))
         return NULL;
 

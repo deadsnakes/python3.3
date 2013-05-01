@@ -6,7 +6,6 @@ locale-module.diff
 distutils-packaging-link.diff
 tkinter-import.diff
 link-opt.diff
-webbrowser.diff
 linecache.diff
 setup-modules.diff
 platform-lsbrelease.diff
@@ -15,7 +14,6 @@ no-zip-on-sys.path.diff
 doc-nodownload.diff
 doc-build.diff
 makesetup-bashism.diff
-hurd-broken-poll.diff
 hurd-disable-nonworking-constants.diff
 enable-fpectl.diff
 statvfs-f_flag-constants.diff

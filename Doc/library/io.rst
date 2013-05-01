@@ -110,7 +110,7 @@ High-level Module Interface
    :func:`os.stat`) if possible.
 
 
-.. function:: open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True)
+.. function:: open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None)
 
    This is an alias for the builtin :func:`open` function.
 
@@ -185,6 +185,25 @@ interface to a buffered raw stream (:class:`BufferedIOBase`). Finally,
 Argument names are not part of the specification, and only the arguments of
 :func:`open` are intended to be used as keyword arguments.
 
+The following table summarizes the ABCs provided by the :mod:`io` module:
+
+=========================  ==================  ========================  ==================================================
+ABC                        Inherits            Stub Methods              Mixin Methods and Properties
+=========================  ==================  ========================  ==================================================
+:class:`IOBase`                                ``fileno``, ``seek``,     ``close``, ``closed``, ``__enter__``,
+                                               and ``truncate``          ``__exit__``, ``flush``, ``isatty``, ``__iter__``,
+                                                                         ``__next__``, ``readable``, ``readline``,
+                                                                         ``readlines``, ``seekable``, ``tell``,
+                                                                         ``writable``, and ``writelines``
+:class:`RawIOBase`         :class:`IOBase`     ``readinto`` and          Inherited :class:`IOBase` methods, ``read``,
+                                               ``write``                 and ``readall``
+:class:`BufferedIOBase`    :class:`IOBase`     ``detach``, ``read``,     Inherited :class:`IOBase` methods, ``readinto``
+                                               ``read1``, and ``write``
+:class:`TextIOBase`        :class:`IOBase`     ``detach``, ``read``,     Inherited :class:`IOBase` methods, ``encoding``,
+                                               ``readline``, and         ``errors``, and ``newlines``
+                                               ``write``
+=========================  ==================  ========================  ==================================================
+
 
 I/O Base Classes
 ^^^^^^^^^^^^^^^^
@@ -213,7 +232,7 @@ I/O Base Classes
    Note that calling any method (even inquiries) on a closed stream is
    undefined.  Implementations may raise :exc:`ValueError` in this case.
 
-   :class:`IOBase` (and its subclasses) support the iterator protocol, meaning
+   :class:`IOBase` (and its subclasses) supports the iterator protocol, meaning
    that an :class:`IOBase` object can be iterated over yielding the lines in a
    stream.  Lines are defined slightly differently depending on whether the
    stream is a binary stream (yielding bytes), or a text stream (yielding
@@ -497,6 +516,9 @@ Raw File I/O
    (*name*, *flags*). *opener* must return an open file descriptor (passing
    :mod:`os.open` as *opener* results in functionality similar to passing
    ``None``).
+
+   See the :func:`open` built-in function for examples on using the *opener*
+   parameter.
 
    .. versionchanged:: 3.3
       The *opener* parameter was added.

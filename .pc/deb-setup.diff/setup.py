@@ -33,10 +33,6 @@ COMPILED_WITH_PYDEBUG = ('--with-pydebug' in sysconfig.get_config_var("CONFIG_AR
 # This global variable is used to hold the list of modules to be disabled.
 disabled_module_list = []
 
-# File which contains the directory for shared mods (for sys.path fixup
-# when running from the build dir, see Modules/getpath.c)
-_BUILDDIR_COOKIE = "pybuilddir.txt"
-
 def add_dir_to_list(dirlist, dir):
     """Add the directory 'dir' to the list 'dirlist' (after any relative
     directories) if:
@@ -173,13 +169,7 @@ class PyBuildExt(build_ext):
     def build_extensions(self):
 
         # Detect which modules should be compiled
-        old_so = self.compiler.shared_lib_extension
-        # Workaround PEP 3149 stuff
-        self.compiler.shared_lib_extension = os.environ.get("SO", ".so")
-        try:
-            missing = self.detect_modules()
-        finally:
-            self.compiler.shared_lib_extension = old_so
+        missing = self.detect_modules()
 
         # Remove modules that are present on the disabled list
         extensions = [ext for ext in self.extensions
@@ -251,16 +241,6 @@ class PyBuildExt(build_ext):
             (ccshared,cflags) = sysconfig.get_config_vars('CCSHARED','CFLAGS')
             args['compiler_so'] = compiler + ' ' + ccshared + ' ' + cflags
         self.compiler.set_executables(**args)
-
-        # Not only do we write the builddir cookie, but we manually install
-        # the shared modules directory if it isn't already in sys.path.
-        # Otherwise trying to import the extensions after building them
-        # will fail.
-        with open(_BUILDDIR_COOKIE, "wb") as f:
-            f.write(self.build_lib.encode('utf-8', 'surrogateescape'))
-        abs_build_lib = os.path.join(os.getcwd(), self.build_lib)
-        if abs_build_lib not in sys.path:
-            sys.path.append(abs_build_lib)
 
         build_ext.build_extensions(self)
 
@@ -520,6 +500,9 @@ class PyBuildExt(build_ext):
                 '/lib', '/usr/lib',
                 ]
             inc_dirs = self.compiler.include_dirs + ['/usr/include']
+        else:
+            lib_dirs = self.compiler.library_dirs[:]
+            inc_dirs = self.compiler.include_dirs[:]
         exts = []
         missing = []
 
@@ -1073,7 +1056,7 @@ class PyBuildExt(build_ext):
                 with open(f) as file:
                     incf = file.read()
                 m = re.search(
-                    r'\s*.*#\s*.*define\s.*SQLITE_VERSION\W*"(.*)"', incf)
+                    r'\s*.*#\s*.*define\s.*SQLITE_VERSION\W*"([\d\.]*)"', incf)
                 if m:
                     sqlite_version = m.group(1)
                     sqlite_version_tuple = tuple([int(x)
@@ -1405,6 +1388,7 @@ class PyBuildExt(build_ext):
             define_macros = []
             expat_lib = ['expat']
             expat_sources = []
+            expat_depends = []
         else:
             expat_inc = [os.path.join(os.getcwd(), srcdir, 'Modules', 'expat')]
             define_macros = [
@@ -1414,12 +1398,25 @@ class PyBuildExt(build_ext):
             expat_sources = ['expat/xmlparse.c',
                              'expat/xmlrole.c',
                              'expat/xmltok.c']
+            expat_depends = ['expat/ascii.h',
+                             'expat/asciitab.h',
+                             'expat/expat.h',
+                             'expat/expat_config.h',
+                             'expat/expat_external.h',
+                             'expat/internal.h',
+                             'expat/latin1tab.h',
+                             'expat/utf8tab.h',
+                             'expat/xmlrole.h',
+                             'expat/xmltok.h',
+                             'expat/xmltok_impl.h'
+                             ]
 
         exts.append(Extension('pyexpat',
                               define_macros = define_macros,
                               include_dirs = expat_inc,
                               libraries = expat_lib,
-                              sources = ['pyexpat.c'] + expat_sources
+                              sources = ['pyexpat.c'] + expat_sources,
+                              depends = expat_depends,
                               ))
 
         # Fredrik Lundh's cElementTree module.  Note that this also
@@ -1432,6 +1429,8 @@ class PyBuildExt(build_ext):
                                   include_dirs = expat_inc,
                                   libraries = expat_lib,
                                   sources = ['_elementtree.c'],
+                                  depends = ['pyexpat.c'] + expat_sources +
+                                      expat_depends,
                                   ))
         else:
             missing.append('_elementtree')
@@ -1788,6 +1787,8 @@ class PyBuildExt(build_ext):
                 mkpath(ffi_builddir)
                 config_args = [arg for arg in sysconfig.get_config_var("CONFIG_ARGS").split()
                                if (('--host=' in arg) or ('--build=' in arg))]
+                if not self.verbose:
+                    config_args.append("-q")
 
                 # Pass empty CFLAGS because we'll just append the resulting
                 # CFLAGS to Python's; -g or -O2 is to be avoided.
@@ -1983,6 +1984,7 @@ class PyBuildExt(build_ext):
                 # solaris: problems with register allocation.
                 # icc >= 11.0 works as well.
                 define_macros = config['ppro']
+                extra_compile_args.append('-Wno-unknown-pragmas')
             else:
                 define_macros = config['ansi32']
         else:
@@ -2002,6 +2004,15 @@ class PyBuildExt(build_ext):
         # Faster version without thread local contexts:
         if not sysconfig.get_config_var('WITH_THREAD'):
             define_macros.append(('WITHOUT_THREADS', 1))
+
+        # Increase warning level for gcc:
+        if 'gcc' in cc:
+            cmd = ("echo '' | %s -Wextra -Wno-missing-field-initializers -E - "
+                   "> /dev/null 2>&1" % cc)
+            ret = os.system(cmd)
+            if ret >> 8 == 0:
+                extra_compile_args.extend(['-Wextra',
+                                           '-Wno-missing-field-initializers'])
 
         # Uncomment for extra functionality:
         #define_macros.append(('EXTRA_FUNCTIONALITY', 1))
@@ -2038,7 +2049,8 @@ class PyBuildInstallLib(install_lib):
     # mode 644 unless they are a shared library in which case they will get
     # mode 755. All installed directories will get mode 755.
 
-    so_ext = sysconfig.get_config_var("SO")
+    # this is works for EXT_SUFFIX too, which ends with SHLIB_SUFFIX
+    shlib_suffix = sysconfig.get_config_var("SHLIB_SUFFIX")
 
     def install(self):
         outfiles = install_lib.install(self)
@@ -2053,7 +2065,7 @@ class PyBuildInstallLib(install_lib):
         for filename in files:
             if os.path.islink(filename): continue
             mode = defaultMode
-            if filename.endswith(self.so_ext): mode = sharedLibMode
+            if filename.endswith(self.shlib_suffix): mode = sharedLibMode
             log.info("changing mode of %s to %o", filename, mode)
             if not self.dry_run: os.chmod(filename, mode)
 

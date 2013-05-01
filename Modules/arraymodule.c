@@ -483,11 +483,11 @@ newarrayobject(PyTypeObject *type, Py_ssize_t size, struct arraydescr *descr)
         return NULL;
     }
 
-    nbytes = size * descr->itemsize;
     /* Check for overflow */
-    if (nbytes / descr->itemsize != (size_t)size) {
+    if (size > PY_SSIZE_T_MAX / descr->itemsize) {
         return PyErr_NoMemory();
     }
+    nbytes = size * descr->itemsize;
     op = (arrayobject *) type->tp_alloc(type, 0);
     if (op == NULL) {
         return NULL;
@@ -1251,11 +1251,15 @@ array_fromfile(arrayobject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "On:fromfile", &f, &n))
         return NULL;
 
-    nbytes = n * itemsize;
-    if (nbytes < 0 || nbytes/itemsize != n) {
+    if (n < 0) {
+        PyErr_SetString(PyExc_ValueError, "negative count");
+        return NULL;
+    }
+    if (n > PY_SSIZE_T_MAX / itemsize) {
         PyErr_NoMemory();
         return NULL;
     }
+    nbytes = n * itemsize;
 
     b = _PyObject_CallMethodId(f, &PyId_read, "n", nbytes);
     if (b == NULL)
@@ -1518,7 +1522,7 @@ array_fromunicode(arrayobject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "u#:fromunicode", &ustr, &n))
         return NULL;
     typecode = self->ob_descr->typecode;
-    if ((typecode != 'u')) {
+    if (typecode != 'u') {
         PyErr_SetString(PyExc_ValueError,
             "fromunicode() may only be called on "
             "unicode type arrays");
@@ -1550,7 +1554,7 @@ array_tounicode(arrayobject *self, PyObject *unused)
 {
     char typecode;
     typecode = self->ob_descr->typecode;
-    if ((typecode != 'u')) {
+    if (typecode != 'u') {
         PyErr_SetString(PyExc_ValueError,
              "tounicode() may only be called on unicode type arrays");
         return NULL;
@@ -2110,7 +2114,7 @@ static PyGetSetDef array_getsets [] = {
 static PyMethodDef array_methods[] = {
     {"append",          (PyCFunction)array_append,      METH_O,
      append_doc},
-    {"buffer_info", (PyCFunction)array_buffer_info, METH_NOARGS,
+    {"buffer_info",     (PyCFunction)array_buffer_info, METH_NOARGS,
      buffer_info_doc},
     {"byteswap",        (PyCFunction)array_byteswap,    METH_NOARGS,
      byteswap_doc},
@@ -2118,9 +2122,9 @@ static PyMethodDef array_methods[] = {
      copy_doc},
     {"count",           (PyCFunction)array_count,       METH_O,
      count_doc},
-    {"__deepcopy__",(PyCFunction)array_copy,            METH_O,
+    {"__deepcopy__",    (PyCFunction)array_copy,        METH_O,
      copy_doc},
-    {"extend",      (PyCFunction)array_extend,          METH_O,
+    {"extend",          (PyCFunction)array_extend,      METH_O,
      extend_doc},
     {"fromfile",        (PyCFunction)array_fromfile,    METH_VARARGS,
      fromfile_doc},
@@ -2138,14 +2142,12 @@ static PyMethodDef array_methods[] = {
      insert_doc},
     {"pop",             (PyCFunction)array_pop,         METH_VARARGS,
      pop_doc},
-    {"__reduce_ex__", (PyCFunction)array_reduce_ex,     METH_O,
+    {"__reduce_ex__",   (PyCFunction)array_reduce_ex,   METH_O,
      reduce_doc},
     {"remove",          (PyCFunction)array_remove,      METH_O,
      remove_doc},
     {"reverse",         (PyCFunction)array_reverse,     METH_NOARGS,
      reverse_doc},
-/*      {"sort",        (PyCFunction)array_sort,        METH_VARARGS,
-    sort_doc},*/
     {"tofile",          (PyCFunction)array_tofile,      METH_O,
      tofile_doc},
     {"tolist",          (PyCFunction)array_tolist,      METH_NOARGS,
@@ -2154,7 +2156,7 @@ static PyMethodDef array_methods[] = {
      tostring_doc},
     {"tobytes",         (PyCFunction)array_tobytes,     METH_NOARGS,
      tobytes_doc},
-    {"tounicode",   (PyCFunction)array_tounicode,       METH_NOARGS,
+    {"tounicode",       (PyCFunction)array_tounicode,   METH_NOARGS,
      tounicode_doc},
     {"__sizeof__",      (PyCFunction)array_sizeof,      METH_NOARGS,
      sizeof_doc},
@@ -2173,10 +2175,13 @@ array_repr(arrayobject *a)
     if (len == 0) {
         return PyUnicode_FromFormat("array('%c')", (int)typecode);
     }
-    if (typecode == 'u')
+    if (typecode == 'u') {
         v = array_tounicode(a, NULL);
-    else
+    } else {
         v = array_tolist(a, NULL);
+    }
+    if (v == NULL)
+        return NULL;
 
     s = PyUnicode_FromFormat("array('%c', %R)", (int)typecode, v);
     Py_DECREF(v);

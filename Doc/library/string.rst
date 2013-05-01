@@ -10,7 +10,7 @@
 
 .. seealso::
 
-   :ref:`typesseq`
+   :ref:`textseq`
 
    :ref:`string-methods`
 
@@ -100,7 +100,7 @@ implementation as the built-in :meth:`format` method.
       This function does the actual work of formatting.  It is exposed as a
       separate function for cases where you want to pass in a predefined
       dictionary of arguments, rather than unpacking and repacking the
-      dictionary as individual arguments using the ``*args`` and ``**kwds``
+      dictionary as individual arguments using the ``*args`` and ``**kwargs``
       syntax.  :meth:`vformat` does the work of breaking up the format string
       into character data and replacement fields.  It calls the various
       methods described below.
@@ -610,7 +610,7 @@ Nesting arguments and more complex examples::
    3232235521
    >>>
    >>> width = 5
-   >>> for num in range(5,12):
+   >>> for num in range(5,12): #doctest: +NORMALIZE_WHITESPACE
    ...     for base in 'dXob':
    ...         print('{0:{width}{base}}'.format(num, base=base, width=width), end=' ')
    ...     print()
@@ -688,7 +688,7 @@ these rules.  The methods of :class:`Template` are:
       This is the object passed to the constructor's *template* argument.  In
       general, you shouldn't change it, but read-only access is not enforced.
 
-Here is an example of how to use a Template:
+Here is an example of how to use a Template::
 
    >>> from string import Template
    >>> s = Template('$who likes $what')
@@ -697,11 +697,11 @@ Here is an example of how to use a Template:
    >>> d = dict(who='tim')
    >>> Template('Give $who $100').substitute(d)
    Traceback (most recent call last):
-   [...]
-   ValueError: Invalid placeholder in string: line 1, col 10
+   ...
+   ValueError: Invalid placeholder in string: line 1, col 11
    >>> Template('$who likes $what').substitute(d)
    Traceback (most recent call last):
-   [...]
+   ...
    KeyError: 'what'
    >>> Template('$who likes $what').safe_substitute(d)
    'tim likes $what'

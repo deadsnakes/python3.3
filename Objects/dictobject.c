@@ -1707,45 +1707,46 @@ dict_fromkeys(PyObject *cls, PyObject *args)
     if (d == NULL)
         return NULL;
 
-    if (PyDict_CheckExact(d) && PyDict_CheckExact(seq)) {
-        PyDictObject *mp = (PyDictObject *)d;
-        PyObject *oldvalue;
-        Py_ssize_t pos = 0;
-        PyObject *key;
-        Py_hash_t hash;
+    if (PyDict_CheckExact(d) && ((PyDictObject *)d)->ma_used == 0) {
+        if (PyDict_CheckExact(seq)) {
+            PyDictObject *mp = (PyDictObject *)d;
+            PyObject *oldvalue;
+            Py_ssize_t pos = 0;
+            PyObject *key;
+            Py_hash_t hash;
 
-        if (dictresize(mp, Py_SIZE(seq))) {
-            Py_DECREF(d);
-            return NULL;
-        }
-
-        while (_PyDict_Next(seq, &pos, &key, &oldvalue, &hash)) {
-            if (insertdict(mp, key, hash, value)) {
+            if (dictresize(mp, Py_SIZE(seq))) {
                 Py_DECREF(d);
                 return NULL;
             }
+
+            while (_PyDict_Next(seq, &pos, &key, &oldvalue, &hash)) {
+                if (insertdict(mp, key, hash, value)) {
+                    Py_DECREF(d);
+                    return NULL;
+                }
+            }
+            return d;
         }
-        return d;
-    }
+        if (PyAnySet_CheckExact(seq)) {
+            PyDictObject *mp = (PyDictObject *)d;
+            Py_ssize_t pos = 0;
+            PyObject *key;
+            Py_hash_t hash;
 
-    if (PyDict_CheckExact(d) && PyAnySet_CheckExact(seq)) {
-        PyDictObject *mp = (PyDictObject *)d;
-        Py_ssize_t pos = 0;
-        PyObject *key;
-        Py_hash_t hash;
-
-        if (dictresize(mp, PySet_GET_SIZE(seq))) {
-            Py_DECREF(d);
-            return NULL;
-        }
-
-        while (_PySet_NextEntry(seq, &pos, &key, &hash)) {
-            if (insertdict(mp, key, hash, value)) {
+            if (dictresize(mp, PySet_GET_SIZE(seq))) {
                 Py_DECREF(d);
                 return NULL;
             }
+
+            while (_PySet_NextEntry(seq, &pos, &key, &hash)) {
+                if (insertdict(mp, key, hash, value)) {
+                    Py_DECREF(d);
+                    return NULL;
+                }
+            }
+            return d;
         }
-        return d;
     }
 
     it = PyObject_GetIter(seq);
@@ -2229,14 +2230,14 @@ dict_setdefault(register PyDictObject *mp, PyObject *args)
         return NULL;
     val = *value_addr;
     if (val == NULL) {
-        Py_INCREF(failobj);
-        Py_INCREF(key);
         if (mp->ma_keys->dk_usable <= 0) {
             /* Need to resize. */
             if (insertion_resize(mp) < 0)
                 return NULL;
             ep = find_empty_slot(mp, key, hash, &value_addr);
         }
+        Py_INCREF(failobj);
+        Py_INCREF(key);
         MAINTAIN_TRACKING(mp, key, failobj);
         ep->me_key = key;
         ep->me_hash = hash;

@@ -44,9 +44,9 @@ described in the sections below.
 
 .. versionchanged:: 3.3
    The import system has been updated to fully implement the second phase
-   of PEP 302. There is no longer any implicit import machinery - the full
+   of :pep:`302`. There is no longer any implicit import machinery - the full
    import system is exposed through :data:`sys.meta_path`. In addition,
-   native namespace package support has been implemented (see PEP 420).
+   native namespace package support has been implemented (see :pep:`420`).
 
 
 :mod:`importlib`
@@ -219,9 +219,9 @@ whatever strategy it knows about. Objects that implement both of these
 interfaces are referred to as :term:`importers <importer>` - they return
 themselves when they find that they can load the requested module.
 
-Python includes a number of default finders and importers.  One
-knows how to locate frozen modules, and another knows how to locate
-built-in modules.  A third default finder searches an :term:`import path`
+Python includes a number of default finders and importers.  The first one
+knows how to locate built-in modules, and the second knows how to locate
+frozen modules.  A third default finder searches an :term:`import path`
 for modules.  The :term:`import path` is a list of locations that may
 name file system paths or zip files.  It can also be extended to search
 for any locatable resource, such as those identified by URLs.
@@ -540,7 +540,10 @@ environment variable and various other installation- and
 implementation-specific defaults.  Entries in :data:`sys.path` can name
 directories on the file system, zip files, and potentially other "locations"
 (see the :mod:`site` module) that should be searched for modules, such as
-URLs, or database queries.
+URLs, or database queries.  Only strings and bytes should be present on
+:data:`sys.path`; all other data types are ignored.  The encoding of bytes
+entries is determined by the individual :term:`path entry finders <path entry
+finder>`.
 
 The :term:`path based finder` is a :term:`meta path finder`, so the import
 machinery begins the :term:`import path` search by calling the path
@@ -563,14 +566,17 @@ free to remove cache entries from :data:`sys.path_importer_cache` forcing
 the path based finder to perform the path entry search again [#fnpic]_.
 
 If the path entry is not present in the cache, the path based finder iterates
-over every callable in :data:`sys.path_hooks`.  Each of the
-:term:`path entry hooks <path entry hook>` in this list is called with a
-single argument, the path entry to be searched.  This callable may either
-return a :term:`path entry finder` that can handle the path entry, or it may
-raise :exc:`ImportError`.
-An :exc:`ImportError` is used by the path based finder to signal that the hook
-cannot find a :term:`path entry finder` for that :term:`path entry`.  The
-exception is ignored and :term:`import path` iteration continues.
+over every callable in :data:`sys.path_hooks`.  Each of the :term:`path entry
+hooks <path entry hook>` in this list is called with a single argument, the
+path entry to be searched.  This callable may either return a :term:`path
+entry finder` that can handle the path entry, or it may raise
+:exc:`ImportError`.  An :exc:`ImportError` is used by the path based finder to
+signal that the hook cannot find a :term:`path entry finder` for that
+:term:`path entry`.  The exception is ignored and :term:`import path`
+iteration continues.  The hook should expect either a string or bytes object;
+the encoding of bytes objects is up to the hook (e.g. it may be a file system
+encoding, UTF-8, or something else), and if the hook cannot decode the
+argument, it should raise :exc:`ImportError`.
 
 If :data:`sys.path_hooks` iteration ends with no :term:`path entry finder`
 being returned, then the path based finder's :meth:`find_module()` method

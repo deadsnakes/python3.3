@@ -779,9 +779,9 @@ specific sequence types, dictionaries, and other more specialized forms.  The
 specific types are not important beyond their implementation of the iterator
 protocol.
 
-Once an iterator's :meth:`__next__` method raises :exc:`StopIteration`, it must
-continue to do so on subsequent calls.  Implementations that do not obey this
-property are deemed broken.
+Once an iterator's :meth:`~iterator.__next__` method raises
+:exc:`StopIteration`, it must continue to do so on subsequent calls.
+Implementations that do not obey this property are deemed broken.
 
 
 .. _generator-types:
@@ -792,7 +792,8 @@ Generator Types
 Python's :term:`generator`\s provide a convenient way to implement the iterator
 protocol.  If a container object's :meth:`__iter__` method is implemented as a
 generator, it will automatically return an iterator object (technically, a
-generator object) supplying the :meth:`__iter__` and :meth:`__next__` methods.
+generator object) supplying the :meth:`__iter__` and :meth:`~generator.__next__`
+methods.
 More information about generators can be found in :ref:`the documentation for
 the yield expression <yieldexpr>`.
 
@@ -1235,7 +1236,8 @@ The :class:`range` type represents an immutable sequence of numbers and is
 commonly used for looping a specific number of times in :keyword:`for`
 loops.
 
-.. class:: range([start, ]stop[, step])
+.. class:: range(stop)
+           range(start, stop[, step])
 
    The arguments to the range constructor must be integers (either built-in
    :class:`int` or any object that implements the ``__index__`` special
@@ -1251,7 +1253,7 @@ loops.
    the formula ``r[i] = start + step*i``, but the constraints are ``i >= 0``
    and ``r[i] > stop``.
 
-   A range object will be empty if ``r[0]`` does not meant the value
+   A range object will be empty if ``r[0]`` does not meet the value
    constraint. Ranges do support negative indices, but these are interpreted
    as indexing from the end of the sequence determined by the positive
    indices.
@@ -1344,20 +1346,19 @@ range(2, 1, 3)`` or ``range(0, 3, 2) == range(0, 4, 2)``.)
    The :attr:`start`, :attr:`stop` and :attr:`step` attributes.
 
 
+.. index::
+   single: string; text sequence type
+   single: str (built-in class); (see also string)
+   object: string
+
 .. _textseq:
 
 Text Sequence Type --- :class:`str`
 ===================================
 
-.. index::
-   object: string
-   object: bytes
-   object: bytearray
-   object: io.StringIO
-
-
-Textual data in Python is handled with :class:`str` objects, which are
-immutable sequences of Unicode code points.  String literals are
+Textual data in Python is handled with :class:`str` objects, or :dfn:`strings`.
+Strings are immutable
+:ref:`sequences <typesseq>` of Unicode code points.  String literals are
 written in a variety of ways:
 
 * Single quotes: ``'allows embedded "double" quotes'``
@@ -1375,11 +1376,14 @@ See :ref:`strings` for more about the various forms of string literal,
 including supported escape sequences, and the ``r`` ("raw") prefix that
 disables most escape sequence processing.
 
-Strings may also be created from other objects with the :ref:`str <func-str>`
-built-in.
+Strings may also be created from other objects using the :class:`str`
+constructor.
 
 Since there is no separate "character" type, indexing a string produces
 strings of length 1. That is, for a non-empty string *s*, ``s[0] == s[0:1]``.
+
+.. index::
+   object: io.StringIO
 
 There is also no mutable string type, but :meth:`str.join` or
 :class:`io.StringIO` can be used to efficiently construct strings from
@@ -1390,13 +1394,61 @@ multiple fragments.
    once again permitted on string literals. It has no effect on the meaning
    of string literals and cannot be combined with the ``r`` prefix.
 
+
+.. index::
+   single: string; str (built-in class)
+
+.. class:: str(object='')
+           str(object=b'', encoding='utf-8', errors='strict')
+
+   Return a :ref:`string <textseq>` version of *object*.  If *object* is not
+   provided, returns the empty string.  Otherwise, the behavior of ``str()``
+   depends on whether *encoding* or *errors* is given, as follows.
+
+   If neither *encoding* nor *errors* is given, ``str(object)`` returns
+   :meth:`object.__str__() <object.__str__>`, which is the "informal" or nicely
+   printable string representation of *object*.  For string objects, this is
+   the string itself.  If *object* does not have a :meth:`~object.__str__`
+   method, then :func:`str` falls back to returning
+   :meth:`repr(object) <repr>`.
+
+   .. index::
+      single: buffer protocol; str (built-in class)
+      single: bytes; str (built-in class)
+
+   If at least one of *encoding* or *errors* is given, *object* should be a
+   :class:`bytes` or :class:`bytearray` object, or more generally any object
+   that supports the :ref:`buffer protocol <bufferobjects>`.  In this case, if
+   *object* is a :class:`bytes` (or :class:`bytearray`) object, then
+   ``str(bytes, encoding, errors)`` is equivalent to
+   :meth:`bytes.decode(encoding, errors) <bytes.decode>`.  Otherwise, the bytes
+   object underlying the buffer object is obtained before calling
+   :meth:`bytes.decode`.  See :ref:`binaryseq` and
+   :ref:`bufferobjects` for information on buffer objects.
+
+   Passing a :class:`bytes` object to :func:`str` without the *encoding*
+   or *errors* arguments falls under the first case of returning the informal
+   string representation (see also the :option:`-b` command-line option to
+   Python).  For example::
+
+      >>> str(b'Zoot!')
+      "b'Zoot!'"
+
+   For more information on the ``str`` class and its methods, see
+   :ref:`textseq` and the :ref:`string-methods` section below.  To output
+   formatted strings, see the :ref:`string-formatting` section.  In addition,
+   see the :ref:`stringservices` section.
+
+
+.. index::
+   pair: string; methods
+
 .. _string-methods:
 
 String Methods
 --------------
 
 .. index::
-   pair: string; methods
    module: re
 
 Strings implement all of the :ref:`common <typesseq-common>` sequence
@@ -1575,6 +1627,8 @@ expression support in the :mod:`re` module).
    Return true if the string is a valid identifier according to the language
    definition, section :ref:`identifiers`.
 
+   Use :func:`keyword.iskeyword` to test for reserved identifiers such as
+   :keyword:`def` and :keyword:`class`.
 
 .. method:: str.islower()
 
@@ -1830,11 +1884,11 @@ expression support in the :mod:`re` module).
 
         >>> import re
         >>> def titlecase(s):
-                return re.sub(r"[A-Za-z]+('[A-Za-z]+)?",
-                              lambda mo: mo.group(0)[0].upper() +
-                                         mo.group(0)[1:].lower(),
-                              s)
-
+        ...     return re.sub(r"[A-Za-z]+('[A-Za-z]+)?",
+        ...                   lambda mo: mo.group(0)[0].upper() +
+        ...                              mo.group(0)[1:].lower(),
+        ...                   s)
+        ...
         >>> titlecase("they're bill's friends.")
         "They're Bill's Friends."
 
@@ -2062,6 +2116,9 @@ that ``'\0'`` is the end of the string.
    longer replaced by ``%g`` conversions.
 
 
+.. index::
+   single: buffer protocol; binary sequence types
+
 .. _binaryseq:
 
 Binary Sequence Types --- :class:`bytes`, :class:`bytearray`, :class:`memoryview`
@@ -2075,8 +2132,8 @@ Binary Sequence Types --- :class:`bytes`, :class:`bytearray`, :class:`memoryview
 
 The core built-in types for manipulating binary data are :class:`bytes` and
 :class:`bytearray`. They are supported by :class:`memoryview` which uses
-the buffer protocol to access the memory of other binary objects without
-needing to make a copy.
+the :ref:`buffer protocol <bufferobjects>` to access the memory of other
+binary objects without needing to make a copy.
 
 The :mod:`array` module supports efficient storage of basic data types like
 32-bit integers and IEEE754 double-precision floating values.
@@ -2162,7 +2219,7 @@ they are always created by calling the constructor:
 * Creating an empty instance: ``bytearray()``
 * Creating a zero-filled instance with a given length: ``bytearray(10)``
 * From an iterable of integers: ``bytearray(range(20))``
-* Copying existing binary data via the buffer protocol:  ``bytearray(b'Hi!)``
+* Copying existing binary data via the buffer protocol:  ``bytearray(b'Hi!')``
 
 As bytearray objects are mutable, they support the
 :ref:`mutable <typesseq-mutable>` sequence operations in addition to the
@@ -2391,12 +2448,6 @@ copying.
    .. versionchanged:: 3.3
       One-dimensional memoryviews with formats 'B', 'b' or 'c' are now hashable.
 
-   .. note::
-      Hashing of memoryviews with formats other than 'B', 'b' or 'c' as well
-      as hashing of multi-dimensional memoryviews is possible in version 3.3.0,
-      but will raise an error in 3.3.1 in order to be compatible with the new
-      memoryview equality definition.
-
    :class:`memoryview` has several methods:
 
    .. method:: __eq__(exporter)
@@ -2588,7 +2639,7 @@ copying.
          >>> z.nbytes
          48
 
-      Cast 1D/unsigned char to to 2D/unsigned long::
+      Cast 1D/unsigned char to 2D/unsigned long::
 
          >>> buf = struct.pack("L"*6, *list(range(6)))
          >>> x = memoryview(buf)
@@ -2687,12 +2738,18 @@ copying.
    .. attribute:: shape
 
       A tuple of integers the length of :attr:`ndim` giving the shape of the
-      memory as a N-dimensional array.
+      memory as an N-dimensional array.
+
+      .. versionchanged:: 3.3
+         An empty tuple instead of None when ndim = 0.
 
    .. attribute:: strides
 
       A tuple of integers the length of :attr:`ndim` giving the size in bytes to
       access each element for each dimension of the array.
+
+      .. versionchanged:: 3.3
+         An empty tuple instead of None when ndim = 0.
 
    .. attribute:: suboffsets
 
@@ -2785,7 +2842,7 @@ The constructors for both classes work the same:
 
    .. method:: set < other
 
-      Test whether the set is a true subset of *other*, that is,
+      Test whether the set is a proper subset of *other*, that is,
       ``set <= other and set != other``.
 
    .. method:: issuperset(other)
@@ -2795,7 +2852,7 @@ The constructors for both classes work the same:
 
    .. method:: set > other
 
-      Test whether the set is a true superset of *other*, that is, ``set >=
+      Test whether the set is a proper superset of *other*, that is, ``set >=
       other and set != other``.
 
    .. method:: union(other, ...)
@@ -2926,7 +2983,7 @@ Mapping Types --- :class:`dict`
    statement: del
    builtin: len
 
-A :dfn:`mapping` object maps :term:`hashable` values to arbitrary objects.
+A :term:`mapping` object maps :term:`hashable` values to arbitrary objects.
 Mappings are mutable objects.  There is currently only one standard mapping
 type, the :dfn:`dictionary`.  (For other containers see the built-in
 :class:`list`, :class:`set`, and :class:`tuple` classes, and the
@@ -2945,33 +3002,41 @@ Dictionaries can be created by placing a comma-separated list of ``key: value``
 pairs within braces, for example: ``{'jack': 4098, 'sjoerd': 4127}`` or ``{4098:
 'jack', 4127: 'sjoerd'}``, or by the :class:`dict` constructor.
 
-.. class:: dict([arg])
+.. class:: dict(**kwarg)
+           dict(mapping, **kwarg)
+           dict(iterable, **kwarg)
 
-   Return a new dictionary initialized from an optional positional argument or
-   from a set of keyword arguments.  If no arguments are given, return a new
-   empty dictionary.  If the positional argument *arg* is a mapping object,
-   return a dictionary mapping the same keys to the same values as does the
-   mapping object.  Otherwise the positional argument must be a sequence, a
-   container that supports iteration, or an iterator object.  The elements of
-   the argument must each also be of one of those kinds, and each must in turn
-   contain exactly two objects.  The first is used as a key in the new
-   dictionary, and the second as the key's value.  If a given key is seen more
-   than once, the last value associated with it is retained in the new
+   Return a new dictionary initialized from an optional positional argument
+   and a possibly empty set of keyword arguments.
+
+   If no positional argument is given, an empty dictionary is created.
+   If a positional argument is given and it is a mapping object, a dictionary
+   is created with the same key-value pairs as the mapping object.  Otherwise,
+   the positional argument must be an :term:`iterator` object.  Each item in
+   the iterable must itself be an iterator with exactly two objects.  The
+   first object of each item becomes a key in the new dictionary, and the
+   second object the corresponding value.  If a key occurs more than once, the
+   last value for that key becomes the corresponding value in the new
    dictionary.
 
-   If keyword arguments are given, the keywords themselves with their associated
-   values are added as items to the dictionary.  If a key is specified both in
-   the positional argument and as a keyword argument, the value associated with
-   the keyword is retained in the dictionary.  For example, these all return a
-   dictionary equal to ``{"one": 1, "two": 2}``:
+   If keyword arguments are given, the keyword arguments and their values are
+   added to the dictionary created from the positional argument.  If a key
+   being added is already present, the value from the keyword argument
+   replaces the value from the positional argument.
 
-   * ``dict(one=1, two=2)``
-   * ``dict({'one': 1, 'two': 2})``
-   * ``dict(zip(('one', 'two'), (1, 2)))``
-   * ``dict([['two', 2], ['one', 1]])``
+   To illustrate, the following examples all return a dictionary equal to
+   ``{"one": 1, "two": 2, "three": 3}``::
 
-   The first example only works for keys that are valid Python identifiers; the
-   others work with any valid keys.
+      >>> a = dict(one=1, two=2, three=3)
+      >>> b = {'one': 1, 'two': 2, 'three': 3}
+      >>> c = dict(zip(['one', 'two', 'three'], [1, 2, 3]))
+      >>> d = dict([('two', 2), ('one', 1), ('three', 3)])
+      >>> e = dict({'three': 3, 'one': 1, 'two': 2})
+      >>> a == b == c == d == e
+      True
+
+   Providing keyword arguments as in the first example only works for keys that
+   are valid Python identifiers.  Otherwise, any valid keys can be used.
 
 
    These are the operations that dictionaries support (and therefore, custom
@@ -3333,16 +3398,22 @@ arg-n)``.
 Like function objects, bound method objects support getting arbitrary
 attributes.  However, since method attributes are actually stored on the
 underlying function object (``meth.__func__``), setting method attributes on
-bound methods is disallowed.  Attempting to set a method attribute results in a
-:exc:`TypeError` being raised.  In order to set a method attribute, you need to
-explicitly set it on the underlying function object::
+bound methods is disallowed.  Attempting to set an attribute on a method
+results in an :exc:`AttributeError` being raised.  In order to set a method
+attribute, you need to explicitly set it on the underlying function object::
 
-   class C:
-       def method(self):
-           pass
-
-   c = C()
-   c.method.__func__.whoami = 'my name is c'
+   >>> class C:
+   ...     def method(self):
+   ...         pass
+   ...
+   >>> c = C()
+   >>> c.method.whoami = 'my name is method'  # can't set on the method
+   Traceback (most recent call last):
+     File "<stdin>", line 1, in <module>
+   AttributeError: 'method' object has no attribute 'whoami'
+   >>> c.method.__func__.whoami = 'my name is method'
+   >>> c.method.whoami
+   'my name is method'
 
 See :ref:`types` for more information.
 

@@ -555,7 +555,7 @@ set_error(void)
                 /* If non-empty msg, trim CRLF */
                 char *lastc = &outbuf[ strlen(outbuf)-1 ];
                 while (lastc > outbuf &&
-                       isspace(Py_CHARMASK(*lastc))) {
+                       Py_ISSPACE(Py_CHARMASK(*lastc))) {
                     /* Trim trailing whitespace (CRLF) */
                     *lastc-- = '\0';
                 }
@@ -1674,7 +1674,8 @@ getsockaddrarg(PySocketSockObject *s, PyObject *args,
             if (len == 0) {
                 ifr.ifr_ifindex = 0;
             } else if (len < sizeof(ifr.ifr_name)) {
-                strcpy(ifr.ifr_name, PyBytes_AS_STRING(interfaceName));
+                strncpy(ifr.ifr_name, PyBytes_AS_STRING(interfaceName), sizeof(ifr.ifr_name));
+                ifr.ifr_name[(sizeof(ifr.ifr_name))-1] = '\0';
                 if (ioctl(s->sock_fd, SIOCGIFINDEX, &ifr) < 0) {
                     s->errorhandler();
                     Py_DECREF(interfaceName);
@@ -2072,7 +2073,7 @@ For IP sockets, the address info is a pair (hostaddr, port).");
 static PyObject *
 sock_setblocking(PySocketSockObject *s, PyObject *arg)
 {
-    int block;
+    long block;
 
     block = PyLong_AsLong(arg);
     if (block == -1 && PyErr_Occurred())
@@ -2554,7 +2555,7 @@ sock_listen(PySocketSockObject *s, PyObject *arg)
     int backlog;
     int res;
 
-    backlog = PyLong_AsLong(arg);
+    backlog = _PyLong_AsInt(arg);
     if (backlog == -1 && PyErr_Occurred())
         return NULL;
     Py_BEGIN_ALLOW_THREADS
@@ -3608,7 +3609,7 @@ sock_sendmsg(PySocketSockObject *s, PyObject *args)
            the next header, it checks its (uninitialized) cmsg_len
            member to see if the "message" fits in the buffer, and
            returns NULL if it doesn't.  Zero-filling the buffer
-           ensures that that doesn't happen. */
+           ensures that this doesn't happen. */
         memset(controlbuf, 0, controllen);
 
         for (i = 0; i < ncmsgbufs; i++) {
@@ -3711,7 +3712,7 @@ sock_shutdown(PySocketSockObject *s, PyObject *arg)
     int how;
     int res;
 
-    how = PyLong_AsLong(arg);
+    how = _PyLong_AsInt(arg);
     if (how == -1 && PyErr_Occurred())
         return NULL;
     Py_BEGIN_ALLOW_THREADS

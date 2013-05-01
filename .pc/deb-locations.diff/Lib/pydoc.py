@@ -132,7 +132,10 @@ def stripid(text):
     return _re_stripid.sub(r'\1', text)
 
 def _is_some_method(obj):
-    return inspect.ismethod(obj) or inspect.ismethoddescriptor(obj)
+    return (inspect.isfunction(obj) or
+            inspect.ismethod(obj) or
+            inspect.isbuiltin(obj) or
+            inspect.ismethoddescriptor(obj))
 
 def allmethods(cl):
     methods = {}
@@ -2551,8 +2554,8 @@ def cli():
             if opt == '-w':
                 writing = True
 
-        if start_server == True:
-            if port == None:
+        if start_server:
+            if port is None:
                 port = 0
             browse(port, open_browser=open_browser)
             return

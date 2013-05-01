@@ -94,11 +94,10 @@ Functions
    :exc:`ValueError` is raised). Otherwise a search using :attr:`sys.meta_path`
    is done. ``None`` is returned if no loader is found.
 
-   A dotted name does not have its parent's implicitly imported. If that is
-   desired (although not nessarily required to find the loader, it will most
-   likely be needed if the loader actually is used to load the module), then
-   you will have to import the packages containing the module prior to calling
-   this function.
+   A dotted name does not have its parent's implicitly imported as that requires
+   loading them and that may not be desired. To properly import a submodule you
+   will need to import all parent packages of the submodule and use the correct
+   argument to *path*.
 
 .. function:: invalidate_caches()
 
@@ -162,7 +161,7 @@ ABC hierarchy::
 
       An abstract method for finding a :term:`loader` for the specified
       module.  If this is a top-level import, *path* will be ``None``.
-      Otheriwse, this is a search for a subpackage or module and *path*
+      Otherwise, this is a search for a subpackage or module and *path*
       will be the value of :attr:`__path__` from the parent
       package. If a loader cannot be found, ``None`` is returned.
 
@@ -329,7 +328,7 @@ ABC hierarchy::
 .. class:: FileLoader(fullname, path)
 
    An abstract base class which inherits from :class:`ResourceLoader` and
-   :class:`ExecutionLoader`, providing concreate implementations of
+   :class:`ExecutionLoader`, providing concrete implementations of
    :meth:`ResourceLoader.get_data` and :meth:`ExecutionLoader.get_filename`.
 
    The *fullname* argument is a fully resolved name of the module the loader is

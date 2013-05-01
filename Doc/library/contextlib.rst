@@ -184,7 +184,7 @@ Functions and classes provided:
           files = [stack.enter_context(open(fname)) for fname in filenames]
           # All opened files will automatically be closed at the end of
           # the with statement, even if attempts to open files later
-          # in the list throw an exception
+          # in the list raise an exception
 
    Each instance maintains a stack of registered callbacks that are called in
    reverse order when the instance is closed (either explicitly or implicitly
@@ -361,7 +361,7 @@ and maps them to the context management protocol::
 
    from contextlib import contextmanager, ExitStack
 
-   class ResourceManager(object):
+   class ResourceManager:
 
        def __init__(self, acquire_resource, release_resource, check_resource_ok=None):
            self.acquire_resource = acquire_resource
