@@ -1216,6 +1216,7 @@
  _PyTuple_MaybeUntrack@Base @VER@
  _PyTuple_Resize@Base @VER@
  _PyType_CalculateMetaclass@Base @VER@
+ _PyType_Fini@Base 3.3.2
  _PyType_Lookup@Base @VER@
  _PyUnicodeTranslateError_Create@Base @VER@
  _PyUnicodeWriter_Dealloc@Base @VER@
