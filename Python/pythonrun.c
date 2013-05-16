@@ -506,9 +506,6 @@ Py_Finalize(void)
     /* Disable signal handling */
     PyOS_FiniInterrupts();
 
-    /* Clear type lookup cache */
-    PyType_ClearCache();
-
     /* Collect garbage.  This may call finalizers; it's nice to call these
      * before all modules are destroyed.
      * XXX If a __del__ or weakref callback is triggered here, and tries to
@@ -561,6 +558,9 @@ Py_Finalize(void)
     /* Destroy the database used by _PyImport_{Fixup,Find}Extension */
     _PyImport_Fini();
 
+    /* Cleanup typeobject.c's internal caches. */
+    _PyType_Fini();
+
     /* unload faulthandler module */
     _PyFaulthandler_Fini();
 
@@ -581,7 +581,7 @@ Py_Finalize(void)
         _Py_PrintReferences(stderr);
 #endif /* Py_TRACE_REFS */
 
-    /* Clear interpreter state */
+    /* Clear interpreter state and all thread states. */
     PyInterpreterState_Clear(interp);
 
     /* Now we decref the exception classes.  After this point nothing
@@ -596,10 +596,6 @@ Py_Finalize(void)
 #ifdef WITH_THREAD
     _PyGILState_Fini();
 #endif /* WITH_THREAD */
-
-    /* Delete current thread */
-    PyThreadState_Swap(NULL);
-    PyInterpreterState_Delete(interp);
 
     /* Sundry finalizers */
     PyMethod_Fini();
@@ -617,6 +613,10 @@ Py_Finalize(void)
 
     /* Cleanup Unicode implementation */
     _PyUnicode_Fini();
+
+    /* Delete current thread. After this, many C API calls become crashy. */
+    PyThreadState_Swap(NULL);
+    PyInterpreterState_Delete(interp);
 
     /* reset file system default encoding */
     if (!Py_HasFileSystemDefaultEncoding && Py_FileSystemDefaultEncoding) {
@@ -1237,16 +1237,15 @@ PyRun_InteractiveOneFlags(FILE *fp, const char *filename, PyCompilerFlags *flags
     _Py_IDENTIFIER(encoding);
 
     if (fp == stdin) {
-        /* Fetch encoding from sys.stdin */
+        /* Fetch encoding from sys.stdin if possible. */
         v = PySys_GetObject("stdin");
-        if (v == NULL || v == Py_None)
-            return -1;
-        oenc = _PyObject_GetAttrId(v, &PyId_encoding);
-        if (!oenc)
-            return -1;
-        enc = _PyUnicode_AsString(oenc);
-        if (enc == NULL)
-            return -1;
+        if (v && v != Py_None) {
+            oenc = _PyObject_GetAttrId(v, &PyId_encoding);
+            if (oenc)
+                enc = _PyUnicode_AsString(oenc);
+            if (!enc)
+                PyErr_Clear();
+        }
     }
     v = PySys_GetObject("ps1");
     if (v != NULL) {
