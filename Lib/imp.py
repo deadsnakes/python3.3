@@ -111,7 +111,12 @@ def load_source(name, pathname, file=None):
            'importlib.machinery.SourceFileLoader(name, pathname).load_module()'
            ' instead')
     warnings.warn(msg, DeprecationWarning, 2)
-    return _LoadSourceCompatibility(name, pathname, file).load_module(name)
+    _LoadSourceCompatibility(name, pathname, file).load_module(name)
+    module = sys.modules[name]
+    # To allow reloading to potentially work, use a non-hacked loader which
+    # won't rely on a now-closed file object.
+    module.__loader__ = _bootstrap.SourceFileLoader(name, pathname)
+    return module
 
 
 class _LoadCompiledCompatibility(_HackedGetData,
@@ -125,7 +130,12 @@ def load_compiled(name, pathname, file=None):
            'importlib.machinery.SourcelessFileLoader(name, pathname).'
            'load_module() instead ')
     warnings.warn(msg, DeprecationWarning, 2)
-    return _LoadCompiledCompatibility(name, pathname, file).load_module(name)
+    _LoadCompiledCompatibility(name, pathname, file).load_module(name)
+    module = sys.modules[name]
+    # To allow reloading to potentially work, use a non-hacked loader which
+    # won't rely on a now-closed file object.
+    module.__loader__ = _bootstrap.SourcelessFileLoader(name, pathname)
+    return module
 
 
 def load_package(name, path):
@@ -158,7 +168,7 @@ def load_module(name, file, filename, details):
         warnings.simplefilter('ignore')
         if mode and (not mode.startswith(('r', 'U')) or '+' in mode):
             raise ValueError('invalid file open mode {!r}'.format(mode))
-        elif file is None and type_ in {PY_SOURCE, PY_COMPILED, C_EXTENSION}:
+        elif file is None and type_ in {PY_SOURCE, PY_COMPILED}:
             msg = 'file object required for import (type code {})'.format(type_)
             raise ValueError(msg)
         elif type_ == PY_SOURCE:
@@ -166,7 +176,11 @@ def load_module(name, file, filename, details):
         elif type_ == PY_COMPILED:
             return load_compiled(name, filename, file)
         elif type_ == C_EXTENSION and load_dynamic is not None:
-            return load_dynamic(name, filename, file)
+            if file is None:
+                with open(filename, 'rb') as opened_file:
+                    return load_dynamic(name, filename, opened_file)
+            else:
+                return load_dynamic(name, filename, file)
         elif type_ == PKG_DIRECTORY:
             return load_package(name, filename)
         elif type_ == C_BUILTIN:

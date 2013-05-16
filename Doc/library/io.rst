@@ -187,6 +187,8 @@ Argument names are not part of the specification, and only the arguments of
 
 The following table summarizes the ABCs provided by the :mod:`io` module:
 
+.. tabularcolumns:: |l|l|L|L|
+
 =========================  ==================  ========================  ==================================================
 ABC                        Inherits            Stub Methods              Mixin Methods and Properties
 =========================  ==================  ========================  ==================================================
@@ -295,6 +297,9 @@ I/O Base Classes
       Read and return a list of lines from the stream.  *hint* can be specified
       to control the number of lines read: no more lines will be read if the
       total size (in bytes/characters) of all lines so far exceeds *hint*.
+
+      Note that it's already possible to iterate on file objects using ``for
+      line in file: ...`` without calling ``file.readlines()``.
 
    .. method:: seek(offset, whence=SEEK_SET)
 

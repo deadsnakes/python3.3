@@ -344,7 +344,10 @@ signal_signal(PyObject *self, PyObject *args)
     Handlers[sig_num].tripped = 0;
     Py_INCREF(obj);
     Handlers[sig_num].func = obj;
-    return old_handler;
+    if (old_handler != NULL)
+        return old_handler;
+    else
+        Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(signal_doc,
@@ -372,8 +375,13 @@ signal_getsignal(PyObject *self, PyObject *args)
         return NULL;
     }
     old_handler = Handlers[sig_num].func;
-    Py_INCREF(old_handler);
-    return old_handler;
+    if (old_handler != NULL) {
+        Py_INCREF(old_handler);
+        return old_handler;
+    }
+    else {
+        Py_RETURN_NONE;
+    }
 }
 
 PyDoc_STRVAR(getsignal_doc,
@@ -784,14 +792,18 @@ signal_sigtimedwait(PyObject *self, PyObject *args)
     struct timespec buf;
     sigset_t set;
     siginfo_t si;
+    time_t tv_sec;
+    long tv_nsec;
     int err;
 
     if (!PyArg_ParseTuple(args, "OO:sigtimedwait",
                           &signals, &timeout))
         return NULL;
 
-    if (_PyTime_ObjectToTimespec(timeout, &buf.tv_sec, &buf.tv_nsec) == -1)
+    if (_PyTime_ObjectToTimespec(timeout, &tv_sec, &tv_nsec) == -1)
         return NULL;
+    buf.tv_sec = tv_sec;
+    buf.tv_nsec = tv_nsec;
 
     if (buf.tv_sec < 0 || buf.tv_nsec < 0) {
         PyErr_SetString(PyExc_ValueError, "timeout must be non-negative");
