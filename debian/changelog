@@ -1,4 +1,4 @@
-python3.3 (3.3.2-1+lucid1) UNRELEASED; urgency=low
+python3.3 (3.3.2-1+lucid1) lucid; urgency=low
 
   * Imported new upstream release Python 3.3.2.
 
