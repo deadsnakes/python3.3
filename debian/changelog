@@ -1,3 +1,9 @@
+python3.3 (3.3.2-1+lucid1) UNRELEASED; urgency=low
+
+  * Imported new upstream release Python 3.3.2.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 01 Jul 2013 14:01:24 +0200
+
 python3.3 (3.3.1-1+lucid1) lucid; urgency=low
 
   * Imported new upstream release Python 3.3.1.
