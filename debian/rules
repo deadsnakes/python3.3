@@ -746,7 +746,7 @@ endif
 
 #	: # The test framework into $(p_base), regression tests dropped
 	DH_COMPAT=2 dh_movefiles -p$(p_base) --sourcedir=$(d) \
-		$(scriptdir)/test/{regrtest.py,support.py,__init__.py,pystone.py}
+		$(scriptdir)/test/{regrtest.py,__init__.py,pystone.py}
 	rm -rf $(d)/$(scriptdir)/test
 	rm -rf $(d)/$(scriptdir)/ctypes/test
 	rm -rf $(d)/$(scriptdir)/bsddb/test
