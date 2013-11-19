@@ -2,7 +2,7 @@
 
 --- a/Doc/tools/sphinxext/pyspecific.py
 +++ b/Doc/tools/sphinxext/pyspecific.py
-@@ -241,8 +241,15 @@
+@@ -242,8 +242,15 @@
  from docutils.io import StringOutput
  from docutils.utils import new_document
  
