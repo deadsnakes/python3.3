@@ -1130,6 +1130,7 @@
  _PyLong_FormatWriter@Base @VER@
  _PyLong_Frexp@Base @VER@
  _PyLong_FromByteArray@Base @VER@
+ _PyLong_FromBytes@Base 3.3.3
  _PyLong_FromGid@Base 3.3.1
  _PyLong_FromTime_t@Base @VER@
  _PyLong_FromUid@Base 3.3.1
@@ -1149,6 +1150,7 @@
  _PyOS_ReadlineTState@Base @VER@
  _PyOS_ResetGetOpt@Base @VER@
  _PyOS_URandom@Base @VER@
+ _PyOS_mystrnicmp_hack@Base 3.3.3
  _PyOS_optarg@Base @VER@
  _PyOS_opterr@Base @VER@
  _PyOS_optind@Base @VER@
@@ -1218,6 +1220,7 @@
  _PyType_CalculateMetaclass@Base @VER@
  _PyType_Fini@Base 3.3.2
  _PyType_Lookup@Base @VER@
+ _PyType_LookupId@Base 3.3.3
  _PyUnicodeTranslateError_Create@Base @VER@
  _PyUnicodeWriter_Dealloc@Base @VER@
  _PyUnicodeWriter_Finish@Base @VER@
