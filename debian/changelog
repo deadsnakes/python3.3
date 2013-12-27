@@ -1,3 +1,10 @@
+python3.3 (3.3.3-2+precise1) precise; urgency=low
+
+  * Fix missing ngettext import in patched argparse.
+    - See http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=631635.
+
+ -- Felix Krull <f_krull@gmx.de>  Fri, 27 Dec 2013 20:09:55 +0100
+
 python3.3 (3.3.3-1+precise1) precise; urgency=low
 
   * Imported new upstream release Python 3.3.3 (awesome version number, that).
