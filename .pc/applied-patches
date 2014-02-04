@@ -26,3 +26,4 @@ lib-argparse.diff
 deadsnakes-fix-timemodule-build.diff
 deadsnakes-assert-use-system-ffi.diff
 deadsnakes-no-rpath.diff
+ext-no-libpython-link.diff
