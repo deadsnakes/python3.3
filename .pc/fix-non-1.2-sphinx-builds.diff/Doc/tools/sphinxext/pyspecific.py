@@ -145,8 +145,6 @@ class PyDecoratorMethod(PyDecoratorMixin, PyClassmember):
 from sphinx.locale import versionlabels
 from sphinx.util.compat import Directive
 
-versionlabels['deprecated-removed'] = \
-    'Deprecated since version %s, will be removed in version %s'
 
 class DeprecatedRemoved(Directive):
     has_content = True
