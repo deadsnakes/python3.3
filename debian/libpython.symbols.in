@@ -1132,6 +1132,7 @@
  _PyLong_FromByteArray@Base @VER@
  _PyLong_FromBytes@Base 3.3.3
  _PyLong_FromGid@Base 3.3.1
+ _PyLong_FromNbInt@Base 3.3.4
  _PyLong_FromTime_t@Base @VER@
  _PyLong_FromUid@Base 3.3.1
  _PyLong_Init@Base @VER@
@@ -1145,6 +1146,8 @@
  _PyNamespace_New@Base @VER@
  _PyNamespace_Type@Base @VER@
  _PyNode_SizeOf@Base @VER@
+ _PyNone_Type@Base 3.3.4
+ _PyNotImplemented_Type@Base 3.3.4
  _PyOS_GetOpt@Base @VER@
  _PyOS_IsMainThread@Base @VER@
  _PyOS_ReadlineTState@Base @VER@
@@ -1167,8 +1170,8 @@
  _PyObject_GC_New@Base @VER@
  _PyObject_GC_NewVar@Base @VER@
  _PyObject_GC_Resize@Base @VER@
- _PyObject_GC_Track@Base @VER@
- _PyObject_GC_UnTrack@Base @VER@
+# _PyObject_GC_Track@Base @VER@
+# _PyObject_GC_UnTrack@Base @VER@
  _PyObject_GenericGetAttrWithDict@Base @VER@
  _PyObject_GenericSetAttrWithDict@Base @VER@
  _PyObject_GetAttrId@Base @VER@
