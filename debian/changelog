@@ -1,3 +1,17 @@
+python3.3 (3.3.3-3+precise1) UNRELEASED; urgency=low
+
+  * Add test.support package.
+    - Fixes #11.
+  * Pick _sysconfigdata based on regular/debug build so that sysconfig
+    always produces accurate results regardless of whether the regular
+    or debug interpreter is used.
+    - Also, the underlying _sysconfigdata files are from the respective
+      shared builds. While the main interpreter is a static built, we also
+      have shared libraries.
+  * On shared builds, don't link extensions modules to libpython.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 23 Feb 2014 14:17:22 +0100
+
 python3.3 (3.3.3-2+precise1) precise; urgency=low
 
   * Fix missing ngettext import in patched argparse.
