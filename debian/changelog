@@ -1,5 +1,6 @@
-python3.3 (3.3.3-3+precise1) UNRELEASED; urgency=low
+python3.3 (3.3.4-1+precise1) UNRELEASED; urgency=low
 
+  * Imported new upstream release Python 3.3.4.
   * Add test.support package.
     - Fixes #11.
   * Pick _sysconfigdata based on regular/debug build so that sysconfig
