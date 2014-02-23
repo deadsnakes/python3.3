@@ -2,7 +2,7 @@
 
 --- a/Lib/platform.py
 +++ b/Lib/platform.py
-@@ -290,6 +290,10 @@
+@@ -294,6 +294,10 @@
              id = l[1]
      return '', version, id
  
@@ -13,7 +13,7 @@
  def linux_distribution(distname='', version='', id='',
  
                         supported_dists=_supported_dists,
-@@ -314,6 +318,25 @@
+@@ -318,6 +322,25 @@
          args given as parameters.
  
      """
@@ -37,5 +37,5 @@
 +            pass
 +
      try:
-         etc = os.listdir('/etc')
+         etc = os.listdir(_UNIXCONFDIR)
      except os.error:
