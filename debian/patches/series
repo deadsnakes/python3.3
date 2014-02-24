@@ -30,3 +30,4 @@ deadsnakes-fix-timemodule-build.diff
 deadsnakes-assert-use-system-ffi.diff
 deadsnakes-no-rpath.diff
 ext-no-libpython-link.diff
+7358ca69f351-fix-sphinx-1.1-docs-build.diff
