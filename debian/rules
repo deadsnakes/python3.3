@@ -915,8 +915,8 @@ endif
 	: # We want _sysconfigdata.py from the shared regular and debug builds.
 	$(MAKE) -C $(buildd_shared) install DESTDIR=$(CURDIR)/$(d)-shared
 	$(MAKE) -C $(buildd_shdebug) install DESTDIR=$(CURDIR)/$(d)-shdebug
-	cp -p $(d)-shared/$(scriptdir)/_sysconfigdata.py $(d_min)/$(scriptdir)/_sysconfigdata_nd.py
-	cp -p $(d)-shdebug/$(scriptdir)/_sysconfigdata.py $(d_dbg)/$(scriptdir)/_sysconfigdata_d.py
+	cp -p $(d)-shared/$(scriptdir)/_sysconfigdata.py $(d_min)/$(scriptdir)/_sysconfigdata_$(ABIFLAGS).py
+	cp -p $(d)-shdebug/$(scriptdir)/_sysconfigdata.py $(d_dbg)/$(scriptdir)/_sysconfigdata_$(DEBUG_ABIFLAGS).py
 	cp -p debian/_sysconfigdata.py $(d_min)/$(scriptdir)/_sysconfigdata.py
 
 	touch stamps/stamp-install
