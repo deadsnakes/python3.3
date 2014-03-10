@@ -27,6 +27,8 @@ Priority: optional
 Depends: python3.3-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
 Suggests: python3.3-doc, binutils
 Provides: python3.3-cjkcodecs, python3.3-ctypes, python3.3-elementtree, python3.3-celementtree, python3.3-wsgiref, python3.3-profiler
+Replaces: python3.3-gdbm (<< 3.3.4-2)
+Breaks: python3.3-gdbm (<< 3.3.4-2)
 XB-Python-Version: 3.3
 Description: Interactive high-level object-oriented language (version 3.3)
  Version 3.3 of the high-level, interactive object oriented language,
