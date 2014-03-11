@@ -101,6 +101,7 @@ are:
   reprlib		module
   runpy			module
   select		extension
+  shutil		module
   signal		builtin
   socket		module
   spwd			extension
@@ -115,6 +116,7 @@ are:
   sys			builtin
   sysconfig		module
   syslog		extension
+  tarfile		module
   tempfile		module
   textwrap		module
   time			extension

@@ -123,8 +123,10 @@ excluded_imports = {
     'platform': set(('plistlib', 'tempfile')),
     'reprlib': set(('_dummy_thread',)),
     #'socket': set(('_ssl',)),
+    'shutil': set(('bz2', 'distutils', 'zipfile',)),
     'subprocess': set(('threading',)),
     'sysconfig': set(('_osx_support',)),
+    'tarfile': set(('bz2', 'gzip', 'lzma',)),
     'tempfile': set(('_dummy_thread',)),
     }
 
