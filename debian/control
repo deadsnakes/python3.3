@@ -27,8 +27,8 @@ Priority: optional
 Depends: python3.3-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
 Suggests: python3.3-doc, binutils
 Provides: python3.3-cjkcodecs, python3.3-ctypes, python3.3-elementtree, python3.3-celementtree, python3.3-wsgiref, python3.3-profiler
-Replaces: python3.3-gdbm (<< 3.3.4-2)
-Breaks: python3.3-gdbm (<< 3.3.4-2)
+Replaces: python3.3-gdbm (<< 3.3.5-1)
+Breaks: python3.3-gdbm (<< 3.3.5-1)
 XB-Python-Version: 3.3
 Description: Interactive high-level object-oriented language (version 3.3)
  Version 3.3 of the high-level, interactive object oriented language,
@@ -44,6 +44,8 @@ Suggests: binfmt-support
 Conflicts: binfmt-support (<< 1.1.2)
 XB-Python-Runtime: python3.3
 XB-Python-Version: 3.3
+Breaks: python3.3 (<< 3.3.5-1)
+Replaces: python3.3 (<< 3.3.5-1)
 Description: Minimal subset of the Python language (version 3.3)
  This package contains the interpreter and some essential modules.  It can
  be used in the boot process for some basic tasks.

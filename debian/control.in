@@ -27,8 +27,8 @@ Priority: @PRIO@
 Depends: @PVER@-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
 Suggests: @PVER@-doc, binutils
 Provides: python@VER@-cjkcodecs, python@VER@-ctypes, python@VER@-elementtree, python@VER@-celementtree, python@VER@-wsgiref, @PVER@-profiler
-Replaces: @PVER@-gdbm (<< 3.3.4-2)
-Breaks: @PVER@-gdbm (<< 3.3.4-2)
+Replaces: @PVER@-gdbm (<< 3.3.5-1)
+Breaks: @PVER@-gdbm (<< 3.3.5-1)
 XB-Python-Version: @VER@
 Description: Interactive high-level object-oriented language (version @VER@)
  Version @VER@ of the high-level, interactive object oriented language,
@@ -44,6 +44,8 @@ Suggests: binfmt-support
 Conflicts: binfmt-support (<< 1.1.2)
 XB-Python-Runtime: @PVER@
 XB-Python-Version: @VER@
+Breaks: @PVER@ (<< 3.3.5-1)
+Replaces: @PVER@ (<< 3.3.5-1)
 Description: Minimal subset of the Python language (version @VER@)
  This package contains the interpreter and some essential modules.  It can
  be used in the boot process for some basic tasks.
