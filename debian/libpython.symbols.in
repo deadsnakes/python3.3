@@ -1020,7 +1020,12 @@
  _PyCFunction_DebugMallocStats@Base @VER@
  _PyCapsule_hack@Base @VER@
  _PyCode_CheckLineNumber@Base @VER@
+ _PyCodecInfo_GetIncrementalDecoder@Base 3.3.5
+ _PyCodecInfo_GetIncrementalEncoder@Base 3.3.5
+ _PyCodec_DecodeText@Base 3.3.5
+ _PyCodec_EncodeText@Base 3.3.5
  _PyCodec_Lookup@Base @VER@
+ _PyCodec_LookupTextEncoding@Base 3.3.5
  _PyComplex_FormatAdvancedWriter@Base @VER@
  _PyDebugAllocatorStats@Base @VER@
  _PyDictKeys_DecRef@Base @VER@
