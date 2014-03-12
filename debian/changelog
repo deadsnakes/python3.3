@@ -1,10 +1,10 @@
-python3.3 (3.3.5-1+precise1) UNRELEASED; urgency=low
+python3.3 (3.3.5-1+precise1) precise; urgency=low
 
   * Imported new upstream release Python 3.3.5.
   * The dbm.gnu module is now in the python3.3 package, similarly to how
     tkinter is handled.
 
- -- Felix Krull <f_krull@gmx.de>  Thu, 06 Mar 2014 22:58:28 +0100
+ -- Felix Krull <f_krull@gmx.de>  Wed, 12 Mar 2014 01:01:51 +0100
 
 python3.3 (3.3.4-1+precise1) precise; urgency=low
 
