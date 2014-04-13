@@ -1,3 +1,9 @@
+python3.3 (3.3.5-1+trusty1) trusty; urgency=low
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 13 Apr 2014 14:45:12 +0200
+
 python3.3 (3.3.5-1+precise1) precise; urgency=low
 
   * Imported new upstream release Python 3.3.5.
