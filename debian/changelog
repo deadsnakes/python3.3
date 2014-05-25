@@ -1,3 +1,9 @@
+python3.3 (3.3.5-2+precise1) precise; urgency=low
+
+  * Removed apport support.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 25 May 2014 19:49:18 +0200
+
 python3.3 (3.3.5-1+precise1) precise; urgency=low
 
   * Imported new upstream release Python 3.3.5.
