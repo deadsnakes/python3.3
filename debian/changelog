@@ -1,8 +1,11 @@
 python3.3 (3.3.5-2+precise1) precise; urgency=low
 
-  * Removed apport support.
+  * Remove apport hook.
+    - Because that hook tries to import apt_pkg which is a compiled module,
+      you'd get an annoying error message every time an exception is raised
+      while python3-apport is installed.
 
- -- Felix Krull <f_krull@gmx.de>  Sun, 25 May 2014 19:49:18 +0200
+ -- Felix Krull <f_krull@gmx.de>  Mon, 04 Aug 2014 16:26:07 +0200
 
 python3.3 (3.3.5-1+precise1) precise; urgency=low
 
