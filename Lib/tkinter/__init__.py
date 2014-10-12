@@ -37,7 +37,10 @@ if sys.platform == "win32":
 
 import warnings
 
-import _tkinter # If this fails your Python may not be configured for Tk
+try:
+    import _tkinter
+except ImportError as msg:
+    raise ImportError(str(msg) + ', please install the python%s.%s-tk package' % sys.version_info[:2])
 TclError = _tkinter.TclError
 from tkinter.constants import *
 import re

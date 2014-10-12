@@ -435,12 +435,12 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
 
     def detect_modules(self):
-        # Ensure that /usr/local is always used, but the local build
-        # directories (i.e. '.' and 'Include') must be first.  See issue
-        # 10520.
-        if not cross_compiling:
-            add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
-            add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+        # On Debian /usr/local is always used, so we don't include it twice
+        #add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+        #add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+        #if not cross_compiling:
+        #    add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+        #    add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
         # only change this for cross builds for 3.3, issues on Mageia
         if cross_compiling:
             self.add_gcc_paths()
@@ -675,7 +675,7 @@ class PyBuildExt(build_ext):
                 os.unlink(tmpfile)
         # Issue 7384: If readline is already linked against curses,
         # use the same library for the readline and curses modules.
-        if 'curses' in readline_termcap_library:
+        if False and 'curses' in readline_termcap_library:
             curses_library = readline_termcap_library
         elif self.compiler.find_library_file(lib_dirs, 'ncursesw'):
             curses_library = 'ncursesw'
@@ -1196,7 +1196,7 @@ class PyBuildExt(build_ext):
                         if dbm_setup_debug: print("building dbm using bdb")
                         dbmext = Extension('_dbm', ['_dbmmodule.c'],
                                            library_dirs=dblib_dir,
-                                           runtime_library_dirs=dblib_dir,
+                                           #runtime_library_dirs=dblib_dir,
                                            include_dirs=db_incs,
                                            define_macros=[
                                                ('HAVE_BERKDB_H', None),
@@ -1293,6 +1293,9 @@ class PyBuildExt(build_ext):
                                    libraries = [panel_library] + curses_libs) )
         else:
             missing.append('_curses_panel')
+
+        #fpectl fpectlmodule.c ...
+        exts.append( Extension('fpectl', ['fpectlmodule.c']) )
 
         # Andrew Kuchling's zlib module.  Note that some versions of zlib
         # 1.1.3 have security problems.  See CERT Advisory CA-2002-07:
@@ -1938,6 +1941,10 @@ class PyBuildExt(build_ext):
             ext.include_dirs.extend(ffi_inc)
             ext.libraries.append(ffi_lib)
             self.use_system_libffi = True
+
+        if not self.use_system_libffi:
+            print("Error: not using system libffi", file=sys.stderr)
+            sys.exit(1)
 
     def _decimal_ext(self):
         extra_compile_args = []
