@@ -2,7 +2,7 @@
 
 --- a/Modules/makesetup
 +++ b/Modules/makesetup
-@@ -281,7 +281,7 @@
+@@ -277,7 +277,7 @@
  	-)	;;
  	*)	sedf="@sed.in.$$"
  		trap 'rm -f $sedf' 0 1 2 3

@@ -133,21 +133,6 @@ are:
 Included are as well the codecs and stringprep modules, and the encodings
 modules for all encodings except the multibyte encodings and the bz2 codec.
 
-The following modules are excluded, their import is guarded from the
-importing module:
-
-  Used in       Excluded
-  ------------  ------------------------------------
-  io		_dummy_thread
-  os		nt ntpath os2 os2emxpath mac macpath
-		riscos riscospath riscosenviron
-  optparse	gettext
-  pickle	doctest
-  subprocess	threading
-
-This list was derived by looking at the modules in the perl-base package,
-then adding python specific "core modules".
-
 TODO's
 ------
 

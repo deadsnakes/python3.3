@@ -1,0 +1,148 @@
+--- a/Lib/sysconfig.py
++++ b/Lib/sysconfig.py
+@@ -339,6 +339,8 @@
+         config_dir_name = 'config-%s%s' % (_PY_VERSION_SHORT, sys.abiflags)
+     else:
+         config_dir_name = 'config'
++    if hasattr(sys.implementation, '_multiarch'):
++        config_dir_name += '-%s' % sys.implementation._multiarch
+     return os.path.join(get_path('stdlib'), config_dir_name, 'Makefile')
+ 
+ def _generate_posix_vars():
+@@ -545,6 +547,12 @@
+         # the init-function.
+         _CONFIG_VARS['userbase'] = _getuserbase()
+ 
++        multiarch = get_config_var('MULTIARCH')
++        if multiarch:
++            _CONFIG_VARS['multiarchsubdir'] = '/' + multiarch
++        else:
++            _CONFIG_VARS['multiarchsubdir'] = ''
++
+         # Always convert srcdir to an absolute path
+         srcdir = _CONFIG_VARS.get('srcdir', _PROJECT_BASE)
+         if os.name == 'posix':
+--- a/Lib/distutils/sysconfig.py
++++ b/Lib/distutils/sysconfig.py
+@@ -111,6 +111,9 @@
+                 incdir = os.path.join(get_config_var('srcdir'), 'Include')
+             return os.path.normpath(incdir)
+         python_dir = 'python' + get_python_version() + build_flags
++        if not python_build and plat_specific:
++            import sysconfig
++            return sysconfig.get_path('platinclude')
+         return os.path.join(prefix, "include", python_dir)
+     elif os.name == "nt":
+         return os.path.join(prefix, "include")
+@@ -265,6 +268,8 @@
+         return os.path.join(_sys_home or project_base, "Makefile")
+     lib_dir = get_python_lib(plat_specific=0, standard_lib=1)
+     config_file = 'config-{}{}'.format(get_python_version(), build_flags)
++    if hasattr(sys.implementation, '_multiarch'):
++        config_file += '-%s' % sys.implementation._multiarch
+     return os.path.join(lib_dir, config_file, 'Makefile')
+ 
+ 
+--- a/Makefile.pre.in
++++ b/Makefile.pre.in
+@@ -730,6 +730,7 @@
+ 
+ Python/dynload_shlib.o: $(srcdir)/Python/dynload_shlib.c Makefile
+ 	$(CC) -c $(PY_CORE_CFLAGS) \
++		$(if $(MULTIARCH),-DMULTIARCH='"$(MULTIARCH)"') \
+ 		-DSOABI='"$(SOABI)"' \
+ 		-o $@ $(srcdir)/Python/dynload_shlib.c
+ 
+@@ -741,6 +742,7 @@
+ Python/sysmodule.o: $(srcdir)/Python/sysmodule.c Makefile
+ 	$(CC) -c $(PY_CORE_CFLAGS) \
+ 		-DABIFLAGS='"$(ABIFLAGS)"' \
++		-DMULTIARCH='"$(MULTIARCH)"' \
+ 		-o $@ $(srcdir)/Python/sysmodule.c
+ 
+ $(IO_OBJS): $(IO_H)
+@@ -1122,7 +1124,7 @@
+ 	(cd $(DESTDIR)$(MANDIR)/man1; $(LN) -s python$(VERSION).1 python3.1)
+ 
+ # Install the library
+-PLATDIR=	plat-$(MACHDEP)
++PLATDIR=	plat-$(MULTIARCH)
+ EXTRAPLATDIR= @EXTRAPLATDIR@
+ MACHDEPS=	$(PLATDIR) $(EXTRAPLATDIR)
+ XMLLIBSUBDIRS=  xml xml/dom xml/etree xml/parsers xml/sax
+@@ -1263,6 +1265,10 @@
+ $(srcdir)/Lib/$(PLATDIR):
+ 	mkdir $(srcdir)/Lib/$(PLATDIR)
+ 	cp $(srcdir)/Lib/plat-generic/regen $(srcdir)/Lib/$(PLATDIR)/regen
++	if [ -n "$(MULTIARCH)" ]; then \
++	  cp -p $(srcdir)/Lib/plat-linux/*.py $(srcdir)/Lib/$(PLATDIR)/.; \
++	  rm -f $(srcdir)/Lib/$(PLATDIR)/IN.py; \
++	fi
+ 	export PATH; PATH="`pwd`:$$PATH"; \
+ 	export PYTHONPATH; PYTHONPATH="`pwd`/Lib"; \
+ 	export DYLD_FRAMEWORK_PATH; DYLD_FRAMEWORK_PATH="`pwd`"; \
+@@ -1310,10 +1316,10 @@
+ 
+ # Install the library and miscellaneous stuff needed for extending/embedding
+ # This goes into $(exec_prefix)
+-LIBPL=		$(LIBDEST)/config-$(LDVERSION)
++LIBPL=		$(LIBDEST)/config-$(LDVERSION)-$(MULTIARCH)
+ 
+ # pkgconfig directory
+-LIBPC=		$(LIBDIR)/pkgconfig
++LIBPC=		$(LIBDIR)/$(MULTIARCH)/pkgconfig
+ 
+ libainstall:	all python-config
+ 	@for i in $(LIBDIR) $(LIBPL) $(LIBPC); \
+--- a/Python/dynload_shlib.c
++++ b/Python/dynload_shlib.c
+@@ -36,6 +36,9 @@
+ #ifdef __CYGWIN__
+     ".dll",
+ #else  /* !__CYGWIN__ */
++#ifdef MULTIARCH
++    "." SOABI "-" MULTIARCH ".so",
++#endif
+     "." SOABI ".so",
+     ".abi" PYTHON_ABI_STRING ".so",
+     ".so",
+--- a/Modules/Setup.dist
++++ b/Modules/Setup.dist
+@@ -91,7 +91,7 @@
+ TESTPATH=
+ 
+ # Path components for machine- or system-dependent modules and shared libraries
+-MACHDEPPATH=:plat-$(MACHDEP)
++MACHDEPPATH=:plat-$(MULTIARCH)
+ EXTRAMACHDEPPATH=
+ 
+ COREPYTHONPATH=$(DESTPATH)$(SITEPATH)$(TESTPATH)$(MACHDEPPATH)$(EXTRAMACHDEPPATH)
+--- a/Python/sysmodule.c
++++ b/Python/sysmodule.c
+@@ -1603,6 +1603,15 @@
+     if (res < 0)
+         goto error;
+ 
++    /* For Debian multiarch support. */
++    value = PyUnicode_FromString(MULTIARCH);
++    if (value == NULL)
++        goto error;
++    res = PyDict_SetItemString(impl_info, "_multiarch", value);
++    Py_DECREF(value);
++    if (res < 0)
++        goto error;
++
+     /* dict ready */
+ 
+     ns = _PyNamespace_New(impl_info);
+--- a/configure.ac
++++ b/configure.ac
+@@ -4115,7 +4115,7 @@
+ 
+ dnl define LIBPL after ABIFLAGS and LDVERSION is defined.
+ AC_SUBST(PY_ENABLE_SHARED)
+-LIBPL="${prefix}/lib/python${VERSION}/config-${LDVERSION}"
++LIBPL="${prefix}/lib/python${VERSION}/config-${LDVERSION}-${MULTIARCH}"
+ AC_SUBST(LIBPL)
+ 
+ # Check whether right shifting a negative integer extends the sign bit

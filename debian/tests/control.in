@@ -1,0 +1,5 @@
+Tests: testsuite
+Depends: build-essential, locales, @PVER@, @PVER@-dev, lib@PVER@-testsuite, lib@PVER@-tk, lib@PVER@-gdbm
+
+Tests: testsuite-dbg
+Depends: build-essential, locales, gdb, @PVER@-dbg, lib@PVER@-testsuite, lib@PVER@-tk-dbg, lib@PVER@-gdbm-dbg

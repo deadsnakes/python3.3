@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/python3
 
 # Copyright 2004 Toby Dickenson
 #
@@ -22,7 +22,7 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-import sys, getopt, colorsys, imp, md5
+import sys, getopt, colorsys, imp, hashlib
 
 class pydepgraphdot:
 
@@ -42,9 +42,9 @@ class pydepgraphdot:
         p,t = self.get_data()
 
         # normalise our input data
-        for k,d in p.items():
-            for v in d.keys():
-                if not p.has_key(v):
+        for k,d in list(p.items()):
+            for v in list(d.keys()):
+                if v not in p:
                     p[v] = {}
                     
         f = self.get_output_file()                    
@@ -54,12 +54,12 @@ class pydepgraphdot:
         #f.write('ordering = out;\n')
         f.write('ranksep=1.0;\n')
         f.write('node [style=filled,fontname=Helvetica,fontsize=10];\n')
-        allkd = p.items()
+        allkd = list(p.items())
         allkd.sort()
         for k,d in allkd:
             tk = t.get(k)
             if self.use(k,tk):
-                allv = d.keys()
+                allv = list(d.keys())
                 allv.sort()
                 for v in allv:
                     tv = t.get(v)
@@ -181,10 +181,10 @@ class pydepgraphdot:
                 return s[:i]
         
     def color_from_name(self,name):
-        n = md5.md5(name).digest()
-        hf = float(ord(n[0])+ord(n[1])*0xff)/0xffff
-        sf = float(ord(n[2]))/0xff
-        vf = float(ord(n[3]))/0xff
+        n = hashlib.md5(name.encode('utf-8')).digest()
+        hf = float(n[0]+n[1]*0xff)/0xffff
+        sf = float(n[2])/0xff
+        vf = float(n[3])/0xff
         r,g,b = colorsys.hsv_to_rgb(hf, 0.3+0.6*sf, 0.8+0.2*vf)
         return '#%02x%02x%02x' % (r*256,g*256,b*256)
 
