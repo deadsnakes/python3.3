@@ -17,7 +17,7 @@ ABIFLAGS := m
 DEBUG_ABIFLAGS := d$(ABIFLAGS)
 
 # Preserve these generated files when cleaning so they're included in the source package
-PRESERVE_FILES := "debian/control:debian/source.lintian-overrides"
+PRESERVE_FILES := "debian/control:debian/source.lintian-overrides:debian/watch:debian/README.source"
 
 vafilt		= $(subst $(2)=,,$(filter $(2)=%,$(1)))
 DPKG_VARS	:= $(shell dpkg-architecture)
