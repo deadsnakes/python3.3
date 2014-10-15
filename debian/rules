@@ -64,10 +64,10 @@ endif
 distribution := $(shell lsb_release -is)
 distrelease  := $(shell lsb_release -cs)
 
-VER=3.4
-SVER=3.4.2
-NVER=3.5
-PVER=python3.4
+VER=3.3
+SVER=3.3.6
+NVER=3.4
+PVER=python3.3
 PRIORITY=$(shell echo $(VER) | tr -d '.')0
 
 PREVVER	:= $(shell awk '/^python/ && NR > 1 {print substr($$2,2,length($$2)-2); exit}' debian/changelog)
@@ -295,7 +295,6 @@ common_configure_args = \
 		--enable-loadable-sqlite-extensions \
 		--with-dbmliborder=bdb:gdbm \
 		--with-computed-gotos \
-		--without-ensurepip \
 		--with-system-expat \
 
 ifeq ($(DEB_HOST_ARCH), avr32)
@@ -737,9 +736,6 @@ endif
 	-find $(d)/usr/lib/python$(VER) -name '*_failed*.so'
 	find $(d)/usr/lib/python$(VER) -name '*_failed*.so' | xargs -r rm -f
 
-	: # FIXME: don't ship ensurepip for now
-	#rm -rf $(d)/usr/lib/python$(VER)/ensurepip
-
 	for i in $(d)/$(scriptdir)/lib-dynload/*.so; do \
 	  b=$$(basename $$i .$(SOABI).so); \
 	  d=$${b}.$(SOABI)-$(DEB_HOST_MULTIARCH).so; \
@@ -764,7 +760,7 @@ endif
 
 	: # fix some file permissions
 	chmod a-x $(d)/$(scriptdir)/{runpy,fractions,lib2to3/refactor,tkinter/tix}.py
-	chmod a-x $(d)/$(scriptdir)/test/test_pathlib.py
+	#chmod a-x $(d)/$(scriptdir)/test/test_pathlib.py
 
 #	: # move manpages to new names
 #	if [ -d $(d)/usr/man/man1 ]; then \
