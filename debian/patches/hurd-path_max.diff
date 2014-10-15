@@ -1,7 +1,7 @@
 --- a/Python/pythonrun.c
 +++ b/Python/pythonrun.c
-@@ -71,6 +71,10 @@
- }
+@@ -35,6 +35,10 @@
+ #define PATH_MAX MAXPATHLEN
  #endif
  
 +#ifdef __gnu_hurd__

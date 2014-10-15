@@ -2,7 +2,7 @@
 
 --- a/Lib/tempfile.py
 +++ b/Lib/tempfile.py
-@@ -31,7 +31,146 @@
+@@ -32,7 +32,146 @@
  import warnings as _warnings
  import io as _io
  import os as _os
@@ -149,20 +149,13 @@
 +
  import errno as _errno
  from random import Random as _Random
- import weakref as _weakref
-@@ -676,7 +815,7 @@
  
-     @classmethod
-     def _cleanup(cls, name, warn_message=None):
--        _shutil.rmtree(name)
-+        _rmtree(name)
-         if warn_message is not None:
-             _warnings.warn(warn_message, ResourceWarning)
- 
-@@ -694,5 +833,5 @@
-         if self._finalizer is not None:
-             self._finalizer.detach()
-         if self.name is not None and not self._closed:
--            _shutil.rmtree(self.name)
-+            _rmtree(self.name)
-             self._closed = True
+@@ -696,7 +835,7 @@
+     def cleanup(self, _warn=False, _warnings=_warnings):
+         if self.name and not self._closed:
+             try:
+-                _shutil.rmtree(self.name)
++                _rmtree(self.name)
+             except (TypeError, AttributeError) as ex:
+                 if "None" not in '%s' % (ex,):
+                     raise

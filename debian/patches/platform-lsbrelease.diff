@@ -47,4 +47,4 @@
 +
      try:
          etc = os.listdir(_UNIXCONFDIR)
-     except OSError:
+     except os.error:

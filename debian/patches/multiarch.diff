@@ -1,6 +1,6 @@
 --- a/Lib/sysconfig.py
 +++ b/Lib/sysconfig.py
-@@ -339,6 +339,8 @@
+@@ -359,6 +359,8 @@
          config_dir_name = 'config-%s%s' % (_PY_VERSION_SHORT, sys.abiflags)
      else:
          config_dir_name = 'config'
@@ -9,7 +9,7 @@
      return os.path.join(get_path('stdlib'), config_dir_name, 'Makefile')
  
  def _generate_posix_vars():
-@@ -545,6 +547,12 @@
+@@ -561,6 +563,12 @@
          # the init-function.
          _CONFIG_VARS['userbase'] = _getuserbase()
  
@@ -34,7 +34,7 @@
          return os.path.join(prefix, "include", python_dir)
      elif os.name == "nt":
          return os.path.join(prefix, "include")
-@@ -265,6 +268,8 @@
+@@ -278,6 +281,8 @@
          return os.path.join(_sys_home or project_base, "Makefile")
      lib_dir = get_python_lib(plat_specific=0, standard_lib=1)
      config_file = 'config-{}{}'.format(get_python_version(), build_flags)
@@ -45,7 +45,7 @@
  
 --- a/Makefile.pre.in
 +++ b/Makefile.pre.in
-@@ -730,6 +730,7 @@
+@@ -656,6 +656,7 @@
  
  Python/dynload_shlib.o: $(srcdir)/Python/dynload_shlib.c Makefile
  	$(CC) -c $(PY_CORE_CFLAGS) \
@@ -53,7 +53,7 @@
  		-DSOABI='"$(SOABI)"' \
  		-o $@ $(srcdir)/Python/dynload_shlib.c
  
-@@ -741,6 +742,7 @@
+@@ -667,6 +668,7 @@
  Python/sysmodule.o: $(srcdir)/Python/sysmodule.c Makefile
  	$(CC) -c $(PY_CORE_CFLAGS) \
  		-DABIFLAGS='"$(ABIFLAGS)"' \
@@ -61,7 +61,7 @@
  		-o $@ $(srcdir)/Python/sysmodule.c
  
  $(IO_OBJS): $(IO_H)
-@@ -1122,7 +1124,7 @@
+@@ -1010,7 +1012,7 @@
  	(cd $(DESTDIR)$(MANDIR)/man1; $(LN) -s python$(VERSION).1 python3.1)
  
  # Install the library
@@ -70,7 +70,7 @@
  EXTRAPLATDIR= @EXTRAPLATDIR@
  MACHDEPS=	$(PLATDIR) $(EXTRAPLATDIR)
  XMLLIBSUBDIRS=  xml xml/dom xml/etree xml/parsers xml/sax
-@@ -1263,6 +1265,10 @@
+@@ -1148,6 +1150,10 @@
  $(srcdir)/Lib/$(PLATDIR):
  	mkdir $(srcdir)/Lib/$(PLATDIR)
  	cp $(srcdir)/Lib/plat-generic/regen $(srcdir)/Lib/$(PLATDIR)/regen
@@ -81,7 +81,7 @@
  	export PATH; PATH="`pwd`:$$PATH"; \
  	export PYTHONPATH; PYTHONPATH="`pwd`/Lib"; \
  	export DYLD_FRAMEWORK_PATH; DYLD_FRAMEWORK_PATH="`pwd`"; \
-@@ -1310,10 +1316,10 @@
+@@ -1186,10 +1192,10 @@
  
  # Install the library and miscellaneous stuff needed for extending/embedding
  # This goes into $(exec_prefix)
@@ -96,10 +96,10 @@
  	@for i in $(LIBDIR) $(LIBPL) $(LIBPC); \
 --- a/Python/dynload_shlib.c
 +++ b/Python/dynload_shlib.c
-@@ -36,6 +36,9 @@
- #ifdef __CYGWIN__
-     ".dll",
- #else  /* !__CYGWIN__ */
+@@ -48,6 +48,9 @@
+     ".exe",
+     ".EXE",
+ #else  /* !__VMS */
 +#ifdef MULTIARCH
 +    "." SOABI "-" MULTIARCH ".so",
 +#endif
@@ -119,7 +119,7 @@
  COREPYTHONPATH=$(DESTPATH)$(SITEPATH)$(TESTPATH)$(MACHDEPPATH)$(EXTRAMACHDEPPATH)
 --- a/Python/sysmodule.c
 +++ b/Python/sysmodule.c
-@@ -1603,6 +1603,15 @@
+@@ -1538,6 +1538,15 @@
      if (res < 0)
          goto error;
  
@@ -135,14 +135,3 @@
      /* dict ready */
  
      ns = _PyNamespace_New(impl_info);
---- a/configure.ac
-+++ b/configure.ac
-@@ -4115,7 +4115,7 @@
- 
- dnl define LIBPL after ABIFLAGS and LDVERSION is defined.
- AC_SUBST(PY_ENABLE_SHARED)
--LIBPL="${prefix}/lib/python${VERSION}/config-${LDVERSION}"
-+LIBPL="${prefix}/lib/python${VERSION}/config-${LDVERSION}-${MULTIARCH}"
- AC_SUBST(LIBPL)
- 
- # Check whether right shifting a negative integer extends the sign bit

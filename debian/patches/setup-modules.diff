@@ -2,16 +2,16 @@
 
 --- a/Modules/Setup.dist
 +++ b/Modules/Setup.dist
-@@ -175,7 +175,7 @@
- #_weakref _weakref.c	# basic weak reference support
+@@ -171,7 +171,7 @@
  #_testcapi _testcapimodule.c    # Python C API test module
  #_random _randommodule.c	# Random number generator
+ #atexit atexitmodule.c      # Register functions to be run at interpreter-shutdown
 -#_elementtree -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H -DUSE_PYEXPAT_CAPI _elementtree.c	# elementtree accelerator
 +#_elementtree _elementtree.c -lexpat	# elementtree accelerator
  #_pickle _pickle.c	# pickle accelerator
  #_datetime _datetimemodule.c	# datetime accelerator
  #_bisect _bisectmodule.c	# Bisection algorithms
-@@ -204,10 +204,7 @@
+@@ -200,10 +200,7 @@
  
  # Socket module helper for SSL support; you must comment out the other
  # socket line above, and possibly edit the SSL variable:
@@ -23,7 +23,7 @@
  
  # The crypt module is now disabled by default because it breaks builds
  # on many systems (where -lcrypt is needed), e.g. Linux (I believe).
-@@ -249,6 +246,7 @@
+@@ -245,6 +242,7 @@
  #_sha256 sha256module.c
  #_sha512 sha512module.c
  
@@ -31,7 +31,7 @@
  
  # The _tkinter module.
  #
-@@ -337,6 +335,7 @@
+@@ -333,6 +331,7 @@
  # Fred Drake's interface to the Python parser
  #parser parsermodule.c
  
@@ -39,7 +39,7 @@
  
  # Lee Busby's SIGFPE modules.
  # The library to link fpectl with is platform specific.
-@@ -371,7 +370,7 @@
+@@ -367,7 +366,7 @@
  #
  # More information on Expat can be found at www.libexpat.org.
  #

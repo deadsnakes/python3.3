@@ -1,6 +1,6 @@
 --- a/Modules/Setup.dist
 +++ b/Modules/Setup.dist
-@@ -171,7 +171,7 @@
+@@ -166,7 +166,7 @@
  #cmath cmathmodule.c _math.c # -lm # complex math library functions
  #math mathmodule.c _math.c # -lm # math library functions, e.g. sin()
  #_struct _struct.c	# binary structure packing/unpacking

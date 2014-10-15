@@ -2,7 +2,7 @@
 
 --- a/setup.py
 +++ b/setup.py
-@@ -246,8 +246,10 @@
+@@ -238,8 +238,10 @@
          # unfortunately, distutils doesn't let us provide separate C and C++
          # compilers
          if compiler is not None:
@@ -15,7 +15,7 @@
          self.compiler.set_executables(**args)
  
          build_ext.build_extensions(self)
-@@ -447,12 +449,7 @@
+@@ -435,12 +437,7 @@
              os.unlink(tmpfile)
  
      def detect_modules(self):

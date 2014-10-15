@@ -22,10 +22,10 @@
  If a file named "pyvenv.cfg" exists one directory above sys.executable,
  sys.prefix and sys.exec_prefix are set to that directory and
  it is also checked for site-packages and site-python (sys.base_prefix and
-@@ -304,10 +310,21 @@
-         seen.add(prefix)
- 
-         if os.sep == '/':
+@@ -303,10 +309,21 @@
+         if sys.platform in ('os2emx', 'riscos'):
+             sitepackages.append(os.path.join(prefix, "Lib", "site-packages"))
+         elif os.sep == '/':
 +            if 'VIRTUAL_ENV' in os.environ:
 +                sitepackages.append(os.path.join(prefix, "lib",
 +                                                 "python" + sys.version[:3],

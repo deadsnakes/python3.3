@@ -50,7 +50,7 @@
  
 --- a/Lib/distutils/command/install.py
 +++ b/Lib/distutils/command/install.py
-@@ -35,6 +35,20 @@
+@@ -50,6 +50,20 @@
          'scripts': '$base/bin',
          'data'   : '$base',
          },
@@ -71,7 +71,7 @@
      'unix_home': {
          'purelib': '$base/lib/python',
          'platlib': '$base/lib/python',
-@@ -131,6 +145,9 @@
+@@ -161,6 +175,9 @@
  
          ('record=', None,
           "filename in which to record list of installed files"),
@@ -81,7 +81,7 @@
          ]
  
      boolean_options = ['compile', 'force', 'skip-build']
-@@ -151,6 +168,7 @@
+@@ -181,6 +198,7 @@
          self.exec_prefix = None
          self.home = None
          self.user = 0
@@ -89,7 +89,7 @@
  
          # These select only the installation base; it's up to the user to
          # specify the installation scheme (currently, that means supplying
-@@ -172,6 +190,9 @@
+@@ -202,6 +220,9 @@
          self.install_userbase = USER_BASE
          self.install_usersite = USER_SITE
  
@@ -99,7 +99,7 @@
          self.compile = None
          self.optimize = None
  
-@@ -411,6 +432,7 @@
+@@ -441,6 +462,7 @@
              self.install_base = self.install_platbase = self.home
              self.select_scheme("unix_home")
          else:
@@ -107,7 +107,7 @@
              if self.prefix is None:
                  if self.exec_prefix is not None:
                      raise DistutilsOptionError(
-@@ -425,7 +447,24 @@
+@@ -455,7 +477,24 @@
  
              self.install_base = self.prefix
              self.install_platbase = self.exec_prefix
@@ -135,7 +135,7 @@
          """Finalizes options for non-posix platforms"""
 --- a/Lib/distutils/sysconfig.py
 +++ b/Lib/distutils/sysconfig.py
-@@ -134,6 +134,7 @@
+@@ -136,6 +136,7 @@
      If 'prefix' is supplied, use it instead of sys.base_prefix or
      sys.base_exec_prefix -- i.e., ignore 'plat_specific'.
      """
@@ -143,7 +143,7 @@
      if prefix is None:
          if standard_lib:
              prefix = plat_specific and BASE_EXEC_PREFIX or BASE_PREFIX
-@@ -145,6 +146,8 @@
+@@ -147,6 +148,8 @@
                                   "lib", "python" + get_python_version())
          if standard_lib:
              return libpython
@@ -154,7 +154,7 @@
      elif os.name == "nt":
 --- a/Lib/site.py
 +++ b/Lib/site.py
-@@ -288,6 +288,13 @@
+@@ -285,6 +285,13 @@
  
      if ENABLE_USER_SITE and os.path.isdir(user_site):
          addsitedir(user_site, known_paths)
@@ -170,7 +170,7 @@
  def getsitepackages(prefixes=None):
 --- a/Lib/test/test_site.py
 +++ b/Lib/test/test_site.py
-@@ -243,12 +243,20 @@
+@@ -247,12 +247,20 @@
              self.assertEqual(dirs[2], wanted)
          elif os.sep == '/':
              # OS X non-framwework builds, Linux, FreeBSD, etc
@@ -197,21 +197,21 @@
              self.assertEqual(len(dirs), 2)
 --- a/Lib/distutils/tests/test_bdist_dumb.py
 +++ b/Lib/distutils/tests/test_bdist_dumb.py
-@@ -85,7 +85,7 @@
+@@ -88,7 +88,7 @@
              fp.close()
  
          contents = sorted(os.path.basename(fn) for fn in contents)
 -        wanted = ['foo-0.1-py%s.%s.egg-info' % sys.version_info[:2], 'foo.py']
 +        wanted = ['foo-0.1.egg-info', 'foo.py']
          if not sys.dont_write_bytecode:
-             wanted.append('foo.%s.pyc' % sys.implementation.cache_tag)
+             wanted.append('foo.%s.pyc' % imp.get_tag())
          self.assertEqual(contents, sorted(wanted))
 --- a/Lib/distutils/tests/test_install.py
 +++ b/Lib/distutils/tests/test_install.py
 @@ -194,7 +194,7 @@
+ 
          found = [os.path.basename(line) for line in content.splitlines()]
-         expected = ['hello.py', 'hello.%s.pyc' % sys.implementation.cache_tag,
-                     'sayhi',
+         expected = ['hello.py', 'hello.%s.pyc' % imp.get_tag(), 'sayhi',
 -                    'UNKNOWN-0.0.0-py%s.%s.egg-info' % sys.version_info[:2]]
 +                    'UNKNOWN-0.0.0-py.egg-info']
          self.assertEqual(found, expected)
@@ -228,7 +228,7 @@
      def test_debug_mode(self):
 --- a/Lib/pydoc.py
 +++ b/Lib/pydoc.py
-@@ -405,6 +405,7 @@
+@@ -383,6 +383,7 @@
                                   'marshal', 'posix', 'signal', 'sys',
                                   '_thread', 'zipimport') or
               (file.startswith(basedir) and

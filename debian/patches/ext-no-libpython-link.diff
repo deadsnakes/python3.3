@@ -2,7 +2,7 @@
 
 --- a/Lib/distutils/command/build_ext.py
 +++ b/Lib/distutils/command/build_ext.py
-@@ -236,7 +236,7 @@
+@@ -250,7 +250,7 @@
          # For building extensions with a shared Python library,
          # Python's library directory must be appended to library_dirs
          # See Issues: #1600860, #4366
@@ -11,7 +11,7 @@
              if sys.executable.startswith(os.path.join(sys.exec_prefix, "bin")):
                  # building third party extensions
                  self.library_dirs.append(sysconfig.get_config_var('LIBDIR'))
-@@ -726,7 +726,7 @@
+@@ -759,7 +759,7 @@
              return ext.libraries
          else:
              from distutils import sysconfig
