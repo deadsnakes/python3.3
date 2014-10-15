@@ -14,7 +14,7 @@ sh $debian_dir/locale-gen
 
 export LANG=C
 
-TESTPYTHON="python3.4 -W default -bb -E -R -m test"
+TESTPYTHON="@PVER@@DEBUG_ABIFLAGS@ -W default -bb -E -R -m test"
 TESTOPTS="-j 1 -w -uall,-network,-urlfetch,-gui"
 TESTEXCLUSIONS="-x"
 
@@ -72,11 +72,11 @@ TESTEXCLUSIONS="$TESTEXCLUSIONS test_zipimport_support"
 
 script=$debian_dir/script.py
 if [ -f "$script" ]; then
-  cmd="python3.4 $script \"testsuite.log\" \"$TESTPYTHON $TESTOPTS $TESTEXCLUSIONS\""
+  cmd="@PVER@ $script \"testsuite-dbg.log\" \"$TESTPYTHON $TESTOPTS $TESTEXCLUSIONS\""
 else
   cmd="$TESTPYTHON $TESTOPTS $TESTEXCLUSIONS"
 fi
 
-echo "Running the python testsuite with the standard interpreter:"
+echo "Running the python testsuite with the debug enabled interpreter:"
 echo "$cmd"
 eval $cmd
