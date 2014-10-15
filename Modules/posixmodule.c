@@ -11611,11 +11611,13 @@ all_ins(PyObject *d)
 #ifdef O_LARGEFILE
     if (ins(d, "O_LARGEFILE", (long)O_LARGEFILE)) return -1;
 #endif
+#ifndef __GNU__
 #ifdef O_SHLOCK
     if (ins(d, "O_SHLOCK", (long)O_SHLOCK)) return -1;
 #endif
 #ifdef O_EXLOCK
     if (ins(d, "O_EXLOCK", (long)O_EXLOCK)) return -1;
+#endif
 #endif
 #ifdef O_EXEC
     if (ins(d, "O_EXEC", (long)O_EXEC)) return -1;
@@ -11833,6 +11835,43 @@ all_ins(PyObject *d)
 #ifdef F_TEST
     if (ins(d, "F_TEST", (long)F_TEST)) return -1;
 #endif
+
+	/* These came from statvfs.h */
+#ifdef ST_RDONLY
+	if (PyModule_AddIntMacro(d, ST_RDONLY)) return -1;
+#endif /* ST_RDONLY */
+#ifdef ST_NOSUID
+	if (PyModule_AddIntMacro(d, ST_NOSUID)) return -1;
+#endif /* ST_NOSUID */
+
+	/* GNU extensions */
+#ifdef ST_NODEV
+	if (PyModule_AddIntMacro(d, ST_NODEV)) return -1;
+#endif /* ST_NODEV */
+#ifdef ST_NOEXEC
+	if (PyModule_AddIntMacro(d, ST_NOEXEC)) return -1;
+#endif /* ST_NOEXEC */
+#ifdef ST_SYNCHRONOUS
+	if (PyModule_AddIntMacro(d, ST_SYNCHRONOUS)) return -1;
+#endif /* ST_SYNCHRONOUS */
+#ifdef ST_MANDLOCK
+	if (PyModule_AddIntMacro(d, ST_MANDLOCK)) return -1;
+#endif /* ST_MANDLOCK */
+#ifdef ST_WRITE
+	if (PyModule_AddIntMacro(d, ST_WRITE)) return -1;
+#endif /* ST_WRITE */
+#ifdef ST_APPEND
+	if (PyModule_AddIntMacro(d, ST_APPEND)) return -1;
+#endif /* ST_APPEND */
+#ifdef ST_NOATIME
+	if (PyModule_AddIntMacro(d, ST_NOATIME)) return -1;
+#endif /* ST_NOATIME */
+#ifdef ST_NODIRATIME
+	if (PyModule_AddIntMacro(d, ST_NODIRATIME)) return -1;
+#endif /* ST_NODIRATIME */
+#ifdef ST_RELATIME
+	if (PyModule_AddIntMacro(d, ST_RELATIME)) return -1;
+#endif /* ST_RELATIME */
 
 #ifdef HAVE_SPAWNV
 #if defined(PYOS_OS2) && defined(PYCC_GCC)

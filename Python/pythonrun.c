@@ -35,6 +35,10 @@
 #define PATH_MAX MAXPATHLEN
 #endif
 
+#ifdef __gnu_hurd__
+#define PATH_MAX MAXPATHLEN
+#endif
+
 #ifndef Py_REF_DEBUG
 #define PRINT_TOTAL_REFS()
 #else /* Py_REF_DEBUG */
