@@ -70,6 +70,9 @@ NVER=3.4
 PVER=python3.3
 PRIORITY=$(shell echo $(VER) | tr -d '.')0
 
+VER_MAJOR=$(shell echo $(VER) | sed -e s/[.][0-9]//)
+VER_MINOR=$(shell echo $(VER) | sed -e s/[0-9][.]//)
+
 PREVVER	:= $(shell awk '/^python/ && NR > 1 {print substr($$2,2,length($$2)-2); exit}' debian/changelog)
 
 SOABI=cpython-$(shell echo $(VER) | sed -e s/[.]//)$(ABIFLAGS)
@@ -659,6 +662,8 @@ generated-files: control-file
 		    -e "s,@INFO@,$(info_docs),g" \
 		    -e "s/@ABIFLAGS@/$(ABIFLAGS)/g" \
 		    -e "s/@DEBUG_ABIFLAGS@/$(DEBUG_ABIFLAGS)/g" \
+		    -e "s/@VER_MAJOR@/$(VER_MAJOR)/g" \
+		    -e "s/@VER_MINOR@/$(VER_MINOR)/g" \
 		  <$$f >$$f2; \
 	  fi; \
 	done
