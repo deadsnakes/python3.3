@@ -39,3 +39,5 @@ installed-testsuite.diff
 test-no-random-order.diff
 multiarch-extname.diff
 tempfile-minimal.diff
+
+doc-nodownload.diff
