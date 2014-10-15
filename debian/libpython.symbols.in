@@ -1,9 +1,7 @@
  PyAST_Check@Base @VER@
  PyAST_Compile@Base @VER@
  PyAST_CompileEx@Base @VER@
- PyAST_CompileObject@Base @VER@
  PyAST_FromNode@Base @VER@
- PyAST_FromNodeObject@Base @VER@
  PyAST_Validate@Base @VER@
  PyAST_mod2obj@Base @VER@
  PyAST_obj2mod@Base @VER@
@@ -135,7 +133,6 @@
  PyCodec_StrictErrors@Base @VER@
  PyCodec_XMLCharRefReplaceErrors@Base @VER@
  PyCompileString@Base @VER@
- PyCompile_OpcodeStackEffect@Base @VER@
  PyComplex_AsCComplex@Base @VER@
  PyComplex_FromCComplex@Base @VER@
  PyComplex_FromDoubles@Base @VER@
@@ -172,7 +169,6 @@
  PyDict_MergeFromSeq2@Base @VER@
  PyDict_New@Base @VER@
  PyDict_Next@Base @VER@
- PyDict_SetDefault@Base @VER@
  PyDict_SetItem@Base @VER@
  (optional)PyDict_SetItemProxy@Base @VER@
  PyDict_SetItemString@Base @VER@
@@ -200,13 +196,11 @@
  PyErr_Print@Base @VER@
  PyErr_PrintEx@Base @VER@
  PyErr_ProgramText@Base @VER@
- PyErr_ProgramTextObject@Base @VER@
  PyErr_Restore@Base @VER@
  PyErr_SetExcInfo@Base @VER@
  PyErr_SetFromErrno@Base @VER@
  PyErr_SetFromErrnoWithFilename@Base @VER@
  PyErr_SetFromErrnoWithFilenameObject@Base @VER@
- PyErr_SetFromErrnoWithFilenameObjects@Base @VER@
  PyErr_SetImportError@Base @VER@
  PyErr_SetInterrupt@Base @VER@
  PyErr_SetNone@Base @VER@
@@ -214,12 +208,9 @@
  PyErr_SetString@Base @VER@
  PyErr_SyntaxLocation@Base @VER@
  PyErr_SyntaxLocationEx@Base @VER@
- PyErr_SyntaxLocationObject@Base @VER@
  PyErr_Warn@Base @VER@
  PyErr_WarnEx@Base @VER@
  PyErr_WarnExplicit@Base @VER@
- PyErr_WarnExplicitFormat@Base @VER@
- PyErr_WarnExplicitObject@Base @VER@
  PyErr_WarnFormat@Base @VER@
  PyErr_WriteUnraisable@Base @VER@
  PyEval_AcquireLock@Base @VER@
@@ -342,7 +333,6 @@
  PyFrame_BlockSetup@Base @VER@
  PyFrame_ClearFreeList@Base @VER@
  PyFrame_FastToLocals@Base @VER@
- PyFrame_FastToLocalsWithError@Base @VER@
  PyFrame_Fini@Base @VER@
  PyFrame_GetLineNumber@Base @VER@
  PyFrame_LocalsToFast@Base @VER@
@@ -365,9 +355,7 @@
  PyFunction_SetKwDefaults@Base @VER@
  PyFunction_Type@Base @VER@
  PyFuture_FromAST@Base @VER@
- PyFuture_FromASTObject@Base @VER@
  PyGC_Collect@Base @VER@
- PyGILState_Check@Base @VER@
  PyGILState_Ensure@Base @VER@
  PyGILState_GetThisThreadState@Base @VER@
  PyGILState_Release@Base @VER@
@@ -379,7 +367,6 @@
  PyGrammar_FindDFA@Base @VER@
  PyGrammar_LabelRepr@Base @VER@
  PyGrammar_RemoveAccelerators@Base @VER@
- PyHash_GetFuncDef@Base @VER@
  PyIOBase_Type@Base @VER@
  PyImport_AddModule@Base @VER@
  PyImport_AddModuleObject@Base @VER@
@@ -479,14 +466,8 @@
  PyMarshal_WriteObjectToFile@Base @VER@
  PyMarshal_WriteObjectToString@Base @VER@
  PyMem_Free@Base @VER@
- PyMem_GetAllocator@Base @VER@
  PyMem_Malloc@Base @VER@
- PyMem_RawFree@Base @VER@
- PyMem_RawMalloc@Base @VER@
- PyMem_RawRealloc@Base @VER@
  PyMem_Realloc@Base @VER@
- PyMem_SetAllocator@Base @VER@
- PyMem_SetupDebugHooks@Base @VER@
  PyMemberDescr_Type@Base @VER@
  PyMember_GetOne@Base @VER@
  PyMember_SetOne@Base @VER@
@@ -582,8 +563,6 @@
  PyObject_AsWriteBuffer@Base @VER@
  PyObject_Bytes@Base @VER@
  PyObject_Call@Base @VER@
- PyObject_CallFinalizer@Base @VER@
- PyObject_CallFinalizerFromDealloc@Base @VER@
  PyObject_CallFunction@Base @VER@
  PyObject_CallFunctionObjArgs@Base @VER@
  PyObject_CallMethod@Base @VER@
@@ -604,7 +583,6 @@
  PyObject_GenericGetDict@Base @VER@
  PyObject_GenericSetAttr@Base @VER@
  PyObject_GenericSetDict@Base @VER@
- PyObject_GetArenaAllocator@Base @VER@
  PyObject_GetAttr@Base @VER@
  PyObject_GetAttrString@Base @VER@
  PyObject_GetBuffer@Base @VER@
@@ -620,7 +598,6 @@
  PyObject_IsSubclass@Base @VER@
  PyObject_IsTrue@Base @VER@
  PyObject_Length@Base @VER@
- PyObject_LengthHint@Base @VER@
  PyObject_Malloc@Base @VER@
  PyObject_Not@Base @VER@
  PyObject_Print@Base @VER@
@@ -629,7 +606,6 @@
  PyObject_RichCompare@Base @VER@
  PyObject_RichCompareBool@Base @VER@
  PyObject_SelfIter@Base @VER@
- PyObject_SetArenaAllocator@Base @VER@
  PyObject_SetAttr@Base @VER@
  PyObject_SetAttrString@Base @VER@
  PyObject_SetItem@Base @VER@
@@ -638,9 +614,7 @@
  PyObject_Type@Base @VER@
  (optional)PyObject_stgdict@Base @VER@
  PyParser_ASTFromFile@Base @VER@
- PyParser_ASTFromFileObject@Base @VER@
  PyParser_ASTFromString@Base @VER@
- PyParser_ASTFromStringObject@Base @VER@
  PyParser_AddToken@Base @VER@
  PyParser_ClearError@Base @VER@
  PyParser_Delete@Base @VER@
@@ -648,12 +622,10 @@
  PyParser_ParseFile@Base @VER@
  PyParser_ParseFileFlags@Base @VER@
  PyParser_ParseFileFlagsEx@Base @VER@
- PyParser_ParseFileObject@Base @VER@
  PyParser_ParseString@Base @VER@
  PyParser_ParseStringFlags@Base @VER@
  PyParser_ParseStringFlagsFilename@Base @VER@
  PyParser_ParseStringFlagsFilenameEx@Base @VER@
- PyParser_ParseStringObject@Base @VER@
  PyParser_SetError@Base @VER@
  PyParser_SimpleParseFile@Base @VER@
  PyParser_SimpleParseFileFlags@Base @VER@
@@ -678,7 +650,6 @@
  PyRun_InteractiveLoopFlags@Base @VER@
  PyRun_InteractiveOne@Base @VER@
  PyRun_InteractiveOneFlags@Base @VER@
- PyRun_InteractiveOneObject@Base @VER@
  PyRun_SimpleFile@Base @VER@
  PyRun_SimpleFileEx@Base @VER@
  PyRun_SimpleFileExFlags@Base @VER@
@@ -735,7 +706,6 @@
  PyStdPrinter_Type@Base @VER@
  PyStringIO_Type@Base @VER@
  PyStructSequence_GetItem@Base @VER@
- PyStructSequence_InitType2@Base @VER@
  PyStructSequence_InitType@Base @VER@
  PyStructSequence_New@Base @VER@
  PyStructSequence_NewType@Base @VER@
@@ -743,7 +713,6 @@
  PyStructSequence_UnnamedField@Base @VER@
  PySuper_Type@Base @VER@
  PySymtable_Build@Base @VER@
- PySymtable_BuildObject@Base @VER@
  PySymtable_Free@Base @VER@
  PySymtable_Lookup@Base @VER@
  PySys_AddWarnOption@Base @VER@
@@ -819,7 +788,6 @@
  PyType_GenericAlloc@Base @VER@
  PyType_GenericNew@Base @VER@
  PyType_GetFlags@Base @VER@
- PyType_GetSlot@Base @VER@
  PyType_IsSubtype@Base @VER@
  PyType_Modified@Base @VER@
  PyType_Ready@Base @VER@
@@ -970,7 +938,6 @@
  Py_CompileString@Base @VER@
  Py_CompileStringExFlags@Base @VER@
  Py_CompileStringFlags@Base @VER@
- Py_CompileStringObject@Base @VER@
  Py_DebugFlag@Base @VER@
  Py_DecRef@Base @VER@
  Py_DontWriteBytecodeFlag@Base @VER@
@@ -1004,7 +971,6 @@
  Py_InspectFlag@Base @VER@
  Py_InteractiveFlag@Base @VER@
  Py_IsInitialized@Base @VER@
- Py_IsolatedFlag@Base @VER@
  Py_Main@Base @VER@
  Py_MakePendingCalls@Base @VER@
  Py_NewInterpreter@Base @VER@
@@ -1018,9 +984,7 @@
  Py_SetProgramName@Base @VER@
  Py_SetPythonHome@Base @VER@
  Py_SetRecursionLimit@Base @VER@
- Py_SetStandardStreamEncoding@Base @VER@
  Py_SymtableString@Base @VER@
- Py_SymtableStringObject@Base @VER@
  Py_UNICODE_strcat@Base @VER@
  Py_UNICODE_strchr@Base @VER@
  Py_UNICODE_strcmp@Base @VER@
@@ -1043,7 +1007,6 @@
  _PyAccu_FinishAsList@Base @VER@
  _PyAccu_Init@Base @VER@
  _PyArg_NoKeywords@Base @VER@
- _PyArg_NoPositional@Base @VER@
  _PyArg_ParseTupleAndKeywords_SizeT@Base @VER@
  _PyArg_ParseTuple_SizeT@Base @VER@
  _PyArg_Parse_SizeT@Base @VER@
@@ -1069,7 +1032,6 @@
  _PyDictKeys_DecRef@Base @VER@
  _PyDict_Contains@Base @VER@
  _PyDict_DebugMallocStats@Base @VER@
- _PyDict_DelItemId@Base @VER@
  _PyDict_GetItemId@Base @VER@
  _PyDict_GetItemIdWithError@Base @VER@
  _PyDict_HasOnlyStringKeys@Base @VER@
@@ -1080,8 +1042,6 @@
  _PyDict_NewPresized@Base @VER@
  _PyDict_Next@Base @VER@
  _PyErr_BadInternalCall@Base @VER@
- _PyErr_SetKeyError@Base @VER@
- _PyErr_TrySetFromCause@Base @VER@
  _PyDict_SetItemId@Base @VER@
  _PyEval_CallTracing@Base @VER@
  _PyEval_FiniThreads@Base @VER@
@@ -1103,18 +1063,14 @@
  _PyFloat_Unpack8@Base @VER@
  _PyFrame_DebugMallocStats@Base @VER@
  _PyFrame_Init@Base @VER@
- _PyGC_CollectNoFail@Base @VER@
  _PyGC_Dump@Base @VER@
- _PyGC_DumpShutdownStats@Base @VER@
  _PyGC_Fini@Base @VER@
  _PyGC_generation0@Base @VER@
  _PyGILState_Fini@Base @VER@
  _PyGILState_Init@Base @VER@
  _PyGILState_Reinit@Base @VER@
  _PyGen_FetchStopIterationValue@Base @VER@
- _PyGen_Finalize@Base @VER@
  _PyGen_Send@Base @VER@
- _PyHash_Fini@Base @VER@
  _PyIOBase_check_closed@Base @VER@
  _PyIOBase_check_readable@Base @VER@
  _PyIOBase_check_seekable@Base @VER@
@@ -1125,8 +1081,6 @@
  _PyIO_empty_bytes@Base @VER@
  _PyIO_empty_str@Base @VER@
  _PyIO_find_line_ending@Base @VER@
- _PyIO_get_locale_module@Base @VER@
- _PyIO_get_module_state@Base @VER@
  _PyIO_str_close@Base @VER@
  _PyIO_str_closed@Base @VER@
  _PyIO_str_decode@Base @VER@
@@ -1192,8 +1146,6 @@
  _PyLong_NumBits@Base @VER@
  _PyLong_Sign@Base @VER@
  _PyManagedBuffer_Type@Base @VER@
- _PyMem_RawStrdup@Base @VER@
- _PyMem_Strdup@Base @VER@
  _PyMethodWrapper_Type@Base @VER@
  _PyMethod_DebugMallocStats@Base @VER@
  _PyModule_Clear@Base @VER@
@@ -1215,8 +1167,8 @@
  _PyObjectDict_SetItem@Base @VER@
  _PyObject_CallFunction_SizeT@Base @VER@
  _PyObject_CallMethodId@Base @VER@
- _PyObject_CallMethodIdObjArgs@Base @VER@
  _PyObject_CallMethodId_SizeT@Base @VER@
+ _PyObject_CallMethodObjIdArgs@Base @VER@
  _PyObject_CallMethod_SizeT@Base @VER@
  _PyObject_DebugMallocStats@Base @VER@
  _PyObject_DebugTypeStats@Base @VER@
@@ -1231,8 +1183,8 @@
  _PyObject_GetBuiltin@Base @VER@
  _PyObject_GetDictPtr@Base @VER@
  _PyObject_HasAttrId@Base @VER@
- _PyObject_HasLen@Base @VER@
  _PyObject_IsAbstract@Base @VER@
+ _PyObject_LengthHint@Base @VER@
  _PyObject_LookupSpecial@Base @VER@
  _PyObject_New@Base @VER@
  _PyObject_NewVar@Base @VER@
@@ -1242,26 +1194,19 @@
  _PyObject_SetAttrId@Base @VER@
  _PyParser_Grammar@Base @VER@
  _PyParser_TokenNames@Base @VER@
- _PyRandom_Fini@Base @VER@
  _PyRandom_Init@Base @VER@
  _PySequence_BytesToCharpArray@Base @VER@
  _PySequence_IterSearch@Base @VER@
- _PySet_Dummy@Base @VER@
+ _PySet_DebugMallocStats@Base @VER@
  _PySet_NextEntry@Base @VER@
  _PySet_Update@Base @VER@
  _PySlice_FromIndices@Base @VER@
- _PySlice_GetLongIndices@Base @VER@
  _PyState_AddModule@Base @VER@
- _PyState_ClearModules@Base @VER@
- _PyStructSequence_Init@Base @VER@
- _PySys_GetObjectId@Base @VER@
  _PySys_GetSizeOf@Base 3.4.2
  _PySys_ImplCacheTag@Base @VER@
  _PySys_ImplName@Base @VER@
  _PySys_Init@Base @VER@
- _PySys_SetObjectId@Base @VER@
  _PyThreadState_Current@Base @VER@
- _PyThreadState_DeleteExcept@Base @VER@
  _PyThreadState_GetFrame@Base @VER@
  _PyThreadState_Init@Base @VER@
  _PyThreadState_Prealloc@Base @VER@
@@ -1272,8 +1217,6 @@
  _PyTime_ObjectToTimeval@Base @VER@
  _PyTime_gettimeofday@Base @VER@
  _PyTime_gettimeofday_info@Base @VER@
- _PyTraceMalloc_Init@Base @VER@
- _PyTraceMalloc_Fini@Base @VER@
  _PyTrash_delete_later@Base @VER@
  _PyTrash_delete_nesting@Base @VER@
  _PyTrash_deposit_object@Base @VER@
@@ -1285,8 +1228,6 @@
  _PyTuple_Resize@Base @VER@
  _PyType_CalculateMetaclass@Base @VER@
  _PyType_Fini@Base @VER@
- _PyType_GetDocFromInternalDoc@Base @VER@
- _PyType_GetTextSignatureFromInternalDoc@Base @VER@
  _PyType_Lookup@Base @VER@
  _PyType_LookupId@Base @VER@
  _PyUnicodeTranslateError_Create@Base @VER@
@@ -1294,11 +1235,7 @@
  _PyUnicodeWriter_Finish@Base @VER@
  _PyUnicodeWriter_Init@Base @VER@
  _PyUnicodeWriter_PrepareInternal@Base @VER@
- _PyUnicodeWriter_WriteASCIIString@Base @VER@
- _PyUnicodeWriter_WriteChar@Base @VER@
- _PyUnicodeWriter_WriteLatin1String@Base @VER@
  _PyUnicodeWriter_WriteStr@Base @VER@
- _PyUnicodeWriter_WriteSubstring@Base @VER@
  _PyUnicode_AsASCIIString@Base @VER@
  _PyUnicode_AsKind@Base @VER@
  _PyUnicode_AsLatin1String@Base @VER@
@@ -1306,7 +1243,6 @@
  _PyUnicode_BidirectionalNames@Base @VER@
  _PyUnicode_CategoryNames@Base @VER@
  _PyUnicode_ClearStaticStrings@Base @VER@
- _PyUnicode_CompareWithId@Base @VER@
  _PyUnicode_Copy@Base @VER@
  _PyUnicode_Database_Records@Base @VER@
  _PyUnicode_DecodeUnicodeInternal@Base @VER@
@@ -1396,7 +1332,6 @@
  _Py_FreeCharPArray@Base @VER@
  _Py_FunctionDef@Base @VER@
  _Py_GeneratorExp@Base @VER@
- _Py_GetAllocatedBlocks@Base @VER@
  _Py_Global@Base @VER@
  _Py_Gid_Converter@Base @VER@
  _Py_HashBytes@Base @VER@
@@ -1417,7 +1352,6 @@
  _Py_Mangle@Base @VER@
  _Py_Module@Base @VER@
  _Py_Name@Base @VER@
- _Py_NameConstant@Base @VER@
  _Py_NoneStruct@Base @VER@
  _Py_Nonlocal@Base @VER@
  _Py_NotImplementedStruct@Base @VER@
@@ -1462,8 +1396,6 @@
  _Py_arg@Base @VER@
  _Py_arguments@Base @VER@
  _Py_ascii_whitespace@Base @VER@
- _Py_asdl_int_seq_new@Base @VER@
- _Py_asdl_seq_new@Base @VER@
  _Py_asinh@Base @VER@
  _Py_atanh@Base @VER@
  _Py_bytes_capitalize@Base @VER@
@@ -1499,29 +1431,9 @@
  (arch=!m68k)_Py_dg_infinity@Base @VER@
  (arch=!m68k)_Py_dg_stdnan@Base @VER@
  (arch=!m68k)_Py_dg_strtod@Base @VER@
- _Py_dup@Base @VER@
  _Py_expm1@Base @VER@
  _Py_findlabel@Base @VER@
  _Py_fopen@Base @VER@
- _Py_fopen_obj@Base @VER@
- (arch=i386 lpia m68k)_Py_force_double@Base @VER@
- (arch=amd64 i386 lpia)_Py_get_387controlword@Base @VER@
- _Py_get_inheritable@Base @VER@
- _Py_hashtable_clear@Base @VER@
- _Py_hashtable_compare_direct@Base @VER@
- _Py_hashtable_copy@Base @VER@
- _Py_hashtable_delete@Base @VER@
- _Py_hashtable_destroy@Base @VER@
- _Py_hashtable_foreach@Base @VER@
- _Py_hashtable_get@Base @VER@
- _Py_hashtable_get_entry@Base @VER@
- _Py_hashtable_hash_int@Base @VER@
- _Py_hashtable_hash_ptr@Base @VER@
- _Py_hashtable_new@Base @VER@
- _Py_hashtable_new_full@Base @VER@
- _Py_hashtable_pop@Base @VER@
- _Py_hashtable_set@Base @VER@
- _Py_hashtable_size@Base @VER@
  _Py_hgidentifier@Base @VER@
  _Py_hgversion@Base @VER@
  _Py_isalnum__doc__@Base @VER@
@@ -1540,13 +1452,9 @@
  _Py_newbitset@Base @VER@
  _Py_newgrammar@Base @VER@
  _Py_normalize_encoding@Base @VER@
- _Py_open@Base @VER@
- _Py_open_cloexec_works@Base @VER@
  _Py_parse_inf_or_nan@Base @VER@
  _Py_pgen@Base @VER@
  _Py_samebitset@Base @VER@
- (arch=amd64 i386 lpia)_Py_set_387controlword@Base @VER@
- _Py_set_inheritable@Base @VER@
  _Py_stat@Base @VER@
  _Py_swapcase__doc__@Base @VER@
  _Py_title__doc__@Base @VER@
@@ -1559,6 +1467,9 @@
  _Py_wreadlink@Base @VER@
  _Py_wrealpath@Base @VER@
  _Py_wstat@Base @VER@
+
+ asdl_int_seq_new@Base @VER@
+ asdl_seq_new@Base @VER@
 
  (optional|regex)"^_ctypes_.*@Base$" @VER@
  (optional|regex)"^ffi_type_.*@Base$" @VER@
