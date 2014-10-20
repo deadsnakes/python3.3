@@ -7,8 +7,9 @@ Depends: build-essential, locales, gdb, @PVER@-dbg, lib@PVER@-testsuite, lib@PVE
 Tests: regr6-curses-newpad
 Depends: @PVER@
 
-Tests: regr17-apt_pkg-import
-Depends: @PVER@-minimal, python3-apport
+# Not on precise
+#Tests: regr17-apt_pkg-import
+#Depends: @PVER@-minimal, python3-apport
 
 Tests: check-various-modules
 Depends: @PVER@, lib@PVER@-gdbm, lib@PVER@-tk
