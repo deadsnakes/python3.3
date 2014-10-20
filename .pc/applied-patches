@@ -36,3 +36,4 @@ tempfile-minimal.diff
 doc-nodownload.diff
 deadsnakes-assert-use-system-ffi.diff
 distutils-packaging-link.diff
+deadsnakes-no-rpath.diff
