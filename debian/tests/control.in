@@ -3,3 +3,12 @@ Depends: build-essential, locales, @PVER@, @PVER@-dev, lib@PVER@-testsuite, lib@
 
 Tests: testsuite-dbg
 Depends: build-essential, locales, gdb, @PVER@-dbg, lib@PVER@-testsuite, lib@PVER@-tk-dbg, lib@PVER@-gdbm-dbg
+
+Tests: regr6-curses-newpad
+Depends: @PVER@
+
+Tests: regr17-apt_pkg-import
+Depends: @PVER@-minimal, python3-apport
+
+Tests: check-various-modules
+Depends: @PVER@, lib@PVER@-gdbm, lib@PVER@-tk
