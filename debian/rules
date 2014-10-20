@@ -75,8 +75,11 @@ VER_MINOR=$(shell echo $(VER) | sed -e s/[0-9][.]//)
 
 PREVVER	:= $(shell awk '/^python/ && NR > 1 {print substr($$2,2,length($$2)-2); exit}' debian/changelog)
 
-SOABI=cpython-$(shell echo $(VER) | sed -e s/[.]//)$(ABIFLAGS)
-DEBUG_SOABI=cpython-$(shell echo $(VER) | sed -e s/[.]//)$(DEBUG_ABIFLAGS)
+SOABI=cpython-$(VER_MAJOR)$(VER_MINOR)$(ABIFLAGS)
+DEBUG_SOABI=cpython-$(VER_MAJOR)$(VER_MINOR)$(DEBUG_ABIFLAGS)
+
+EXTSUFFIX=$(SOABI)-$(DEB_HOST_MULTIARCH).so
+DEBUG_EXTSUFFIX=$(DEBUG_SOABI)-$(DEB_HOST_MULTIARCH).so
 
 # default versions are built from the python-defaults source package
 # keep the definition to adjust package priorities.
@@ -623,31 +626,7 @@ build-doc: stamps/stamp-build-doc
 stamps/stamp-build-doc: stamps/stamp-doc-html
 	touch stamps/stamp-build-doc
 
-control-file:
-	sed -e "s/@PVER@/$(PVER)/g" \
-	    -e "s/@VER@/$(VER)/g" \
-	    -e "s/@PYSTDDEP@/$(PYSTDDEP)/g" \
-	    -e "s/@PRIO@/$(PY_PRIO)/g" \
-	    -e "s/@MINPRIO@/$(PY_MINPRIO)/g" \
-	    -e "s/@bd_qual@/$(bd_qual)/g" \
-		debian/control.in \
-		$(if $(with_udeb),debian/control.udeb) \
-	      | $(ma_filter) \
-	      > debian/control.tmp
-ifeq ($(distribution),Ubuntu)
-  ifneq (,$(findstring ubuntu, $(PKGVERSION)))
-	m='Ubuntu Core Developers <ubuntu-devel-discuss@lists.ubuntu.com>'; \
-	sed -i "/^Maintainer:/s/\(.*\)/Maintainer: $$m\nXSBC-Original-\1/" \
-	  debian/control.tmp
-  endif
-endif
-	[ -e debian/control ] \
-	  && cmp -s debian/control debian/control.tmp \
-	  && rm -f debian/control.tmp && exit 0; \
-	  mv debian/control.tmp debian/control
-
-
-generated-files: control-file
+generated-files:
 	: # We have to prepare the various control files
 
 	: # note: File names with spaces are explicitly not supported by this
@@ -655,17 +634,19 @@ generated-files: control-file
 	: # should not be a big problem.
 	for f in `find debian -name \*.in`; do \
 	  f2=`echo $$f | sed "s,PVER,$(PVER),g;s/@VER@/$(VER)/g;s,\.in$$,,"`; \
-	  if [ $$f2 != debian/control ]; then \
-	    sed -e "s/@PVER@/$(PVER)/g;s/@VER@/$(VER)/g;s/@SVER@/$(SVER)/g" \
-		    -e "s/@PRIORITY@/$(PRIORITY)/g" \
-		    -e "s,@SCRIPTDIR@,/$(scriptdir),g" \
-		    -e "s,@INFO@,$(info_docs),g" \
-		    -e "s/@ABIFLAGS@/$(ABIFLAGS)/g" \
-		    -e "s/@DEBUG_ABIFLAGS@/$(DEBUG_ABIFLAGS)/g" \
-		    -e "s/@VER_MAJOR@/$(VER_MAJOR)/g" \
-		    -e "s/@VER_MINOR@/$(VER_MINOR)/g" \
-		  <$$f >$$f2; \
-	  fi; \
+	  sed -e "s/@PVER@/$(PVER)/g;s/@VER@/$(VER)/g;s/@SVER@/$(SVER)/g" \
+	    -e "s/@PRIORITY@/$(PRIORITY)/g" \
+	    -e "s/@PRIO@/$(PY_PRIO)/g" \
+	    -e "s/@MINPRIO@/$(PY_MINPRIO)/g" \
+	    -e "s,@SCRIPTDIR@,/$(scriptdir),g" \
+	    -e "s,@INFO@,$(info_docs),g" \
+	    -e "s/@ABIFLAGS@/$(ABIFLAGS)/g" \
+	    -e "s/@DEBUG_ABIFLAGS@/$(DEBUG_ABIFLAGS)/g" \
+	    -e "s/@VER_MAJOR@/$(VER_MAJOR)/g" \
+	    -e "s/@VER_MINOR@/$(VER_MINOR)/g" \
+	    -e "s/@EXTSUFFIX@/$(EXTSUFFIX)/g" \
+	    -e "s/@DEBUG_EXTSUFFIX@/$(DEBUG_EXTSUFFIX)/g" \
+	  <$$f >$$f2; \
 	done
 
 
@@ -708,7 +689,7 @@ stamps/stamp-control: generated-files
 	  pyvenv-$(VER) > debian/pyvenv3.1
 
 install: build-arch stamps/stamp-install
-stamps/stamp-install: stamps/stamp-build control-file stamps/stamp-control
+stamps/stamp-install: stamps/stamp-build generated-files stamps/stamp-control
 	dh_testdir
 	dh_testroot
 	dh_prep
@@ -1394,7 +1375,7 @@ stamps/stamp-configure: stamps configure.ac
 
 binary: binary-indep binary-arch
 
-.PHONY: control-file configure build clean binary-indep binary-arch binary install
+.PHONY: generated-files configure build clean binary-indep binary-arch binary install
 
 # Local Variables:
 # mode: makefile
