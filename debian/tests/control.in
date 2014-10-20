@@ -11,5 +11,8 @@ Depends: @PVER@
 #Tests: regr17-apt_pkg-import
 #Depends: @PVER@-minimal, python3-apport
 
+Tests: regr20-check-dynamic-ctypes
+Depends: libc-bin, lib@PVER@-stdlib, lib@PVER@-dbg
+
 Tests: check-various-modules
 Depends: @PVER@, lib@PVER@-gdbm, lib@PVER@-tk
