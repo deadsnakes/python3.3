@@ -1,3 +1,14 @@
+python3.3 (3.3.6-2+precise1) precise; urgency=medium
+
+  * Adopt more flexible package structure from 3.4 and official 3.3 packages.
+    - Primarily, the new structure provides better multiarch support, allowing
+      to install the shared libraries, headers and standard library for
+      different architectures simultaneously.
+    - This also fixes issue #20 since ctypes is built as an extension module
+      and linked to shared libffi.
+
+ -- Felix Krull <f_krull@gmx.de>  Tue, 21 Oct 2014 15:03:16 +0200
+
 python3.3 (3.3.6-1+trusty1) trusty; urgency=medium
 
   * Imported from Precise package.

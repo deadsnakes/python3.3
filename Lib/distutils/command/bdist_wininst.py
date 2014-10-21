@@ -345,7 +345,7 @@ class bdist_wininst(Command):
         try:
             f = open(filename, "rb")
         except IOError as e:
-            raise DistutilsFileError(str(e) + ', please install the python%s-dev package' % sys.version[:3])
+            raise DistutilsFileError(str(e) + ', %s not included in the Debian packages.' % filename)
         try:
             return f.read()
         finally:

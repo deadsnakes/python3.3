@@ -222,7 +222,8 @@ class install(Command):
 
         # enable custom installation, known values: deb
         self.install_layout = None
-
+        self.multiarch = None
+        
         self.compile = None
         self.optimize = None
 
@@ -479,6 +480,8 @@ class install(Command):
             self.install_platbase = self.exec_prefix
             if self.install_layout:
                 if self.install_layout.lower() in ['deb']:
+                    import sysconfig
+                    self.multiarch = sysconfig.get_config_var('MULTIARCH')
                     self.select_scheme("deb_system")
                 elif self.install_layout.lower() in ['unix']:
                     self.select_scheme("unix_prefix")
@@ -487,6 +490,7 @@ class install(Command):
                         "unknown value for --install-layout")
             elif (self.prefix_option and os.path.normpath(self.prefix) != '/usr/local') \
                     or 'PYTHONUSERBASE' in os.environ \
+                    or 'VIRTUAL_ENV' in os.environ \
                     or 'real_prefix' in sys.__dict__:
                 self.select_scheme("unix_prefix")
             else:

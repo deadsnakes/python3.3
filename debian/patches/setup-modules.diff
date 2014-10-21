@@ -7,7 +7,7 @@
  #_random _randommodule.c	# Random number generator
  #atexit atexitmodule.c      # Register functions to be run at interpreter-shutdown
 -#_elementtree -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H -DUSE_PYEXPAT_CAPI _elementtree.c	# elementtree accelerator
-+#_elementtree -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H _elementtree.c	# elementtree accelerator
++#_elementtree _elementtree.c -lexpat	# elementtree accelerator
  #_pickle _pickle.c	# pickle accelerator
  #_datetime _datetimemodule.c	# datetime accelerator
  #_bisect _bisectmodule.c	# Bisection algorithms
@@ -35,7 +35,7 @@
  # Fred Drake's interface to the Python parser
  #parser parsermodule.c
  
-+#_ctypes _ctypes/_ctypes.c _ctypes/callbacks.c _ctypes/callproc.c _ctypes/stgdict.c _ctypes/cfield.c _ctypes/malloc_closure.c -Wl,-Bstatic -lffi -Wl,-Bdynamic
++#_ctypes _ctypes/_ctypes.c _ctypes/callbacks.c _ctypes/callproc.c _ctypes/stgdict.c _ctypes/cfield.c _ctypes/malloc_closure.c -lffi
  
  # Lee Busby's SIGFPE modules.
  # The library to link fpectl with is platform specific.
@@ -44,7 +44,7 @@
  # More information on Expat can be found at www.libexpat.org.
  #
 -#pyexpat expat/xmlparse.c expat/xmlrole.c expat/xmltok.c pyexpat.c -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H -DUSE_PYEXPAT_CAPI
-+#pyexpat expat/xmlparse.c expat/xmlrole.c expat/xmltok.c pyexpat.c -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H
++#pyexpat pyexpat.c -lexpat
  
  # Hye-Shik Chang's CJKCodecs
  

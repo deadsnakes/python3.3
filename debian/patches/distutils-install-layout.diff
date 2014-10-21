@@ -95,7 +95,7 @@
  
 +        # enable custom installation, known values: deb
 +        self.install_layout = None
-+
++        
          self.compile = None
          self.optimize = None
  
@@ -107,7 +107,7 @@
              if self.prefix is None:
                  if self.exec_prefix is not None:
                      raise DistutilsOptionError(
-@@ -455,7 +477,23 @@
+@@ -455,7 +477,24 @@
  
              self.install_base = self.prefix
              self.install_platbase = self.exec_prefix
@@ -122,6 +122,7 @@
 +                        "unknown value for --install-layout")
 +            elif (self.prefix_option and os.path.normpath(self.prefix) != '/usr/local') \
 +                    or 'PYTHONUSERBASE' in os.environ \
++                    or 'VIRTUAL_ENV' in os.environ \
 +                    or 'real_prefix' in sys.__dict__:
 +                self.select_scheme("unix_prefix")
 +            else:
@@ -146,14 +147,14 @@
                                   "lib", "python" + get_python_version())
          if standard_lib:
              return libpython
-+        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'real_prefix' not in sys.__dict__:
++        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and 'real_prefix' not in sys.__dict__:
 +            return os.path.join(prefix, "lib", "python3", "dist-packages")
          else:
              return os.path.join(libpython, "site-packages")
      elif os.name == "nt":
 --- a/Lib/site.py
 +++ b/Lib/site.py
-@@ -279,6 +279,13 @@
+@@ -285,6 +285,13 @@
  
      if ENABLE_USER_SITE and os.path.isdir(user_site):
          addsitedir(user_site, known_paths)
@@ -167,3 +168,71 @@
      return known_paths
  
  def getsitepackages(prefixes=None):
+--- a/Lib/test/test_site.py
++++ b/Lib/test/test_site.py
+@@ -247,12 +247,20 @@
+             self.assertEqual(dirs[2], wanted)
+         elif os.sep == '/':
+             # OS X non-framwework builds, Linux, FreeBSD, etc
+-            self.assertEqual(len(dirs), 2)
+-            wanted = os.path.join('xoxo', 'lib', 'python' + sys.version[:3],
+-                                  'site-packages')
++            self.assertEqual(len(dirs), 4)
++            wanted = os.path.join('xoxo', 'local', 'lib',
++                                  'python' + sys.version[:3],
++                                  'dist-packages')
+             self.assertEqual(dirs[0], wanted)
+-            wanted = os.path.join('xoxo', 'lib', 'site-python')
++            wanted = os.path.join('xoxo', 'lib',
++                                  'python3', 'dist-packages')
+             self.assertEqual(dirs[1], wanted)
++            wanted = os.path.join('xoxo', 'lib',
++                                  'python' + sys.version[:3],
++                                  'dist-packages')
++            self.assertEqual(dirs[2], wanted)
++            wanted = os.path.join('xoxo', 'lib', 'dist-python')
++            self.assertEqual(dirs[3], wanted)
+         else:
+             # other platforms
+             self.assertEqual(len(dirs), 2)
+--- a/Lib/distutils/tests/test_bdist_dumb.py
++++ b/Lib/distutils/tests/test_bdist_dumb.py
+@@ -88,7 +88,7 @@
+             fp.close()
+ 
+         contents = sorted(os.path.basename(fn) for fn in contents)
+-        wanted = ['foo-0.1-py%s.%s.egg-info' % sys.version_info[:2], 'foo.py']
++        wanted = ['foo-0.1.egg-info', 'foo.py']
+         if not sys.dont_write_bytecode:
+             wanted.append('foo.%s.pyc' % imp.get_tag())
+         self.assertEqual(contents, sorted(wanted))
+--- a/Lib/distutils/tests/test_install.py
++++ b/Lib/distutils/tests/test_install.py
+@@ -194,7 +194,7 @@
+ 
+         found = [os.path.basename(line) for line in content.splitlines()]
+         expected = ['hello.py', 'hello.%s.pyc' % imp.get_tag(), 'sayhi',
+-                    'UNKNOWN-0.0.0-py%s.%s.egg-info' % sys.version_info[:2]]
++                    'UNKNOWN-0.0.0-py.egg-info']
+         self.assertEqual(found, expected)
+ 
+     def test_record_extensions(self):
+@@ -224,7 +224,7 @@
+ 
+         found = [os.path.basename(line) for line in content.splitlines()]
+         expected = [_make_ext_name('xx'),
+-                    'UNKNOWN-0.0.0-py%s.%s.egg-info' % sys.version_info[:2]]
++                    'UNKNOWN-0.0.0.egg-info']
+         self.assertEqual(found, expected)
+ 
+     def test_debug_mode(self):
+--- a/Lib/pydoc.py
++++ b/Lib/pydoc.py
+@@ -383,6 +383,7 @@
+                                  'marshal', 'posix', 'signal', 'sys',
+                                  '_thread', 'zipimport') or
+              (file.startswith(basedir) and
++              not file.startswith(os.path.join(basedir, 'dist-packages')) and
+               not file.startswith(os.path.join(basedir, 'site-packages')))) and
+             object.__name__ not in ('xml.etree', 'test.pydoc_mod')):
+             if docloc.startswith("http://"):

@@ -111,6 +111,9 @@ def get_python_inc(plat_specific=0, prefix=None):
                 incdir = os.path.join(get_config_var('srcdir'), 'Include')
             return os.path.normpath(incdir)
         python_dir = 'python' + get_python_version() + build_flags
+        if not python_build and plat_specific:
+            import sysconfig
+            return sysconfig.get_path('platinclude')
         return os.path.join(prefix, "include", python_dir)
     elif os.name == "nt":
         return os.path.join(prefix, "include")
@@ -148,7 +151,7 @@ def get_python_lib(plat_specific=0, standard_lib=0, prefix=None):
                                  "lib", "python" + get_python_version())
         if standard_lib:
             return libpython
-        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'real_prefix' not in sys.__dict__:
+        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and 'real_prefix' not in sys.__dict__:
             return os.path.join(prefix, "lib", "python3", "dist-packages")
         else:
             return os.path.join(libpython, "site-packages")
@@ -194,9 +197,11 @@ def customize_compiler(compiler):
                 _osx_support.customize_compiler(_config_vars)
                 _config_vars['CUSTOMIZED_OSX_COMPILER'] = 'True'
 
-        (cc, cxx, opt, cflags, ccshared, ldshared, shlib_suffix, ar, ar_flags) = \
+        (cc, cxx, opt, cflags, ccshared, ldshared, shlib_suffix, ar, ar_flags,
+         configure_cppflags, configure_cflags, configure_ldflags) = \
             get_config_vars('CC', 'CXX', 'OPT', 'CFLAGS',
-                            'CCSHARED', 'LDSHARED', 'SHLIB_SUFFIX', 'AR', 'ARFLAGS')
+                            'CCSHARED', 'LDSHARED', 'SHLIB_SUFFIX', 'AR', 'ARFLAGS',
+                            'CONFIGURE_CPPFLAGS', 'CONFIGURE_CFLAGS', 'CONFIGURE_LDFLAGS')
 
         if 'CC' in os.environ:
             newcc = os.environ['CC']
@@ -217,13 +222,22 @@ def customize_compiler(compiler):
             cpp = cc + " -E"           # not always
         if 'LDFLAGS' in os.environ:
             ldshared = ldshared + ' ' + os.environ['LDFLAGS']
+        elif configure_ldflags:
+            ldshared = ldshared + ' ' + configure_ldflags
         if 'CFLAGS' in os.environ:
             cflags = opt + ' ' + os.environ['CFLAGS']
             ldshared = ldshared + ' ' + os.environ['CFLAGS']
+        elif configure_cflags:
+            cflags = opt + ' ' + configure_cflags
+            ldshared = ldshared + ' ' + configure_cflags
         if 'CPPFLAGS' in os.environ:
             cpp = cpp + ' ' + os.environ['CPPFLAGS']
             cflags = cflags + ' ' + os.environ['CPPFLAGS']
             ldshared = ldshared + ' ' + os.environ['CPPFLAGS']
+        elif configure_cppflags:
+            cpp = cpp + ' ' + configure_cppflags
+            cflags = cflags + ' ' + configure_cppflags
+            ldshared = ldshared + ' ' + configure_cppflags
         if 'AR' in os.environ:
             ar = os.environ['AR']
         if 'ARFLAGS' in os.environ:
@@ -267,6 +281,8 @@ def get_makefile_filename():
         return os.path.join(_sys_home or project_base, "Makefile")
     lib_dir = get_python_lib(plat_specific=0, standard_lib=1)
     config_file = 'config-{}{}'.format(get_python_version(), build_flags)
+    if hasattr(sys.implementation, '_multiarch'):
+        config_file += '-%s' % sys.implementation._multiarch
     return os.path.join(lib_dir, config_file, 'Makefile')
 
 
@@ -440,49 +456,11 @@ _config_vars = None
 
 def _init_posix():
     """Initialize the module as appropriate for POSIX systems."""
-    g = {}
-    # load the installed Makefile:
-    try:
-        filename = get_makefile_filename()
-        parse_makefile(filename, g)
-    except IOError as msg:
-        my_msg = "invalid Python installation: unable to open %s" % filename
-        if hasattr(msg, "strerror"):
-            my_msg = my_msg + " (%s)" % msg.strerror
-
-        raise DistutilsPlatformError(my_msg)
-
-    # load the installed pyconfig.h:
-    try:
-        filename = get_config_h_filename()
-        with open(filename) as file:
-            parse_config_h(file, g)
-    except IOError as msg:
-        my_msg = "invalid Python installation: unable to open %s" % filename
-        if hasattr(msg, "strerror"):
-            my_msg = my_msg + " (%s)" % msg.strerror
-
-        raise DistutilsPlatformError(my_msg)
-
-    # On AIX, there are wrong paths to the linker scripts in the Makefile
-    # -- these paths are relative to the Python source, but when installed
-    # the scripts are in another directory.
-    if python_build:
-        g['LDSHARED'] = g['BLDSHARED']
-
-    elif get_python_version() < '2.1':
-        # The following two branches are for 1.5.2 compatibility.
-        if sys.platform == 'aix4':          # what about AIX 3.x ?
-            # Linker script is in the config directory, not in Modules as the
-            # Makefile says.
-            python_lib = get_python_lib(standard_lib=1)
-            ld_so_aix = os.path.join(python_lib, 'config', 'ld_so_aix')
-            python_exp = os.path.join(python_lib, 'config', 'python.exp')
-
-            g['LDSHARED'] = "%s %s -bI:%s" % (ld_so_aix, g['CC'], python_exp)
-
+    # _sysconfigdata is generated at build time, see the sysconfig module
+    from _sysconfigdata import build_time_vars
     global _config_vars
-    _config_vars = g
+    _config_vars = {}
+    _config_vars.update(build_time_vars)
 
 
 def _init_nt():
