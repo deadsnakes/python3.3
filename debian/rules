@@ -172,7 +172,7 @@ ifneq (,$(findstring noopt, $(DEB_BUILD_OPTIONS)))
 endif
 
 ifeq ($(with_lto),yes)
-    LTO_CFLAGS = -g -flto -fuse-linker-plugin
+    LTO_CFLAGS = -g -flto -fuse-linker-plugin -ffat-lto-objects
     EXTRA_OPT_CFLAGS += $(LTO_CFLAGS)
 endif
 
