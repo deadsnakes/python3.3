@@ -2,9 +2,9 @@
 
 --- a/Lib/distutils/unixccompiler.py
 +++ b/Lib/distutils/unixccompiler.py
-@@ -153,6 +153,13 @@
-                                         runtime_library_dirs)
-         libraries, library_dirs, runtime_library_dirs = fixed_args
+@@ -160,6 +160,13 @@
+         runtime_library_dirs = [dir for dir in runtime_library_dirs
+                                 if not dir in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')]
  
 +        # filter out standard library paths, which are not explicitely needed
 +        # for linking

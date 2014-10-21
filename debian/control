@@ -3,62 +3,91 @@ Section: python
 Priority: optional
 Maintainer: Felix Krull <f_krull@gmx.de>
 XSBC-Original-Maintainer: Matthias Klose <doko@debian.org>
-Build-Depends: debhelper (>= 7), autoconf,
-   mime-support, netbase, lsb-release, bzip2,
-   zlib1g-dev, libbz2-dev, libdb-dev, libssl-dev, libreadline-dev, libexpat1-dev,
-   libncursesw5-dev (>= 5.3), tk8.5-dev, blt-dev (>= 2.4z), libgpm2 [!hurd-i386 !kfreebsd-i386 !kfreebsd-amd64],
-   libbluetooth-dev [!hurd-i386 !kfreebsd-i386 !kfreebsd-amd64], locales [!armel !avr32 !hppa !ia64 !mipsel],
-   libsqlite3-dev, libffi-dev (>= 3.0.5-2), libgdbm-dev,
-   gdb, python,
-   dpkg-dev (>= 1.16.1~)
-Build-Depends-Indep: python-sphinx (>= 1.0.7)
-Build-Conflicts: tcl8.4-dev, tk8.4-dev, tcl8.3-dev, tk8.3-dev, python3.3-xml, python-xml, autoconf2.13
-XS-Python-Version: 3.3
+Build-Depends: debhelper (>= 5.0.51~), dpkg-dev (>= 1.16.1~), quilt, autoconf, lsb-release, sharutils,
+  libreadline6-dev, libncursesw5-dev (>= 5.3),
+  zlib1g-dev, libbz2-dev, liblzma-dev,
+  libgdbm-dev, libdb-dev,
+  tk-dev, blt-dev (>= 2.4z), libssl-dev,
+  libexpat1-dev,
+  libbluetooth-dev [!hurd-i386 !kfreebsd-i386 !kfreebsd-amd64],
+  locales [!armel !avr32 !hppa !ia64 !mipsel],
+  libsqlite3-dev, libffi-dev (>= 3.0.5),
+  libgpm2 [!hurd-i386 !kfreebsd-i386 !kfreebsd-amd64],
+  mime-support, netbase, bzip2, python3,
+  net-tools, xvfb, xauth
+Build-Depends-Indep: python-sphinx
 Standards-Version: 3.9.5
-Homepage: http://python.org/
 Vcs-Browser: https://bitbucket.org/fk/deadsnakes-python3.3
 Vcs-Hg: https://bitbucket.org/fk/deadsnakes-python3.3
-X-Original-Vcs-Browser: https://code.launchpad.net/~doko/python/pkg3.3
-X-Original-Vcs-Bzr: http://bazaar.launchpad.net/~doko/python/pkg3.3
+X-Original-Vcs-Browser: https://code.launchpad.net/~doko/python/pkg3.3-debian
+X-Original-Vcs-Bzr: http://bazaar.launchpad.net/~doko/python/pkg3.3-debian
+XS-Testsuite: autopkgtest
 
 Package: python3.3
 Architecture: any
+Multi-Arch: allowed
 Priority: optional
-Depends: python3.3-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
+Depends: python3.3-minimal (= ${binary:Version}), libpython3.3-stdlib (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
 Suggests: python3.3-doc, binutils
-Provides: python3.3-cjkcodecs, python3.3-ctypes, python3.3-elementtree, python3.3-celementtree, python3.3-wsgiref, python3.3-profiler
-Replaces: python3.3-gdbm (<< 3.3.5-1)
-Breaks: python3.3-gdbm (<< 3.3.5-1)
-XB-Python-Version: 3.3
 Description: Interactive high-level object-oriented language (version 3.3)
- Version 3.3 of the high-level, interactive object oriented language,
+ Python is a high-level, interactive, object-oriented language. Its 3.3 version
  includes an extensive class library with lots of goodies for
  network programming, system administration, sounds and graphics.
 
+Package: libpython3.3-stdlib
+Architecture: any
+Multi-Arch: same
+Priority: optional
+Pre-Depends: multiarch-support
+Depends: libpython3.3-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
+Breaks: python3.3 (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
+Replaces: python3.3 (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
+Description: Interactive high-level object-oriented language (standard library, version 3.3)
+ Python is a high-level, interactive, object-oriented language. Its 3.3 version
+ includes an extensive class library with lots of goodies for
+ network programming, system administration, sounds and graphics.
+ .
+ This package contains Python 3.3's standard library. It is normally not
+ used on its own, but as a dependency of python3.3.
+
 Package: python3.3-minimal
 Architecture: any
+Multi-Arch: allowed
 Priority: optional
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Pre-Depends: ${shlibs:Pre-Depends}
+Depends: libpython3.3-minimal (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Recommends: python3.3
 Suggests: binfmt-support
 Conflicts: binfmt-support (<< 1.1.2)
-XB-Python-Runtime: python3.3
-XB-Python-Version: 3.3
-Breaks: python3.3 (<< 3.3.5-1)
-Replaces: python3.3 (<< 3.3.5-1)
 Description: Minimal subset of the Python language (version 3.3)
  This package contains the interpreter and some essential modules.  It can
  be used in the boot process for some basic tasks.
  See /usr/share/doc/python3.3-minimal/README.Debian for a list of the modules
  contained in this package.
 
+Package: libpython3.3-minimal
+Architecture: any
+Multi-Arch: same
+Priority: optional
+Pre-Depends: multiarch-support
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: libpython3.3-stdlib
+Conflicts: binfmt-support (<< 1.1.2)
+Breaks: python3.3-minimal (<< 3.3.6-2), python3.3 (<< 3.3.6-2)
+Replaces: python3.3-minimal (<< 3.3.6-2), python3.3 (<< 3.3.6-2)
+Description: Minimal subset of the Python language (version 3.3)
+ This package contains some essential modules. It is normally not
+ used on its own, but as a dependency of python3.3-minimal.
+
 Package: libpython3.3
 Architecture: any
+Multi-Arch: same
 Section: libs
 Priority: optional
-Depends: python3.3 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Pre-Depends: multiarch-support
+Depends: libpython3.3-stdlib (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Description: Shared Python runtime library (version 3.3)
- Version 3.3 of the high-level, interactive object oriented language,
+ Python is a high-level, interactive, object-oriented language. Its 3.3 version
  includes an extensive class library with lots of goodies for
  network programming, system administration, sounds and graphics.
  .
@@ -67,52 +96,75 @@ Description: Shared Python runtime library (version 3.3)
 
 Package: python3.3-examples
 Architecture: all
-Depends: python3.3 (>= ${binary:Version}), ${misc:Depends}
-Description: Examples for the Python language (version 3.3)
- Examples, Demos and Tools for Python (version 3.3). These are files included
- in the upstream Python distribution (version 3.3).
+Depends: python3.3 (>= ${source:Version}), ${misc:Depends}
+Description: Examples for the Python language (v3.3)
+ Examples, Demos and Tools for Python (v3.3). These are files included in
+ the upstream Python distribution (v3.3).
 
 Package: python3.3-dev
 Architecture: any
-Depends: python3.3 (= ${binary:Version}), libpython3.3 (= ${binary:Version}), libssl-dev, ${shlibs:Depends}, ${misc:Depends}
+Multi-Arch: allowed
+Depends: python3.3 (= ${binary:Version}), libpython3.3-dev (= ${binary:Version}), libpython3.3 (= ${binary:Version}), libexpat1-dev, ${shlibs:Depends}, ${misc:Depends}
 Recommends: libc6-dev | libc-dev
-Description: Header files and a static library for Python (version 3.3)
+Description: Header files and a static library for Python (v3.3)
  Header files, a static library and development tools for building
- Python (version 3.3) modules, extending the Python interpreter or embedding
- Python (version 3.3) in applications.
+ Python (v3.3) modules, extending the Python interpreter or embedding
+ Python (v3.3) in applications.
  .
  Maintainers of Python packages should read README.maintainers.
 
+Package: libpython3.3-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Pre-Depends: multiarch-support
+Depends: libpython3.3-stdlib (= ${binary:Version}), libpython3.3 (= ${binary:Version}), libexpat1-dev, ${shlibs:Depends}, ${misc:Depends}
+Recommends: libc6-dev | libc-dev
+Breaks: python3.3-dev (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
+Replaces: python3.3-dev (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
+Description: Header files and a static library for Python (v3.3)
+ Header files, a static library and development tools for building
+ Python (v3.3) modules, extending the Python interpreter or embedding
+ Python (v3.3) in applications.
+ .
+ Maintainers of Python packages should read README.maintainers.
+ .
+ This package contains development files. It is normally not
+ used on it's own, but as a dependency of python3.3-dev.
+
+Package: libpython3.3-testsuite
+Section: libdevel
+Architecture: all
+Depends: libpython3.3-stdlib (>= ${binary:Version}), ${misc:Depends}, net-tools
+Suggests: libpython3.3-gdbm, libpython3.3-tk
+Breaks: python3.3 (<< 3.3.6-2)
+Replaces: python3.3 (<< 3.3.6-2)
+Description: Testsuite for the Python standard library (v3.3)
+ The complete testsuite for the Python standard library.  Note that
+ a subset is found in the libpython3.3-stdlib package, which should
+ be enough for other packages to use (please do not build-depend
+ on this package, but file a bug report to include additional 
+ testsuite files in the libpython3.3-stdlib package).
+
 Package: idle-python3.3
 Architecture: all
-Depends: python3.3, python3.3-tk, ${misc:Depends}
+Depends: python3.3, libpython3.3-tk, ${misc:Depends}
 Enhances: python3.3
-XB-Python-Version: 3.3
-Description: IDE for Python (version 3.3) using Tkinter
- IDLE is an Integrated Development Environment for Python (version 3.3).
+Description: IDE for Python (v3.3) using Tkinter
+ IDLE is an Integrated Development Environment for Python (v3.3).
  IDLE is written using Tkinter and therefore quite platform-independent.
-
-Package: python3.3-dbg
-Section: debug
-Architecture: any
-Priority: extra
-Depends: python3.3 (>= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
-Suggests: python3.3-gdbm-dbg, python3.3-tk-dbg
-Description: Debug Build of the Python Interpreter (version 3.3)
- Python interpreter configured with --pydebug. Dynamically loaded modules are
- searched in /usr/lib/python3.3/lib-dynload/debug first.
 
 Package: python3.3-doc
 Section: doc
 Architecture: all
-Depends: ${misc:Depends}, libjs-jquery
+Depends: libjs-jquery, libjs-underscore, ${misc:Depends}
 Suggests: python3.3
-Description: Documentation for the high-level object-oriented language Python (version 3.3)
- This is the official set of documentation for the interactive high-level
- object-oriented language Python (version 3.3). All documents are provided
+Description: Documentation for the high-level object-oriented language Python (v3.3)
+ These is the official set of documentation for the interactive high-level
+ object-oriented language Python (v3.3). All documents are provided
  in HTML format. The package consists of ten documents:
  .
-   * What's New in Python 3.3
+   * What's New in Python3.3
    * Tutorial
    * Python Library Reference
    * Macintosh Module Reference
@@ -123,47 +175,138 @@ Description: Documentation for the high-level object-oriented language Python (v
    * Documenting Python
    * Distributing Python Modules
 
-Package: python3.3-tk
+Package: python3.3-dbg
+Section: debug
 Architecture: any
-Depends: python3.3, ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}
+Multi-Arch: allowed
+Priority: extra
+Depends: python3.3 (= ${binary:Version}), libpython3.3-dbg (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Recommends: gdb
+Suggests: libpython3.3-gdbm-dbg, libpython3.3-tk-dbg
+Description: Debug Build of the Python Interpreter (version 3.3)
+ The package holds two things:
+ .
+ - A Python interpreter configured with --pydebug. Dynamically loaded modules
+   are searched as <foo>_d.so first. Third party extensions need a separate
+   build to be used by this interpreter.
+ - Debug information for standard python interpreter and extensions.
+ .
+ See the README.debug for more information.
+
+Package: libpython3.3-dbg
+Section: debug
+Architecture: any
+Multi-Arch: same
+Priority: extra
+Pre-Depends: multiarch-support
+Depends: libpython3.3-stdlib (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Breaks: python3.3-dbg (<< 3.3.6-2)
+Replaces: python3.3-dbg (<< 3.3.6-2)
+Description: Debug Build of the Python Interpreter (version 3.3)
+ The package holds two things:
+ .
+ - Extensions for a Python interpreter configured with --pydebug.
+ - Debug information for standard python extensions.
+ .
+ See the README.debug for more information.
+
+
+Package: libpython3.3-tk
+Architecture: any
+Multi-Arch: same
+Depends: libpython3.3-stdlib (>= ${binary:Version}), ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}
 Provides: ${python:Provides}
-Suggests: tix, python3.3-tk-dbg
-XB-Python-Version: ${python:Versions}
+Suggests: tix, libpython3.3-tk-dbg
+Breaks: python3.3-tk (<< 3.3.6-2)
+Replaces: python3.3-tk (<< 3.3.6-2)
 Description: Tkinter - Writing Tk applications with Python (version 3.3)
  A module for writing portable GUI applications with Python (version 3.3)
  using Tk. Also known as Tkinter.
 
-Package: python3.3-gdbm
+Package: libpython3.3-gdbm
 Architecture: any
-Depends: python3.3, ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}
+Multi-Arch: same
+Depends: libpython3.3-stdlib (>= ${binary:Version}), ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}
 Provides: ${python:Provides}
-Suggests: python3.3-gdbm-dbg
-XB-Python-Version: ${python:Versions}
+Suggests: libpython3.3-gdbm-dbg
+Breaks: python3.3-gdbm (<< 3.3.6-2)
+Replaces: python3.3-gdbm (<< 3.3.6-2)
 Description: GNU dbm database support for Python (version 3.3)
  GNU dbm database module for Python (version 3.3). Install this if you want to
  create or read GNU dbm database files with Python.
 
-Package: python3.3-tk-dbg
+Package: libpython3.3-tk-dbg
 Architecture: any
+Multi-Arch: same
 Priority: extra
 Section: debug
-Depends: python3.3, ${python:Depends}, python3.3-tk (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Depends: libpython3.3-dbg (>= ${binary:Version}), ${python:Depends}, libpython3.3-tk (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Breaks: python3.3-tk-dbg (<< 3.3.6-2)
+Replaces: python3.3-tk-dbg (<< 3.3.6-2)
 Description: Tkinter - Writing Tk applications with Python (version 3.3 debug extension)
  A module for writing portable GUI applications with Python (version 3.3)
  using Tk. Also known as Tkinter.
  .
  This package contains the extensions built for the Python debug interpreter.
 
-Package: python3.3-gdbm-dbg
+Package: libpython3.3-gdbm-dbg
 Architecture: any
+Multi-Arch: same
 Priority: extra
 Section: debug
-Depends: python3.3, ${python:Depends}, python3.3-gdbm (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Depends: libpython3.3-dbg (>= ${binary:Version}), ${python:Depends}, libpython3.3-gdbm (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Breaks: python3.3-gdbm-dbg (<< 3.3.6-2)
+Replaces: python3.3-gdbm-dbg (<< 3.3.6-2)
 Description: GNU dbm database support for Python (version 3.3 debug extension)
  GNU dbm database module for Python (version 3.3). Install this if you want to
  create or read GNU dbm database files with Python.
  .
  This package contains the extensions built for the Python debug interpreter.
+
+
+Package: python3.3-tk
+Architecture: all
+Section: oldlibs
+Priority: extra
+Depends: libpython3.3-tk, ${misc:Depends}
+Description: Tkinter - Writing Tk applications with Python (transitional package)
+ A module for writing portable GUI applications with Python (version 3.3)
+ using Tk. Also known as Tkinter.
+ .
+ This package is a transitional package. It can safely be removed.
+
+Package: python3.3-gdbm
+Architecture: all
+Section: oldlibs
+Priority: extra
+Depends: libpython3.3-gdbm, ${misc:Depends}
+Description: GNU dbm database support for Python (transitional package)
+ GNU dbm database module for Python (version 3.3). Install this if you want to
+ create or read GNU dbm database files with Python.
+ .
+ This package is a transitional package. It can safely be removed.
+
+Package: python3.3-tk-dbg
+Architecture: all
+Section: oldlibs
+Priority: extra
+Depends: libpython3.3-tk-dbg, ${misc:Depends}
+Description: Tkinter - Writing Tk applications with Python (transitional package)
+ A module for writing portable GUI applications with Python (version 3.3)
+ using Tk. Also known as Tkinter.
+ .
+ This package is a transitional package. It can safely be removed.
+
+Package: python3.3-gdbm-dbg
+Architecture: all
+Section: oldlibs
+Priority: extra
+Depends: libpython3.3-gdbm-dbg, ${misc:Depends}
+Description: GNU dbm database support for Python (transitional package)
+ GNU dbm database module for Python (version 3.3). Install this if you want to
+ create or read GNU dbm database files with Python.
+ .
+ This package is a transitional package. It can safely be removed.
 
 
 Package: python3.3-complete
@@ -172,17 +315,17 @@ Priority: extra
 Depends:
  python3.3 (>= ${binary:Version}),
  libpython3.3 (>= ${binary:Version}),
+ libpython3.3-testsuite (>= ${binary:Version}),
+ libpython3.3-tk (>= ${binary:Version}),
+ libpython3.3-gdbm (>= ${binary:Version}),
+ libpython3.3-tk-dbg (>= ${binary:Version}),
+ libpython3.3-gdbm-dbg (>= ${binary:Version}),
  python3.3-examples (>= ${binary:Version}),
  python3.3-dev (>= ${binary:Version}),
- idle-python3.3 (>= ${binary:Version}),
  python3.3-doc (>= ${binary:Version}),
  python3.3-dbg (>= ${binary:Version}),
- python3.3-tk (>= ${binary:Version}),
- python3.3-gdbm (>= ${binary:Version}),
- python3.3-tk-dbg (>= ${binary:Version}),
- python3.3-gdbm-dbg (>= ${binary:Version}),
+ idle-python3.3 (>= ${binary:Version}),
  ${misc:Depends}
-XB-Python-Version: 3.3
 Description: Interactive high-level object-oriented language (version 3.3)
  Version 3.3 of the high-level, interactive object oriented language,
  includes an extensive class library with lots of goodies for

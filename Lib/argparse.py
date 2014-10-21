@@ -91,13 +91,15 @@ import sys as _sys
 import textwrap as _textwrap
 
 try:
-    from gettext import gettext, ngettext
+    from gettext import gettext as _, ngettext
 except ImportError:
-    def gettext(message):
+    def _(message):
         return message
-    def ngettext(msg1, msg2, n):
-        return msg1 if n == 1 else msg2
-_ = gettext
+    def ngettext(singular,plural,n):
+        if n == 1:
+            return singular
+        else:
+            return plural
 
 
 SUPPRESS = '==SUPPRESS=='

@@ -1,13 +1,11 @@
-#! /bin/sh -e
-#
-# prerm script for the Debian @PVER@-base package.
-# Written 1998 by Gregor Hoffleit <flight@debian.org>.
-#
+#! /bin/sh
+
+set -e
 
 remove_bytecode()
 {
     pkg=$1
-    max=$(LC_ALL=C xargs --show-limits < /dev/null 2>&1 | awk '/Maximum/ {print $NF / 4}')
+    max=$(LANG=C LC_ALL=C xargs --show-limits < /dev/null 2>&1 | awk '/Maximum/ {print int($NF / 4)}')
     dpkg -L $pkg \
 	| awk -F/ 'BEGIN {OFS="/"} /\.py$/ {$NF=sprintf("__pycache__/%s.*.py[co]", substr($NF,1,length($NF)-3)); print}' \
 	| xargs --max-chars="$max" echo \
@@ -18,7 +16,7 @@ remove_bytecode()
 
 case "$1" in
     remove|upgrade)
-	remove_bytecode @PVER@
+	remove_bytecode lib@PVER@-stdlib
         ;;
     deconfigure)
         ;;

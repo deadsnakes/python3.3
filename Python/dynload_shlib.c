@@ -48,6 +48,9 @@ const char *_PyImport_DynLoadFiletab[] = {
     ".exe",
     ".EXE",
 #else  /* !__VMS */
+#ifdef MULTIARCH
+    "." SOABI "-" MULTIARCH ".so",
+#endif
     "." SOABI ".so",
     ".abi" PYTHON_ABI_STRING ".so",
     ".so",
