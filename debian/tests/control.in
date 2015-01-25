@@ -22,3 +22,6 @@ Depends: @PVER@, lib@PVER@-gdbm, lib@PVER@-tk
 
 Tests: check-ndbm
 Depends: libc-bin, @PVER@
+
+Tests: check-disabled-venv-site-packages
+Depends: @PVER@
