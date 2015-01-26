@@ -1,3 +1,15 @@
+python3.3 (3.3.6-3+precise1) precise; urgency=medium
+
+  * Fix venv site-packages path when running a disabled venv.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 26 Jan 2015 16:36:48 +0100
+
+python3.3 (3.3.6-2+precise2) precise; urgency=medium
+
+  * Re-release for precise since 2+precise1 seems to not have gone through.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 21 Dec 2014 22:49:31 +0000
+
 python3.3 (3.3.6-2+trusty1) trusty; urgency=medium
 
   * Imported from Precise package.
