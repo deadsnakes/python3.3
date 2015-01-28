@@ -107,7 +107,7 @@
              if self.prefix is None:
                  if self.exec_prefix is not None:
                      raise DistutilsOptionError(
-@@ -455,7 +477,24 @@
+@@ -455,7 +477,25 @@
  
              self.install_base = self.prefix
              self.install_platbase = self.exec_prefix
@@ -123,6 +123,7 @@
 +            elif (self.prefix_option and os.path.normpath(self.prefix) != '/usr/local') \
 +                    or 'PYTHONUSERBASE' in os.environ \
 +                    or 'VIRTUAL_ENV' in os.environ \
++                    or 'real_prefix' in sys.__dict__ \
 +                    or sys.base_prefix != sys.prefix:
 +                self.select_scheme("unix_prefix")
 +            else:
@@ -147,7 +148,7 @@
                                   "lib", "python" + get_python_version())
          if standard_lib:
              return libpython
-+        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and sys.base_prefix == sys.prefix:
++        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and 'real_prefix' not in sys.__dict__ and sys.base_prefix == sys.prefix:
 +            return os.path.join(prefix, "lib", "python3", "dist-packages")
          else:
              return os.path.join(libpython, "site-packages")
