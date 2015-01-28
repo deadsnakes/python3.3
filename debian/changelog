@@ -1,0 +1,161 @@
+python3.3 (3.3.6-4+trusty1) trusty; urgency=medium
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 28 Jan 2015 17:13:35 +0100
+
+python3.3 (3.3.6-4+precise1) precise; urgency=medium
+
+  * Fix virtualenv site-packages path.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 28 Jan 2015 17:10:57 +0100
+
+python3.3 (3.3.6-3+trusty1) trusty; urgency=medium
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 26 Jan 2015 16:48:23 +0100
+
+python3.3 (3.3.6-3+precise1) precise; urgency=medium
+
+  * Fix venv site-packages path when running a disabled venv.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 26 Jan 2015 16:36:48 +0100
+
+python3.3 (3.3.6-2+precise2) precise; urgency=medium
+
+  * Re-release for precise since 2+precise1 seems to not have gone through.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 21 Dec 2014 22:49:31 +0000
+
+python3.3 (3.3.6-2+trusty1) trusty; urgency=medium
+
+  * Imported from Precise package.
+  * Upgrades from old 3.3 packages in pre-release trusty should now
+    be smoother.
+
+ -- Felix Krull <f_krull@gmx.de>  Tue, 21 Oct 2014 16:05:18 +0200
+
+python3.3 (3.3.6-2+precise1) precise; urgency=medium
+
+  * Adopt more flexible package structure from 3.4 and official 3.3 packages.
+    - Primarily, the new structure provides better multiarch support, allowing
+      to install the shared libraries, headers and standard library for
+      different architectures simultaneously.
+    - This also fixes issue #20 since ctypes is built as an extension module
+      and linked to shared libffi.
+
+ -- Felix Krull <f_krull@gmx.de>  Tue, 21 Oct 2014 15:03:16 +0200
+
+python3.3 (3.3.6-1+trusty1) trusty; urgency=medium
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 12 Oct 2014 15:54:28 +0200
+
+python3.3 (3.3.6-1+precise1) precise; urgency=medium
+
+  * Imported new upstream release Python 3.3.6.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 12 Oct 2014 14:20:01 +0200
+
+python3.3 (3.3.5-2+trusty1) trusty; urgency=low
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 04 Aug 2014 17:16:16 +0200
+
+python3.3 (3.3.5-2+precise1) precise; urgency=low
+
+  * Remove apport hook.
+    - Because that hook tries to import apt_pkg which is a compiled module,
+      you'd get an annoying error message every time an exception is raised
+      while python3-apport is installed.
+
+ -- Felix Krull <f_krull@gmx.de>  Mon, 04 Aug 2014 16:26:07 +0200
+
+python3.3 (3.3.5-1+trusty1) trusty; urgency=low
+
+  * Imported from Precise package.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 13 Apr 2014 14:45:12 +0200
+
+python3.3 (3.3.5-1+precise1) precise; urgency=low
+
+  * Imported new upstream release Python 3.3.5.
+  * The dbm.gnu module is now in the python3.3 package, similarly to how
+    tkinter is handled.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 12 Mar 2014 01:01:51 +0100
+
+python3.3 (3.3.4-1+precise1) precise; urgency=low
+
+  * Imported new upstream release Python 3.3.4.
+  * Add test.support package.
+    - Fixes #11.
+  * Pick _sysconfigdata based on regular/debug build so that sysconfig
+    always produces accurate results regardless of whether the regular
+    or debug interpreter is used.
+    - Also, the underlying _sysconfigdata files are from the respective
+      shared builds. While the main interpreter is a static built, we also
+      have shared libraries.
+  * On shared builds, don't link extensions modules to libpython.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 23 Feb 2014 14:17:22 +0100
+
+python3.3 (3.3.3-2+precise1) precise; urgency=low
+
+  * Fix missing ngettext import in patched argparse.
+    - See http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=631635.
+
+ -- Felix Krull <f_krull@gmx.de>  Fri, 27 Dec 2013 20:09:55 +0100
+
+python3.3 (3.3.3-1+precise1) precise; urgency=low
+
+  * Imported new upstream release Python 3.3.3 (awesome version number, that).
+
+ -- Felix Krull <f_krull@gmx.de>  Tue, 19 Nov 2013 14:15:49 +0100
+
+python3.3 (3.3.2-1+precise1) precise; urgency=low
+
+  * Imported new upstream release Python 3.3.2.
+
+ -- Felix Krull <f_krull@gmx.de>  Thu, 16 May 2013 15:55:56 +0200
+
+python3.3 (3.3.1-1+precise1) precise; urgency=low
+
+  * Import from Oneiric package.
+  * Remove unnecessary patch.
+  * Use dpkg buildflags for hardening compile time options.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 01 May 2013 13:56:50 +0200
+
+python3.3 (3.3.1-1+oneiric1) oneiric; urgency=low
+
+  * Import from Lucid package.
+
+ -- Felix Krull <f_krull@gmx.de>  Wed, 01 May 2013 13:02:38 +0200
+
+python3.3 (3.3.1-1+lucid1) lucid; urgency=low
+
+  * Imported new upstream release Python 3.3.1.
+
+ -- Felix Krull <f_krull@gmx.de>  Tue, 30 Apr 2013 22:40:13 +0200
+
+python3.3 (3.3.0-1+precise1) precise; urgency=low
+
+  * Import from Lucid package.
+
+ -- Felix Krull <f_krull@gmx.de>  Sun, 07 Oct 2012 00:03:15 +0200
+
+python3.3 (3.3.0-1+oneiric1) oneiric; urgency=low
+
+  * Import from Lucid package.
+
+ -- Felix Krull <f_krull@gmx.de>  Sat, 06 Oct 2012 22:23:17 +0200
+
+python3.3 (3.3.0-1+lucid1) lucid; urgency=low
+
+  * Initial release.
+
+ -- Felix Krull <f_krull@gmx.de>  Sat, 06 Oct 2012 17:32:08 +0200
