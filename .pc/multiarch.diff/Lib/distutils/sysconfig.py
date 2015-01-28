@@ -148,7 +148,7 @@ def get_python_lib(plat_specific=0, standard_lib=0, prefix=None):
                                  "lib", "python" + get_python_version())
         if standard_lib:
             return libpython
-        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and sys.base_prefix == sys.prefix:
+        elif is_default_prefix and 'PYTHONUSERBASE' not in os.environ and 'VIRTUAL_ENV' not in os.environ and 'real_prefix' not in sys.__dict__ and sys.base_prefix == sys.prefix:
             return os.path.join(prefix, "lib", "python3", "dist-packages")
         else:
             return os.path.join(libpython, "site-packages")

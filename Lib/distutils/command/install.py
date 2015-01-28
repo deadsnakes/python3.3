@@ -491,6 +491,7 @@ class install(Command):
             elif (self.prefix_option and os.path.normpath(self.prefix) != '/usr/local') \
                     or 'PYTHONUSERBASE' in os.environ \
                     or 'VIRTUAL_ENV' in os.environ \
+                    or 'real_prefix' in sys.__dict__ \
                     or sys.base_prefix != sys.prefix:
                 self.select_scheme("unix_prefix")
             else:
