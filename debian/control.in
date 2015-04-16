@@ -16,7 +16,7 @@ Build-Depends: debhelper (>= 5.0.51~), dpkg-dev (>= 1.16.1~), quilt, autoconf, l
   mime-support, netbase, bzip2, python3,
   net-tools, xvfb, xauth
 Build-Depends-Indep: python-sphinx
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Vcs-Browser: https://bitbucket.org/fk/deadsnakes-@PVER@
 Vcs-Hg: https://bitbucket.org/fk/deadsnakes-@PVER@
 X-Original-Vcs-Browser: https://code.launchpad.net/~doko/python/pkg@VER@-debian
