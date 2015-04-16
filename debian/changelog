@@ -1,3 +1,9 @@
+python3.3 (3.3.6-4+vivid1) vivid; urgency=medium
+
+  * Imported from Utopic package.
+
+ -- Felix Krull <f_krull@gmx.de>  Thu, 16 Apr 2015 22:21:10 +0200
+
 python3.3 (3.3.6-4+utopic1) utopic; urgency=medium
 
   * Imported from Precise package.
