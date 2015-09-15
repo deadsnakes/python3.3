@@ -76,10 +76,19 @@ def no_sslv2_implies_sslv3_hello():
 
 # Issue #9415: Ubuntu hijacks their OpenSSL and forcefully disables SSLv2
 def skip_if_broken_ubuntu_ssl(func):
-    @functools.wraps(func)
-    def f(*args, **kwargs):
-        raise unittest.SkipTest("Ubuntu OpenSSL disables SSLv2")
-    return f
+    if hasattr(ssl, 'PROTOCOL_SSLv2'):
+        @functools.wraps(func)
+        def f(*args, **kwargs):
+            try:
+                ssl.SSLContext(ssl.PROTOCOL_SSLv2)
+            except ssl.SSLError:
+                if (ssl.OPENSSL_VERSION_INFO == (0, 9, 8, 15, 15) and
+                    platform.linux_distribution() == ('debian', 'squeeze/sid', '')):
+                    raise unittest.SkipTest("Patched Ubuntu OpenSSL breaks behaviour")
+            return func(*args, **kwargs)
+        return f
+    else:
+        return func
 
 
 class BasicSocketTests(unittest.TestCase):
@@ -2070,7 +2079,6 @@ else:
                                        chatty=True, connectionchatty=True)
             self.assertIs(stats['compression'], None)
 
-        @unittest.skip("fails on Ubuntu wily build")
         def test_dh_params(self):
             # Check we can get a connection with ephemeral Diffie-Hellman
             context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)

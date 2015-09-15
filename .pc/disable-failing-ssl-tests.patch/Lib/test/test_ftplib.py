@@ -312,7 +312,7 @@ if ssl is not None:
             socket = ssl.wrap_socket(self.socket, suppress_ragged_eofs=False,
                                      certfile=CERTFILE, server_side=True,
                                      do_handshake_on_connect=False,
-                                     ssl_version=ssl.PROTOCOL_TLSv1)
+                                     ssl_version=ssl.PROTOCOL_SSLv23)
             self.del_channel()
             self.set_socket(socket)
             self._ssl_accepting = True
@@ -887,7 +887,7 @@ class TestTLS_FTPClass(TestCase):
 
     def test_auth_ssl(self):
         try:
-            self.client.ssl_version = ssl.PROTOCOL_TLSv1
+            self.client.ssl_version = ssl.PROTOCOL_SSLv3
             self.client.auth()
             self.assertRaises(ValueError, self.client.auth)
         finally:
