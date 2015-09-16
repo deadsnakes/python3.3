@@ -40,6 +40,9 @@ TESTEXCLUSIONS="$TESTEXCLUSIONS test_distutils"
 # ... and then test_venv fails too
 #TESTEXCLUSIONS="$TESTEXCLUSIONS test_ensurepip test_venv "
 
+# test_faulthandler: seems to get stuck now?
+TESTEXCLUSIONS="$TESTEXCLUSIONS test_faulthandler"
+
 # test_gdb: not run for the optimized build
 #TESTEXCLUSIONS="$TESTEXCLUSIONS test_gdb"
 
