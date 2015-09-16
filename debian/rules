@@ -1253,7 +1253,7 @@ binary-indep: build-indep install stamps/stamp-control
 	cd $(buildd_static) && ./python ../debian/pyhtml2devhelp.py \
 		../$(d_doc)/usr/share/doc/$(p_base)/html index.html $(VER) \
 		> ../$(d_doc)/usr/share/doc/$(p_base)/html/$(PVER).devhelp
-	gzip -9v $(d_doc)/usr/share/doc/$(p_base)/html/$(PVER).devhelp
+	gzip -9nv $(d_doc)/usr/share/doc/$(p_base)/html/$(PVER).devhelp
 	dh_link -p$(p_doc) \
 		/usr/share/doc/$(p_base)/html /usr/share/devhelp/books/$(PVER)
 
