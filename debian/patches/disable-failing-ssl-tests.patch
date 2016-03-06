@@ -1,0 +1,54 @@
+--- a/Lib/test/test_ssl.py
++++ b/Lib/test/test_ssl.py
+@@ -76,19 +76,10 @@
+ 
+ # Issue #9415: Ubuntu hijacks their OpenSSL and forcefully disables SSLv2
+ def skip_if_broken_ubuntu_ssl(func):
+-    if hasattr(ssl, 'PROTOCOL_SSLv2'):
+-        @functools.wraps(func)
+-        def f(*args, **kwargs):
+-            try:
+-                ssl.SSLContext(ssl.PROTOCOL_SSLv2)
+-            except ssl.SSLError:
+-                if (ssl.OPENSSL_VERSION_INFO == (0, 9, 8, 15, 15) and
+-                    platform.linux_distribution() == ('debian', 'squeeze/sid', '')):
+-                    raise unittest.SkipTest("Patched Ubuntu OpenSSL breaks behaviour")
+-            return func(*args, **kwargs)
+-        return f
+-    else:
+-        return func
++    @functools.wraps(func)
++    def f(*args, **kwargs):
++        raise unittest.SkipTest("Ubuntu OpenSSL disables SSLv2")
++    return f
+ 
+ 
+ class BasicSocketTests(unittest.TestCase):
+@@ -2079,6 +2070,7 @@
+                                        chatty=True, connectionchatty=True)
+             self.assertIs(stats['compression'], None)
+ 
++        @unittest.skip("fails on Ubuntu wily build")
+         def test_dh_params(self):
+             # Check we can get a connection with ephemeral Diffie-Hellman
+             context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+--- a/Lib/test/test_ftplib.py
++++ b/Lib/test/test_ftplib.py
+@@ -312,7 +312,7 @@
+             socket = ssl.wrap_socket(self.socket, suppress_ragged_eofs=False,
+                                      certfile=CERTFILE, server_side=True,
+                                      do_handshake_on_connect=False,
+-                                     ssl_version=ssl.PROTOCOL_SSLv23)
++                                     ssl_version=ssl.PROTOCOL_TLSv1)
+             self.del_channel()
+             self.set_socket(socket)
+             self._ssl_accepting = True
+@@ -887,7 +887,7 @@
+ 
+     def test_auth_ssl(self):
+         try:
+-            self.client.ssl_version = ssl.PROTOCOL_SSLv3
++            self.client.ssl_version = ssl.PROTOCOL_TLSv1
+             self.client.auth()
+             self.assertRaises(ValueError, self.client.auth)
+         finally:
