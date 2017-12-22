@@ -1,10 +1,19 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Fri, 22 Dec 2017 08:45:05 -0800
+Subject: locale-module
+
 # DP:   * Lib/locale.py:
 # DP:     - Don't map 'utf8', 'utf-8' to 'utf', which is not a known encoding
 # DP:       for glibc.
+---
+ Lib/locale.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
 
+diff --git a/Lib/locale.py b/Lib/locale.py
+index 7cfea61..25983d9 100644
 --- a/Lib/locale.py
 +++ b/Lib/locale.py
-@@ -1601,8 +1601,8 @@
+@@ -1601,8 +1601,8 @@ locale_alias = {
      'uk_ua.iso88595':                       'uk_UA.ISO8859-5',
      'uk_ua.koi8u':                          'uk_UA.KOI8-U',
      'uk_ua.microsoftcp1251':                'uk_UA.CP1251',

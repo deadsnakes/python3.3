@@ -1,3 +1,7 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Fri, 22 Dec 2017 08:45:06 -0800
+Subject: statvfs-f_flag-constants
+
 # DP: Modules/posixmodule.c: Add flags for statvfs.f_flag to constant list.
 
 From: Peter Jones <pjones@redhat.com>
@@ -6,10 +10,15 @@ Subject: [PATCH] Add flags for statvfs.f_flag to constant list.
 
  Modules/posixmodule.c |   37 +++++++++++++++++++++++++++++++++++++
  1 files changed, 37 insertions(+), 0 deletions(-)
+---
+ Modules/posixmodule.c | 37 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
 
+diff --git a/Modules/posixmodule.c b/Modules/posixmodule.c
+index 7930fcd..72e9f1d 100644
 --- a/Modules/posixmodule.c
 +++ b/Modules/posixmodule.c
-@@ -11836,6 +11836,43 @@
+@@ -11836,6 +11836,43 @@ all_ins(PyObject *d)
      if (ins(d, "F_TEST", (long)F_TEST)) return -1;
  #endif
  

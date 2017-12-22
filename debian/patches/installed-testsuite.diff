@@ -1,11 +1,20 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Fri, 22 Dec 2017 08:45:07 -0800
+Subject: installed-testsuite
+
 # DP: Changes needed to run the installed testsuite.
 # DP: Also removed:
 # DP:   - ctypes/test/test_macholib.py
 # DP:   - distutils/tests/test_bdist_wininst.py
+---
+ Lib/test/test_sysconfig.py | 1 +
+ 1 file changed, 1 insertion(+)
 
+diff --git a/Lib/test/test_sysconfig.py b/Lib/test/test_sysconfig.py
+index 03f67fd..7016fb5 100644
 --- a/Lib/test/test_sysconfig.py
 +++ b/Lib/test/test_sysconfig.py
-@@ -340,6 +340,7 @@
+@@ -340,6 +340,7 @@ class TestSysConfig(unittest.TestCase):
              self.assertEqual(status, 0)
              self.assertEqual(my_platform, test_platform)
  

@@ -1,23 +1,19 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Fri, 22 Dec 2017 08:45:06 -0800
+Subject: hurd-disable-nonworking-constants
+
 # DP: Comment out constant exposed on the API which are not implemented on
 # DP: GNU/Hurd. They would not work at runtime anyway.
+---
+ Modules/posixmodule.c  | 2 ++
+ Modules/socketmodule.c | 2 ++
+ 2 files changed, 4 insertions(+)
 
---- a/Modules/socketmodule.c
-+++ b/Modules/socketmodule.c
-@@ -5960,9 +5960,11 @@
- #ifdef  SO_OOBINLINE
-     PyModule_AddIntConstant(m, "SO_OOBINLINE", SO_OOBINLINE);
- #endif
-+#ifndef __GNU__
- #ifdef  SO_REUSEPORT
-     PyModule_AddIntConstant(m, "SO_REUSEPORT", SO_REUSEPORT);
- #endif
-+#endif
- #ifdef  SO_SNDBUF
-     PyModule_AddIntConstant(m, "SO_SNDBUF", SO_SNDBUF);
- #endif
+diff --git a/Modules/posixmodule.c b/Modules/posixmodule.c
+index 767a665..7930fcd 100644
 --- a/Modules/posixmodule.c
 +++ b/Modules/posixmodule.c
-@@ -11611,12 +11611,14 @@
+@@ -11611,12 +11611,14 @@ all_ins(PyObject *d)
  #ifdef O_LARGEFILE
      if (ins(d, "O_LARGEFILE", (long)O_LARGEFILE)) return -1;
  #endif
@@ -31,4 +27,20 @@
 +#endif
  #ifdef O_EXEC
      if (ins(d, "O_EXEC", (long)O_EXEC)) return -1;
+ #endif
+diff --git a/Modules/socketmodule.c b/Modules/socketmodule.c
+index 32b4eba..013aca0 100644
+--- a/Modules/socketmodule.c
++++ b/Modules/socketmodule.c
+@@ -5960,9 +5960,11 @@ PyInit__socket(void)
+ #ifdef  SO_OOBINLINE
+     PyModule_AddIntConstant(m, "SO_OOBINLINE", SO_OOBINLINE);
+ #endif
++#ifndef __GNU__
+ #ifdef  SO_REUSEPORT
+     PyModule_AddIntConstant(m, "SO_REUSEPORT", SO_REUSEPORT);
+ #endif
++#endif
+ #ifdef  SO_SNDBUF
+     PyModule_AddIntConstant(m, "SO_SNDBUF", SO_SNDBUF);
  #endif

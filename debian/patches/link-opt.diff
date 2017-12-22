@@ -1,8 +1,17 @@
-# DP: Call the linker with -O1 -Bsymbolic-functions
+From: Felix Krull <f_krull@gmx.de>
+Date: Fri, 22 Dec 2017 08:45:06 -0800
+Subject: link-opt
 
+# DP: Call the linker with -O1 -Bsymbolic-functions
+---
+ configure.ac | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 0e67f03..088f904 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -2005,8 +2005,8 @@
+@@ -2005,8 +2005,8 @@ then
  		fi
  		;;
  	Linux*|GNU*|QNX*)
@@ -13,7 +22,7 @@
  	BSD/OS*/4*)
  		LDSHARED="gcc -shared"
  		LDCXXSHARED="g++ -shared";;
-@@ -2104,7 +2104,7 @@
+@@ -2104,7 +2104,7 @@ then
  	    LINKFORSHARED="-Wl,-E -Wl,+s";;
  #	    LINKFORSHARED="-Wl,-E -Wl,+s -Wl,+b\$(BINLIBDEST)/lib-dynload";;
  	BSD/OS/4*) LINKFORSHARED="-Xlinker -export-dynamic";;
