@@ -4,8 +4,6 @@
 
 /* Itertools module written and maintained
    by Raymond D. Hettinger <python@rcn.com>
-   Copyright (c) 2003-2013 Python Software Foundation.
-   All rights reserved.
 */
 
 
@@ -1998,11 +1996,19 @@ product_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         }
     }
 
-    assert(PyTuple_Check(args));
-    nargs = (repeat == 0) ? 0 : PyTuple_GET_SIZE(args);
+    assert(PyTuple_CheckExact(args));
+    if (repeat == 0) {
+        nargs = 0;
+    } else {
+        nargs = PyTuple_GET_SIZE(args);
+        if ((size_t)nargs > PY_SSIZE_T_MAX/sizeof(Py_ssize_t)/repeat) {
+            PyErr_SetString(PyExc_OverflowError, "repeat argument too large");
+            return NULL;
+        }
+    }
     npools = nargs * repeat;
 
-    indices = PyMem_Malloc(npools * sizeof(Py_ssize_t));
+    indices = PyMem_New(Py_ssize_t, npools);
     if (indices == NULL) {
         PyErr_NoMemory();
         goto error;
@@ -2197,13 +2203,21 @@ product_setstate(productobject *lz, PyObject *state)
     {
         PyObject* indexObject = PyTuple_GET_ITEM(state, i);
         Py_ssize_t index = PyLong_AsSsize_t(indexObject);
+        PyObject* pool;
+        Py_ssize_t poolsize;
         if (index < 0 && PyErr_Occurred())
             return NULL; /* not an integer */
+        pool = PyTuple_GET_ITEM(lz->pools, i);
+        poolsize = PyTuple_GET_SIZE(pool);
+        if (poolsize == 0) {
+            lz->stopped = 1;
+            Py_RETURN_NONE;
+        }
         /* clamp the index */
         if (index < 0)
             index = 0;
-        else if (index > n-1)
-            index = n-1;
+        else if (index > poolsize-1)
+            index = poolsize-1;
         lz->indices[i] = index;
     }
 
@@ -2326,7 +2340,7 @@ combinations_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         goto error;
     }
 
-    indices = PyMem_Malloc(r * sizeof(Py_ssize_t));
+    indices = PyMem_New(Py_ssize_t, r);
     if (indices == NULL) {
         PyErr_NoMemory();
         goto error;
@@ -2655,7 +2669,7 @@ cwr_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         goto error;
     }
 
-    indices = PyMem_Malloc(r * sizeof(Py_ssize_t));
+    indices = PyMem_New(Py_ssize_t, r);
     if (indices == NULL) {
         PyErr_NoMemory();
         goto error;
@@ -2984,8 +2998,8 @@ permutations_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         goto error;
     }
 
-    indices = PyMem_Malloc(n * sizeof(Py_ssize_t));
-    cycles = PyMem_Malloc(r * sizeof(Py_ssize_t));
+    indices = PyMem_New(Py_ssize_t, n);
+    cycles = PyMem_New(Py_ssize_t, r);
     if (indices == NULL || cycles == NULL) {
         PyErr_NoMemory();
         goto error;
