@@ -1,13 +1,22 @@
-# DP: Don't try to download documentation tools
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:42 -0800
+Subject: doc-nodownload
 
+# DP: Don't try to download documentation tools
+---
+ Doc/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Doc/Makefile b/Doc/Makefile
+index 036c5bc..cd2e323 100644
 --- a/Doc/Makefile
 +++ b/Doc/Makefile
-@@ -58,7 +58,7 @@
+@@ -59,7 +59,7 @@ checkout:
  
  update: clean checkout
  
 -build: checkout
 +build:
  	mkdir -p build/$(BUILDER) build/doctrees
- 	$(PYTHON) tools/sphinx-build.py $(ALLSPHINXOPTS)
- 	@echo
+ # Look first for a Misc/NEWS file (building from a source release tarball
+ # or old repo) and use that, otherwise look for a Misc/NEWS.d directory

@@ -1,8 +1,17 @@
-# DP: Proper handling of packages in linecache.py
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:40 -0800
+Subject: linecache
 
+# DP: Proper handling of packages in linecache.py
+---
+ Lib/linecache.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/Lib/linecache.py b/Lib/linecache.py
+index c3f2c3f..ac4136f 100644
 --- a/Lib/linecache.py
 +++ b/Lib/linecache.py
-@@ -109,6 +109,11 @@
+@@ -109,6 +109,11 @@ def updatecache(filename, module_globals=None):
          if os.path.isabs(filename):
              return []
  

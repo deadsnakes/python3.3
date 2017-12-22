@@ -1,6 +1,44 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:41 -0800
+Subject: multiarch
+
+---
+ Lib/distutils/sysconfig.py |  5 +++++
+ Lib/sysconfig.py           |  8 ++++++++
+ Makefile.pre.in            | 12 +++++++++---
+ Modules/Setup.dist         |  2 +-
+ Python/dynload_shlib.c     |  3 +++
+ Python/sysmodule.c         |  9 +++++++++
+ 6 files changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/Lib/distutils/sysconfig.py b/Lib/distutils/sysconfig.py
+index 9998d03..07a26dc 100644
+--- a/Lib/distutils/sysconfig.py
++++ b/Lib/distutils/sysconfig.py
+@@ -111,6 +111,9 @@ def get_python_inc(plat_specific=0, prefix=None):
+                 incdir = os.path.join(get_config_var('srcdir'), 'Include')
+             return os.path.normpath(incdir)
+         python_dir = 'python' + get_python_version() + build_flags
++        if not python_build and plat_specific:
++            import sysconfig
++            return sysconfig.get_path('platinclude')
+         return os.path.join(prefix, "include", python_dir)
+     elif os.name == "nt":
+         return os.path.join(prefix, "include")
+@@ -278,6 +281,8 @@ def get_makefile_filename():
+         return os.path.join(_sys_home or project_base, "Makefile")
+     lib_dir = get_python_lib(plat_specific=0, standard_lib=1)
+     config_file = 'config-{}{}'.format(get_python_version(), build_flags)
++    if hasattr(sys.implementation, '_multiarch'):
++        config_file += '-%s' % sys.implementation._multiarch
+     return os.path.join(lib_dir, config_file, 'Makefile')
+ 
+ 
+diff --git a/Lib/sysconfig.py b/Lib/sysconfig.py
+index 2a2160c..a27764f 100644
 --- a/Lib/sysconfig.py
 +++ b/Lib/sysconfig.py
-@@ -359,6 +359,8 @@
+@@ -359,6 +359,8 @@ def get_makefile_filename():
          config_dir_name = 'config-%s%s' % (_PY_VERSION_SHORT, sys.abiflags)
      else:
          config_dir_name = 'config'
@@ -9,7 +47,7 @@
      return os.path.join(get_path('stdlib'), config_dir_name, 'Makefile')
  
  def _generate_posix_vars():
-@@ -561,6 +563,12 @@
+@@ -561,6 +563,12 @@ def get_config_vars(*args):
          # the init-function.
          _CONFIG_VARS['userbase'] = _getuserbase()
  
@@ -22,30 +60,11 @@
          # Always convert srcdir to an absolute path
          srcdir = _CONFIG_VARS.get('srcdir', _PROJECT_BASE)
          if os.name == 'posix':
---- a/Lib/distutils/sysconfig.py
-+++ b/Lib/distutils/sysconfig.py
-@@ -111,6 +111,9 @@
-                 incdir = os.path.join(get_config_var('srcdir'), 'Include')
-             return os.path.normpath(incdir)
-         python_dir = 'python' + get_python_version() + build_flags
-+        if not python_build and plat_specific:
-+            import sysconfig
-+            return sysconfig.get_path('platinclude')
-         return os.path.join(prefix, "include", python_dir)
-     elif os.name == "nt":
-         return os.path.join(prefix, "include")
-@@ -278,6 +281,8 @@
-         return os.path.join(_sys_home or project_base, "Makefile")
-     lib_dir = get_python_lib(plat_specific=0, standard_lib=1)
-     config_file = 'config-{}{}'.format(get_python_version(), build_flags)
-+    if hasattr(sys.implementation, '_multiarch'):
-+        config_file += '-%s' % sys.implementation._multiarch
-     return os.path.join(lib_dir, config_file, 'Makefile')
- 
- 
+diff --git a/Makefile.pre.in b/Makefile.pre.in
+index 8a18944..2a30ef2 100644
 --- a/Makefile.pre.in
 +++ b/Makefile.pre.in
-@@ -656,6 +656,7 @@
+@@ -656,6 +656,7 @@ Modules/signalmodule.o: $(srcdir)/Modules/signalmodule.c $(srcdir)/Modules/posix
  
  Python/dynload_shlib.o: $(srcdir)/Python/dynload_shlib.c Makefile
  	$(CC) -c $(PY_CORE_CFLAGS) \
@@ -53,7 +72,7 @@
  		-DSOABI='"$(SOABI)"' \
  		-o $@ $(srcdir)/Python/dynload_shlib.c
  
-@@ -667,6 +668,7 @@
+@@ -667,6 +668,7 @@ Python/dynload_hpux.o: $(srcdir)/Python/dynload_hpux.c Makefile
  Python/sysmodule.o: $(srcdir)/Python/sysmodule.c Makefile
  	$(CC) -c $(PY_CORE_CFLAGS) \
  		-DABIFLAGS='"$(ABIFLAGS)"' \
@@ -61,7 +80,7 @@
  		-o $@ $(srcdir)/Python/sysmodule.c
  
  $(IO_OBJS): $(IO_H)
-@@ -1010,7 +1012,7 @@
+@@ -1010,7 +1012,7 @@ maninstall:	altmaninstall
  	(cd $(DESTDIR)$(MANDIR)/man1; $(LN) -s python$(VERSION).1 python3.1)
  
  # Install the library
@@ -70,7 +89,7 @@
  EXTRAPLATDIR= @EXTRAPLATDIR@
  MACHDEPS=	$(PLATDIR) $(EXTRAPLATDIR)
  XMLLIBSUBDIRS=  xml xml/dom xml/etree xml/parsers xml/sax
-@@ -1148,6 +1150,10 @@
+@@ -1148,6 +1150,10 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
  $(srcdir)/Lib/$(PLATDIR):
  	mkdir $(srcdir)/Lib/$(PLATDIR)
  	cp $(srcdir)/Lib/plat-generic/regen $(srcdir)/Lib/$(PLATDIR)/regen
@@ -81,7 +100,7 @@
  	export PATH; PATH="`pwd`:$$PATH"; \
  	export PYTHONPATH; PYTHONPATH="`pwd`/Lib"; \
  	export DYLD_FRAMEWORK_PATH; DYLD_FRAMEWORK_PATH="`pwd`"; \
-@@ -1186,10 +1192,10 @@
+@@ -1186,10 +1192,10 @@ inclinstall:
  
  # Install the library and miscellaneous stuff needed for extending/embedding
  # This goes into $(exec_prefix)
@@ -94,9 +113,24 @@
  
  libainstall:	all python-config
  	@for i in $(LIBDIR) $(LIBPL) $(LIBPC); \
+diff --git a/Modules/Setup.dist b/Modules/Setup.dist
+index afbeab5..e2512c8 100644
+--- a/Modules/Setup.dist
++++ b/Modules/Setup.dist
+@@ -91,7 +91,7 @@ SITEPATH=
+ TESTPATH=
+ 
+ # Path components for machine- or system-dependent modules and shared libraries
+-MACHDEPPATH=:plat-$(MACHDEP)
++MACHDEPPATH=:plat-$(MULTIARCH)
+ EXTRAMACHDEPPATH=
+ 
+ COREPYTHONPATH=$(DESTPATH)$(SITEPATH)$(TESTPATH)$(MACHDEPPATH)$(EXTRAMACHDEPPATH)
+diff --git a/Python/dynload_shlib.c b/Python/dynload_shlib.c
+index 75544ed..66fba62 100644
 --- a/Python/dynload_shlib.c
 +++ b/Python/dynload_shlib.c
-@@ -48,6 +48,9 @@
+@@ -48,6 +48,9 @@ const char *_PyImport_DynLoadFiletab[] = {
      ".exe",
      ".EXE",
  #else  /* !__VMS */
@@ -106,20 +140,11 @@
      "." SOABI ".so",
      ".abi" PYTHON_ABI_STRING ".so",
      ".so",
---- a/Modules/Setup.dist
-+++ b/Modules/Setup.dist
-@@ -91,7 +91,7 @@
- TESTPATH=
- 
- # Path components for machine- or system-dependent modules and shared libraries
--MACHDEPPATH=:plat-$(MACHDEP)
-+MACHDEPPATH=:plat-$(MULTIARCH)
- EXTRAMACHDEPPATH=
- 
- COREPYTHONPATH=$(DESTPATH)$(SITEPATH)$(TESTPATH)$(MACHDEPPATH)$(EXTRAMACHDEPPATH)
+diff --git a/Python/sysmodule.c b/Python/sysmodule.c
+index 2f700e6..4001193 100644
 --- a/Python/sysmodule.c
 +++ b/Python/sysmodule.c
-@@ -1538,6 +1538,15 @@
+@@ -1538,6 +1538,15 @@ make_impl_info(PyObject *version_info)
      if (res < 0)
          goto error;
  

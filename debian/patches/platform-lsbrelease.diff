@@ -1,8 +1,17 @@
-# DP: Use /etc/lsb-release to identify the platform.
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:40 -0800
+Subject: platform-lsbrelease
 
+# DP: Use /etc/lsb-release to identify the platform.
+---
+ Lib/platform.py | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/Lib/platform.py b/Lib/platform.py
+index 030ef2a..b763239 100755
 --- a/Lib/platform.py
 +++ b/Lib/platform.py
-@@ -265,7 +265,7 @@
+@@ -265,7 +265,7 @@ _release_version = re.compile(r'([^0-9]+)'
  _supported_dists = (
      'SuSE', 'debian', 'fedora', 'redhat', 'centos',
      'mandrake', 'mandriva', 'rocks', 'slackware', 'yellowdog', 'gentoo',
@@ -11,7 +20,7 @@
  
  def _parse_release_file(firstline):
  
-@@ -294,6 +294,10 @@
+@@ -294,6 +294,10 @@ def _parse_release_file(firstline):
              id = l[1]
      return '', version, id
  
@@ -22,7 +31,7 @@
  def linux_distribution(distname='', version='', id='',
  
                         supported_dists=_supported_dists,
-@@ -318,6 +322,25 @@
+@@ -318,6 +322,25 @@ def linux_distribution(distname='', version='', id='',
          args given as parameters.
  
      """

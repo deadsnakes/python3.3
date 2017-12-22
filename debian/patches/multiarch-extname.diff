@@ -1,6 +1,68 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:42 -0800
+Subject: multiarch-extname
+
+---
+ Lib/distutils/command/install.py     | 3 +++
+ Lib/distutils/command/install_lib.py | 4 ++++
+ Lib/distutils/dir_util.py            | 9 +++++++++
+ 3 files changed, 16 insertions(+)
+
+diff --git a/Lib/distutils/command/install.py b/Lib/distutils/command/install.py
+index ac9a9cd..d5f4e1b 100644
+--- a/Lib/distutils/command/install.py
++++ b/Lib/distutils/command/install.py
+@@ -222,6 +222,7 @@ class install(Command):
+ 
+         # enable custom installation, known values: deb
+         self.install_layout = None
++        self.multiarch = None
+         
+         self.compile = None
+         self.optimize = None
+@@ -479,6 +480,8 @@ class install(Command):
+             self.install_platbase = self.exec_prefix
+             if self.install_layout:
+                 if self.install_layout.lower() in ['deb']:
++                    import sysconfig
++                    self.multiarch = sysconfig.get_config_var('MULTIARCH')
+                     self.select_scheme("deb_system")
+                 elif self.install_layout.lower() in ['unix']:
+                     self.select_scheme("unix_prefix")
+diff --git a/Lib/distutils/command/install_lib.py b/Lib/distutils/command/install_lib.py
+index 15c08f1..be8c6e2 100644
+--- a/Lib/distutils/command/install_lib.py
++++ b/Lib/distutils/command/install_lib.py
+@@ -56,6 +56,7 @@ class install_lib(Command):
+         self.compile = None
+         self.optimize = None
+         self.skip_build = None
++        self.multiarch = None # if we should rename the extensions
+ 
+     def finalize_options(self):
+         # Get all the information we need to install pure Python modules
+@@ -68,6 +69,7 @@ class install_lib(Command):
+                                    ('compile', 'compile'),
+                                    ('optimize', 'optimize'),
+                                    ('skip_build', 'skip_build'),
++                                   ('multiarch', 'multiarch'),
+                                   )
+ 
+         if self.compile is None:
+@@ -108,6 +110,8 @@ class install_lib(Command):
+ 
+     def install(self):
+         if os.path.isdir(self.build_dir):
++            import distutils.dir_util
++            distutils.dir_util._multiarch = self.multiarch
+             outfiles = self.copy_tree(self.build_dir, self.install_dir)
+         else:
+             self.warn("'%s' does not exist -- no Python modules to install" %
+diff --git a/Lib/distutils/dir_util.py b/Lib/distutils/dir_util.py
+index 6a72bdd..00c6143 100644
 --- a/Lib/distutils/dir_util.py
 +++ b/Lib/distutils/dir_util.py
-@@ -96,6 +96,9 @@
+@@ -96,6 +96,9 @@ def create_tree(base_dir, files, mode=0o777, verbose=1, dry_run=0):
      for dir in sorted(need_dir):
          mkpath(dir, mode, verbose=verbose, dry_run=dry_run)
  
@@ -10,7 +72,7 @@
  def copy_tree(src, dst, preserve_mode=1, preserve_times=1,
                preserve_symlinks=0, update=0, verbose=1, dry_run=0):
      """Copy an entire directory tree 'src' to a new location 'dst'.
-@@ -132,6 +135,9 @@
+@@ -132,6 +135,9 @@ def copy_tree(src, dst, preserve_mode=1, preserve_times=1,
              raise DistutilsFileError(
                    "error listing files in '%s': %s" % (src, errstr))
  
@@ -20,7 +82,7 @@
      if not dry_run:
          mkpath(dst, verbose=verbose)
  
-@@ -140,6 +146,9 @@
+@@ -140,6 +146,9 @@ def copy_tree(src, dst, preserve_mode=1, preserve_times=1,
      for n in names:
          src_name = os.path.join(src, n)
          dst_name = os.path.join(dst, n)
@@ -30,49 +92,3 @@
  
          if n.startswith('.nfs'):
              # skip NFS rename files
---- a/Lib/distutils/command/install_lib.py
-+++ b/Lib/distutils/command/install_lib.py
-@@ -56,6 +56,7 @@
-         self.compile = None
-         self.optimize = None
-         self.skip_build = None
-+        self.multiarch = None # if we should rename the extensions
- 
-     def finalize_options(self):
-         # Get all the information we need to install pure Python modules
-@@ -68,6 +69,7 @@
-                                    ('compile', 'compile'),
-                                    ('optimize', 'optimize'),
-                                    ('skip_build', 'skip_build'),
-+                                   ('multiarch', 'multiarch'),
-                                   )
- 
-         if self.compile is None:
-@@ -108,6 +110,8 @@
- 
-     def install(self):
-         if os.path.isdir(self.build_dir):
-+            import distutils.dir_util
-+            distutils.dir_util._multiarch = self.multiarch
-             outfiles = self.copy_tree(self.build_dir, self.install_dir)
-         else:
-             self.warn("'%s' does not exist -- no Python modules to install" %
---- a/Lib/distutils/command/install.py
-+++ b/Lib/distutils/command/install.py
-@@ -222,6 +222,7 @@
- 
-         # enable custom installation, known values: deb
-         self.install_layout = None
-+        self.multiarch = None
-         
-         self.compile = None
-         self.optimize = None
-@@ -479,6 +480,8 @@
-             self.install_platbase = self.exec_prefix
-             if self.install_layout:
-                 if self.install_layout.lower() in ['deb']:
-+                    import sysconfig
-+                    self.multiarch = sysconfig.get_config_var('MULTIARCH')
-                     self.select_scheme("deb_system")
-                 elif self.install_layout.lower() in ['unix']:
-                     self.select_scheme("unix_prefix")

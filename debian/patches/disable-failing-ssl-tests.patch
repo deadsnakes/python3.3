@@ -1,6 +1,39 @@
+From: Felix Krull <f_krull@gmx.de>
+Date: Thu, 21 Dec 2017 18:40:42 -0800
+Subject: disable-failing-ssl-tests
+
+---
+ Lib/test/test_ftplib.py |  4 ++--
+ Lib/test/test_ssl.py    | 18 +++++-------------
+ 2 files changed, 7 insertions(+), 15 deletions(-)
+
+diff --git a/Lib/test/test_ftplib.py b/Lib/test/test_ftplib.py
+index c5e6736..b328b49 100644
+--- a/Lib/test/test_ftplib.py
++++ b/Lib/test/test_ftplib.py
+@@ -312,7 +312,7 @@ if ssl is not None:
+             socket = ssl.wrap_socket(self.socket, suppress_ragged_eofs=False,
+                                      certfile=CERTFILE, server_side=True,
+                                      do_handshake_on_connect=False,
+-                                     ssl_version=ssl.PROTOCOL_SSLv23)
++                                     ssl_version=ssl.PROTOCOL_TLSv1)
+             self.del_channel()
+             self.set_socket(socket)
+             self._ssl_accepting = True
+@@ -891,7 +891,7 @@ class TestTLS_FTPClass(TestCase):
+ 
+     def test_auth_ssl(self):
+         try:
+-            self.client.ssl_version = ssl.PROTOCOL_SSLv3
++            self.client.ssl_version = ssl.PROTOCOL_TLSv1
+             self.client.auth()
+             self.assertRaises(ValueError, self.client.auth)
+         finally:
+diff --git a/Lib/test/test_ssl.py b/Lib/test/test_ssl.py
+index 151e75c..849dded 100644
 --- a/Lib/test/test_ssl.py
 +++ b/Lib/test/test_ssl.py
-@@ -76,19 +76,10 @@
+@@ -79,19 +79,10 @@ def no_sslv2_implies_sslv3_hello():
  
  # Issue #9415: Ubuntu hijacks their OpenSSL and forcefully disables SSLv2
  def skip_if_broken_ubuntu_ssl(func):
@@ -24,7 +57,7 @@
  
  
  class BasicSocketTests(unittest.TestCase):
-@@ -2079,6 +2070,7 @@
+@@ -2086,6 +2077,7 @@ else:
                                         chatty=True, connectionchatty=True)
              self.assertIs(stats['compression'], None)
  
@@ -32,23 +65,3 @@
          def test_dh_params(self):
              # Check we can get a connection with ephemeral Diffie-Hellman
              context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
---- a/Lib/test/test_ftplib.py
-+++ b/Lib/test/test_ftplib.py
-@@ -312,7 +312,7 @@
-             socket = ssl.wrap_socket(self.socket, suppress_ragged_eofs=False,
-                                      certfile=CERTFILE, server_side=True,
-                                      do_handshake_on_connect=False,
--                                     ssl_version=ssl.PROTOCOL_SSLv23)
-+                                     ssl_version=ssl.PROTOCOL_TLSv1)
-             self.del_channel()
-             self.set_socket(socket)
-             self._ssl_accepting = True
-@@ -887,7 +887,7 @@
- 
-     def test_auth_ssl(self):
-         try:
--            self.client.ssl_version = ssl.PROTOCOL_SSLv3
-+            self.client.ssl_version = ssl.PROTOCOL_TLSv1
-             self.client.auth()
-             self.assertRaises(ValueError, self.client.auth)
-         finally:
