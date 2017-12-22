@@ -15,8 +15,8 @@ here = os.path.dirname(__file__)
 CERT_localhost = os.path.join(here, 'keycert.pem')
 # Self-signed cert file for 'fakehostname'
 CERT_fakehostname = os.path.join(here, 'keycert2.pem')
-# Root cert file (CA) for svn.python.org's cert
-CACERT_svn_python_org = os.path.join(here, 'https_svn_python_org_root.pem')
+# Self-signed cert file for self-signed.pythontest.net
+CERT_selfsigned_pythontestdotnet = os.path.join(here, 'selfsigned_pythontestdotnet.pem')
 
 HOST = support.HOST
 
@@ -134,6 +134,33 @@ class HeaderTests(TestCase):
         conn.putheader('Content-length', 42)
         self.assertIn(b'Content-length: 42', conn._buffer)
 
+        conn.putheader('Foo', ' bar ')
+        self.assertIn(b'Foo:  bar ', conn._buffer)
+        conn.putheader('Bar', '\tbaz\t')
+        self.assertIn(b'Bar: \tbaz\t', conn._buffer)
+        conn.putheader('Authorization', 'Bearer mytoken')
+        self.assertIn(b'Authorization: Bearer mytoken', conn._buffer)
+        conn.putheader('IterHeader', 'IterA', 'IterB')
+        self.assertIn(b'IterHeader: IterA\r\n\tIterB', conn._buffer)
+        conn.putheader('LatinHeader', b'\xFF')
+        self.assertIn(b'LatinHeader: \xFF', conn._buffer)
+        conn.putheader('Utf8Header', b'\xc3\x80')
+        self.assertIn(b'Utf8Header: \xc3\x80', conn._buffer)
+        conn.putheader('C1-Control', b'next\x85line')
+        self.assertIn(b'C1-Control: next\x85line', conn._buffer)
+        conn.putheader('Embedded-Fold-Space', 'is\r\n allowed')
+        self.assertIn(b'Embedded-Fold-Space: is\r\n allowed', conn._buffer)
+        conn.putheader('Embedded-Fold-Tab', 'is\r\n\tallowed')
+        self.assertIn(b'Embedded-Fold-Tab: is\r\n\tallowed', conn._buffer)
+        conn.putheader('Key Space', 'value')
+        self.assertIn(b'Key Space: value', conn._buffer)
+        conn.putheader('KeySpace ', 'value')
+        self.assertIn(b'KeySpace : value', conn._buffer)
+        conn.putheader(b'Nonbreak\xa0Space', 'value')
+        self.assertIn(b'Nonbreak\xa0Space: value', conn._buffer)
+        conn.putheader(b'\xa0NonbreakSpace', 'value')
+        self.assertIn(b'\xa0NonbreakSpace: value', conn._buffer)
+
     def test_ipv6host_header(self):
         # Default host header on IPv6 transaction should wrapped by [] if
         # its actual IPv6 address
@@ -152,6 +179,35 @@ class HeaderTests(TestCase):
         conn.sock = sock
         conn.request('GET', '/foo')
         self.assertTrue(sock.data.startswith(expected))
+
+    def test_invalid_headers(self):
+        conn = client.HTTPConnection('example.com')
+        conn.sock = FakeSocket('')
+        conn.putrequest('GET', '/')
+
+        # http://tools.ietf.org/html/rfc7230#section-3.2.4, whitespace is no
+        # longer allowed in header names
+        cases = (
+            (b'Invalid\r\nName', b'ValidValue'),
+            (b'Invalid\rName', b'ValidValue'),
+            (b'Invalid\nName', b'ValidValue'),
+            (b'\r\nInvalidName', b'ValidValue'),
+            (b'\rInvalidName', b'ValidValue'),
+            (b'\nInvalidName', b'ValidValue'),
+            (b' InvalidName', b'ValidValue'),
+            (b'\tInvalidName', b'ValidValue'),
+            (b'Invalid:Name', b'ValidValue'),
+            (b':InvalidName', b'ValidValue'),
+            (b'ValidName', b'Invalid\r\nValue'),
+            (b'ValidName', b'Invalid\rValue'),
+            (b'ValidName', b'Invalid\nValue'),
+            (b'ValidName', b'InvalidValue\r\n'),
+            (b'ValidName', b'InvalidValue\r'),
+            (b'ValidName', b'InvalidValue\n'),
+        )
+        for name, value in cases:
+            with self.assertRaisesRegex(ValueError, 'Invalid header'):
+                conn.putheader(name, value)
 
 
 class BasicTest(TestCase):
@@ -758,17 +814,18 @@ class HTTPSTest(TestCase):
             self._check_svn_python_org(resp)
 
     def test_networked_good_cert(self):
-        # We feed a CA cert that validates the server's cert
+        # We feed the server's cert as a validating cert
         import ssl
         support.requires('network')
-        with support.transient_internet('svn.python.org'):
+        with support.transient_internet('self-signed.pythontest.net'):
             context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
             context.verify_mode = ssl.CERT_REQUIRED
-            context.load_verify_locations(CACERT_svn_python_org)
-            h = client.HTTPSConnection('svn.python.org', 443, context=context)
+            context.load_verify_locations(CERT_selfsigned_pythontestdotnet)
+            h = client.HTTPSConnection('self-signed.pythontest.net', 443, context=context)
             h.request('GET', '/')
             resp = h.getresponse()
-            self._check_svn_python_org(resp)
+            server_string = resp.getheader('server')
+            self.assertIn('nginx', server_string)
 
     def test_networked_bad_cert(self):
         # We feed a "CA" cert that is unrelated to the server's cert
