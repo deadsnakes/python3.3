@@ -258,6 +258,11 @@ class TestBasicOps(unittest.TestCase):
 
                 self.pickletest(combinations(values, r))                 # test pickling
 
+    @support.bigaddrspacetest
+    def test_combinations_overflow(self):
+        with self.assertRaises((OverflowError, MemoryError)):
+            combinations("AA", 2**29)
+
         # Test implementation detail:  tuple re-use
     @support.impl_detail("tuple reuse is specific to CPython")
     def test_combinations_tuple_reuse(self):
@@ -339,8 +344,12 @@ class TestBasicOps(unittest.TestCase):
 
                 self.pickletest(cwr(values,r))                          # test pickling
 
-        # Test implementation detail:  tuple re-use
+    @support.bigaddrspacetest
+    def test_combinations_with_replacement_overflow(self):
+        with self.assertRaises((OverflowError, MemoryError)):
+            combinations_with_replacement("AA", 2**30)
 
+        # Test implementation detail:  tuple re-use
     @support.impl_detail("tuple reuse is specific to CPython")
     def test_combinations_with_replacement_tuple_reuse(self):
         cwr = combinations_with_replacement
@@ -408,6 +417,11 @@ class TestBasicOps(unittest.TestCase):
                     self.assertEqual(result, list(permutations(values)))       # test default r
 
                 self.pickletest(permutations(values, r))                # test pickling
+
+    @support.bigaddrspacetest
+    def test_permutations_overflow(self):
+        with self.assertRaises((OverflowError, MemoryError)):
+            permutations("A", 2**30)
 
     @support.impl_detail("tuple resuse is CPython specific")
     def test_permutations_tuple_reuse(self):
@@ -921,6 +935,11 @@ class TestBasicOps(unittest.TestCase):
             args = map(iter, args)
             self.assertEqual(len(list(product(*args))), expected_len)
 
+    @support.bigaddrspacetest
+    def test_product_overflow(self):
+        with self.assertRaises((OverflowError, MemoryError)):
+            product(*(['ab']*2**5), repeat=2**25)
+
     @support.impl_detail("tuple reuse is specific to CPython")
     def test_product_tuple_reuse(self):
         self.assertEqual(len(set(map(id, product('abc', 'def')))), 1)
@@ -939,6 +958,16 @@ class TestBasicOps(unittest.TestCase):
             self.assertEqual(list(copy.copy(product(*args))), result)
             self.assertEqual(list(copy.deepcopy(product(*args))), result)
             self.pickletest(product(*args))
+
+    def test_product_issue_25021(self):
+        # test that indices are properly clamped to the length of the tuples
+        p = product((1, 2),(3,))
+        p.__setstate__((0, 0x1000))  # will access tuple element 1 if not clamped
+        self.assertEqual(next(p), (2, 3))
+        # test that empty tuple in the list will result in an immediate StopIteration
+        p = product((1, 2), (), (3,))
+        p.__setstate__((0, 0, 0x1000))  # will access tuple element 1 if not clamped
+        self.assertRaises(StopIteration, next, p)
 
     def test_repeat(self):
         self.assertEqual(list(repeat(object='a', times=3)), ['a', 'a', 'a'])
