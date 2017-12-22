@@ -1,3 +1,9 @@
+python3.3 (3.3.7-1+xenial1) xenial; urgency=medium
+
+  * Python 3.3.7 release
+
+ -- Anthony Sottile <asottile@umich.edu>  Thu, 21 Dec 2017 18:46:02 -0800
+
 python3.3 (3.3.6-4+xenial1) xenial; urgency=medium
 
   * Imported from Wily package.
