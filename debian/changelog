@@ -1,3 +1,9 @@
+python3.3 (3.3.7-1+bionic1) bionic; urgency=medium
+
+  * Imported from Xenial package.
+
+ -- Anthony Sottile <asottile@umich.edu>  Thu, 26 Apr 2018 22:57:15 -0700
+
 python3.3 (3.3.7-1+xenial1) xenial; urgency=medium
 
   * Python 3.3.7 release
