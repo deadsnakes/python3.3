@@ -40,6 +40,7 @@ Multi-Arch: same
 Priority: optional
 Pre-Depends: multiarch-support
 Depends: libpython3.3-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
+Recommends: ca-certificates
 Breaks: python3.3 (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
 Replaces: python3.3 (<< 3.3.6-2), python3.3-minimal (<< 3.3.6-2)
 Description: Interactive high-level object-oriented language (standard library, version 3.3)
