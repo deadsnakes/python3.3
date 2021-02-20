@@ -40,6 +40,7 @@ Multi-Arch: same
 Priority: @PRIO@
 Pre-Depends: multiarch-support
 Depends: lib@PVER@-minimal (= ${binary:Version}), mime-support, ${shlibs:Depends}, ${misc:Depends}
+Recommends: ca-certificates
 Breaks: @PVER@ (<< 3.3.6-2), @PVER@-minimal (<< 3.3.6-2)
 Replaces: @PVER@ (<< 3.3.6-2), @PVER@-minimal (<< 3.3.6-2)
 Description: Interactive high-level object-oriented language (standard library, version @VER@)
